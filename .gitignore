@@ -1,0 +1,23 @@
+# Editor settings
+.vscode/
+.idea/
+*.code-workspace
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node and Python
+node_modules/
+npm-debug.log*
+__pycache__/
+*.pyc
+
+# Scratch output of the car exporter and the video recorder
+tools/out/
+*.log
+
+# Secrets
+.env
+.env.*

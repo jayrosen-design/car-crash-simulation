@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Car Crash Simulation</title>
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="view"></div>
+
+  <header id="topbar">
+    <a class="brand" href="Car Crash Simulation.html" title="Back to the home page">
+      <span class="brand-title">Car Crash Simulation</span>
+    </a>
+    <label class="scenario" title="Switch to another simulation">
+      <span class="scenario-k">Simulation</span>
+      <select id="scenario">
+        <optgroup label="Barrier tests">
+          <option value="?preset=rigid">Rigid barrier</option>
+          <option value="?preset=brick">Brick wall</option>
+        </optgroup>
+        <optgroup label="Crash labs">
+          <option value="?lab=overlap">Frontal overlap</option>
+          <option value="?lab=multi">Two-vehicle collision</option>
+          <option value="?lab=side">Side impact</option>
+          <option value="?lab=whiplash">Whiplash sled</option>
+          <option value="?lab=restraint">Occupant restraints</option>
+          <option value="?lab=pedestrian">Pedestrian &amp; braking</option>
+        </optgroup>
+      </select>
+    </label>
+    <ol id="stepper" aria-label="Test stage">
+      <li data-step="setup">Setup</li>
+      <li data-step="approach">Approach</li>
+      <li data-step="impact">Impact</li>
+      <li data-step="playback">Playback</li>
+    </ol>
+    <div class="top-actions">
+      <button id="btn-stop" class="danger" hidden>Emergency stop</button>
+      <button id="btn-reset" class="ghost" hidden>New test</button>
+      <button id="btn-sound" class="ghost icon" aria-pressed="true" title="Sound on/off">Sound: on</button>
+    </div>
+  </header>
+  <script>
+    // Simulation menu: shows the one on screen; picking another opens it on this same page.
+    (function () {
+      var sel = document.getElementById('scenario'), q = new URLSearchParams(location.search);
+      sel.value = q.get('lab') ? '?lab=' + q.get('lab') : (q.get('preset') === 'brick' || q.get('barrier') === 'brick') ? '?preset=brick' : '?preset=rigid';
+      sel.addEventListener('change', function () { location.href = location.pathname + sel.value; });
+    })();
+  </script>
+
+  <!-- Setup -->
+  <aside id="setup" class="panel left">
+    <h2>Test setup</h2>
+    <section>
+      <div class="field">
+        <span class="field-head"><span>Vehicle</span><span class="muted" id="veh-status"></span></span>
+        <div class="seg" data-name="vehicle">
+          <button data-v="lexus">Lexus RX 350<small>SUV</small></button>
+          <button data-v="mustang">Mustang GT500<small>coupe</small></button>
+          <button data-v="lab">Lab sedan<small>procedural</small></button>
+        </div>
+        <span class="hint" id="veh-credit"></span>
+      </div>
+      <div class="field" id="damage-field">
+        <span class="field-head"><span>Damage</span><span class="muted">parts, glass, tyres</span></span>
+        <div class="seg" data-name="damage">
+          <button data-v="realistic" class="on">Realistic</button>
+          <button data-v="dramatic">Dramatic</button>
+        </div>
+        <span class="hint">Realistic: break strengths set so a 56&nbsp;km/h barrier test keeps its panels, as real cars do. Dramatic: about 3× weaker, so parts fly off at moderate speeds.</span>
+      </div>
+    </section>
+    <section>
+      <label class="field">
+        <span class="field-head"><span>Impact speed</span><span><input id="in-speed-num" type="number" min="10" max="150" step="1" value="56"> km/h</span></span>
+        <input id="in-speed" type="range" min="10" max="150" step="1" value="56">
+      </label>
+      <label class="field">
+        <span class="field-head"><span>Approach angle</span><span><input id="in-angle-num" type="number" min="-45" max="45" step="1" value="0"> °</span></span>
+        <input id="in-angle" type="range" min="-45" max="45" step="1" value="0">
+        <span class="hint">Or drag the round handle at the start of the path in the scene.</span>
+      </label>
+    </section>
+    <section>
+      <div class="field">
+        <span class="field-head"><span>Vehicle mass</span></span>
+        <div class="seg" data-name="mass">
+          <button data-v="light">Light<small id="mass-light">1,100 kg</small></button>
+          <button data-v="standard" class="on">Standard<small id="mass-standard">1,500 kg</small></button>
+          <button data-v="heavy">Heavy<small id="mass-heavy">2,200 kg</small></button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-head"><span>Front structure stiffness</span></span>
+        <div class="seg" data-name="stiffness">
+          <button data-v="soft">Soft</button>
+          <button data-v="standard" class="on">Standard</button>
+          <button data-v="stiff">Stiff</button>
+        </div>
+      </div>
+    </section>
+    <section>
+      <div class="field">
+        <span class="field-head"><span>Barrier</span></span>
+        <div class="seg" data-name="barrier">
+          <button data-v="rigid" class="on">Rigid barrier</button>
+          <button data-v="brick">Brick wall</button>
+        </div>
+      </div>
+      <div class="field" id="wall-field">
+        <span class="field-head"><span>Mortar strength</span></span>
+        <div class="seg" data-name="wallStrength">
+          <button data-v="weak">Weak</button>
+          <button data-v="standard" class="on">Standard</button>
+          <button data-v="strong">Strong</button>
+        </div>
+      </div>
+    </section>
+    <section>
+      <div class="field">
+        <span class="field-head"><span>Occupant restraints</span><span class="muted">50th-percentile male dummy</span></span>
+        <div class="toggles">
+          <label class="switch"><input type="checkbox" id="in-belt" checked><span>Seatbelt</span></label>
+          <label class="switch"><input type="checkbox" id="in-bag" checked><span>Airbag</span></label>
+        </div>
+      </div>
+    </section>
+    <section class="readouts">
+      <div><span class="k">Kinetic energy</span><span class="v" id="ro-energy">–</span></div>
+      <div><span class="k">Same as a drop from</span><span class="v" id="ro-drop">–</span></div>
+      <div><span class="k">Momentum</span><span class="v" id="ro-momentum">–</span></div>
+    </section>
+    <p id="setup-note" class="note" hidden></p>
+    <button id="btn-run" class="primary">Run crash test</button>
+  </aside>
+
+  <!-- Approach HUD -->
+  <div id="hud" class="panel hud" hidden>
+    <div class="hud-title">Automated approach</div>
+    <div class="hud-grid">
+      <div><span class="k">Speed</span><span class="v" id="hud-speed">–</span></div>
+      <div><span class="k">Target</span><span class="v" id="hud-target">–</span></div>
+      <div><span class="k">Drive force (PID)</span><span class="v" id="hud-force">–</span></div>
+      <div><span class="k">Steering (pure pursuit)</span><span class="v" id="hud-steer">–</span></div>
+      <div><span class="k">Off-line error</span><span class="v" id="hud-xte">–</span></div>
+      <div><span class="k">Heading error</span><span class="v" id="hud-head">–</span></div>
+      <div><span class="k">To barrier</span><span class="v" id="hud-dist">–</span></div>
+      <div><span class="k">Mode</span><span class="v" id="hud-mode">–</span></div>
+    </div>
+  </div>
+
+  <!-- Impact computing -->
+  <div id="computing" class="panel center" hidden>
+    <div class="comp-title">Computing the impact</div>
+    <div class="bar"><div id="comp-bar"></div></div>
+    <div class="comp-text" id="comp-text">0%</div>
+    <p class="muted">The crash is integrated in 0.1&nbsp;ms steps, then replayed in slow motion, the way crash tests are filmed with high-speed cameras.</p>
+  </div>
+
+  <!-- Results -->
+  <aside id="results" class="panel right" hidden>
+    <div class="res-head">
+      <h2>Results</h2>
+      <button id="btn-collapse" class="ghost small" aria-expanded="true">Hide</button>
+    </div>
+    <div id="res-body">
+      <div id="res-notes"></div>
+      <div id="res-hazard"></div>
+      <div class="res-section">
+        <h3>Occupant</h3>
+        <div id="res-occupant" class="metrics"></div>
+        <div class="toggles rerun">
+          <label class="switch"><input type="checkbox" id="pb-belt"><span>Seatbelt</span></label>
+          <label class="switch"><input type="checkbox" id="pb-bag"><span>Airbag</span></label>
+          <span class="muted small">Re-runs the dummy on this same crash pulse</span>
+        </div>
+      </div>
+      <div class="res-section">
+        <h3>Vehicle</h3>
+        <div id="res-vehicle" class="metrics vehicle"></div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="occupant" class="on">Occupant</button>
+        <button role="tab" data-tab="vehicle">Vehicle</button>
+        <button role="tab" data-tab="energy">Energy</button>
+      </div>
+      <div class="tab-panels">
+        <div data-panel="occupant" class="charts"></div>
+        <div data-panel="vehicle" class="charts" hidden></div>
+        <div data-panel="energy" class="charts" hidden></div>
+      </div>
+      <p class="disclaimer">Teaching model, not validated against physical crash tests. Use it to compare trends between settings, not to predict real injuries. Limits shown are FMVSS&nbsp;208 values for the 50th-percentile male dummy.</p>
+    </div>
+  </aside>
+
+  <!-- Playback bar -->
+  <div id="timeline" class="panel bottom" hidden>
+    <button id="btn-play" class="primary small" aria-label="Play">Pause</button>
+    <div class="time"><span id="tl-time">0.0</span> <span id="tl-unit">ms</span></div>
+    <input id="tl-scrub" type="range" min="0" max="1000" step="1" value="0" aria-label="Playback time">
+    <label class="sel">Speed
+      <select id="tl-speed">
+        <option value="0.025">1/40×</option>
+        <option value="0.05" selected>1/20×</option>
+        <option value="0.1">1/10×</option>
+        <option value="0.25">1/4×</option>
+        <option value="1">1×</option>
+      </select>
+    </label>
+    <div class="seg compact" data-name="camera">
+      <button data-v="free" class="on" title="Drag to orbit, scroll to zoom; the view follows the car">Free</button>
+      <button data-v="side">Side</button>
+      <button data-v="front">Front ¾</button>
+      <button data-v="top">Top</button>
+      <button data-v="onboard">Onboard</button>
+    </div>
+    <div class="toggles compact">
+      <label class="switch"><input type="checkbox" id="tg-strain"><span>Strain map</span></label>
+      <label class="switch"><input type="checkbox" id="tg-injury"><span>Injury map</span></label>
+      <label class="switch"><input type="checkbox" id="tg-xray"><span>X-ray</span></label>
+    </div>
+  </div>
+
+  <div id="pip-label" hidden>Onboard high-speed camera</div>
+  <div id="legend" class="panel legend" hidden></div>
+  <div id="toast" role="status" hidden></div>
+  <div id="loading">Loading 3D engine…</div>
+</div>
+
+<script src="models/lexus.phys.js"></script>
+<script src="models/mustang.phys.js"></script>
+<script src="models/lexus.glb.js"></script>
+<script src="models/mustang.glb.js"></script>
+<script src="js/occupant.js"></script>
+<script src="js/vehicles.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/guidance.js"></script>
+<script src="js/whiplash.js"></script>
+<script src="js/pedestrian.js"></script>
+<script type="module">
+  // three.js is an ES module from the CDN; the app scripts are classic scripts so the page also
+  // works when opened straight from disk (file://), where local module imports are blocked.
+  // The standalone build (tools/build-standalone.js) embeds them as text/x-inline blocks.
+  // With ?lab=<id> the crash labs (labs.js) run instead of the free simulator (app.js).
+  const APP_SCRIPTS = ['js/charts.js', 'js/fx.js', 'js/fire.js', 'js/carmodel.js', 'js/scene.js', 'js/labscene.js', 'js/app.js', 'js/labs.js'];
+  const skip = new URLSearchParams(location.search).get('lab') ? 'js/app.js' : 'js/labs.js';
+  try {
+    const THREE = await import('three');
+    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+    const { DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js');
+    window.THREE = THREE;
+    window.OrbitControls = OrbitControls;
+    window.GLTFLoader = GLTFLoader;
+    window.DRACOLoader = DRACOLoader;
+    for (const src of APP_SCRIPTS) {
+      if (src === skip) continue;
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        const inline = document.querySelector(`script[type="text/x-inline"][data-src="${src}"]`);
+        if (inline) { s.textContent = inline.textContent; document.body.appendChild(s); resolve(); return; }
+        s.src = src; s.onload = resolve;
+        s.onerror = () => reject(new Error('Could not load ' + src + '. If this page was opened in a preview pane, open "Simulator.html" instead, or open the folder in a browser'));
+        document.body.appendChild(s);
+      });
+    }
+  } catch (err) {
+    document.getElementById('loading').textContent = 'Could not start: ' + err.message + ' (three.js loads from cdn.jsdelivr.net, so an internet connection is needed).';
+    console.error(err);
+  }
+</script>
+</body>
+</html>

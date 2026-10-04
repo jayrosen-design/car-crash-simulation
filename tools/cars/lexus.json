@@ -1,0 +1,532 @@
+{
+ "name": "lexus",
+ "blend": "C:/Users/studi/Downloads/lexus-rx-350-rigged-rigged-driver-human/source/RX 350.blend",
+ "wheelbase": 2.79,
+ "body": [
+  "Main-Body.002"
+ ],
+ "wheels": {
+  "FL": "LCVXR.Wheel.Ft.L.002",
+  "FR": "LCVXR.Wheel.Ft.R.002",
+  "RL": "LCVXR.Wheel.Bk.L.002",
+  "RR": "LCVXR.Wheel.Bk.R.002"
+ },
+ "materials": {
+  "drop": [
+   "BrownInterior.002",
+   "BrownInterior"
+  ],
+  "glass": [
+   "Glass.005",
+   "Glass.004"
+  ],
+  "light": [
+   "HeadlightGlass.002",
+   "fara.002",
+   "fara.DALNIY",
+   "RedGlass.002",
+   "cep.002",
+   "sag.002",
+   "diod.002",
+   "YZ TUMAN.001",
+   "TUMAN ON.001",
+   "tormoz.002"
+  ],
+  "chrome": [
+   "Chrome1.002",
+   "Chrome2.002"
+  ],
+  "trim": [
+   "BlackMatt.002",
+   "BlackGloss.002",
+   "Material #2083 Slot #2.002"
+  ],
+  "tire": [
+   "Tire.002"
+  ],
+  "rim": [
+   "Rims.002"
+  ]
+ },
+ "regions": [
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.6,
+    1.15
+   ],
+   "y": [
+    1.05,
+    1.42
+   ],
+   "z": [
+    -1.3,
+    -0.75
+   ]
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.6,
+    1.15
+   ],
+   "y": [
+    1.05,
+    1.42
+   ],
+   "z": [
+    0.75,
+    1.3
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHL",
+   "x": [
+    1.9,
+    2.7
+   ],
+   "y": [
+    0.7,
+    1.05
+   ],
+   "z": [
+    -0.95,
+    -0.38
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHR",
+   "x": [
+    1.9,
+    2.7
+   ],
+   "y": [
+    0.7,
+    1.05
+   ],
+   "z": [
+    0.38,
+    0.95
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTL",
+   "x": [
+    -2.7,
+    -1.85
+   ],
+   "y": [
+    1.0,
+    1.25
+   ],
+   "z": [
+    -0.95,
+    -0.38
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTR",
+   "x": [
+    -2.7,
+    -1.85
+   ],
+   "y": [
+    1.0,
+    1.25
+   ],
+   "z": [
+    0.38,
+    0.95
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassWS",
+   "x": [
+    0.4,
+    1.5
+   ],
+   "y": [
+    1.1,
+    1.8
+   ],
+   "z": [
+    -0.75,
+    0.75
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -2.7,
+    -1.5
+   ],
+   "y": [
+    1.1,
+    1.8
+   ],
+   "z": [
+    -0.7,
+    0.7
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRoof",
+   "x": [
+    -0.6,
+    0.4
+   ],
+   "y": [
+    1.6,
+    1.9
+   ],
+   "z": [
+    -0.6,
+    0.6
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    -0.1,
+    1.2
+   ],
+   "y": [
+    1.0,
+    1.8
+   ],
+   "z": [
+    -1.3,
+    -0.55
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    -0.1,
+    1.2
+   ],
+   "y": [
+    1.0,
+    1.8
+   ],
+   "z": [
+    0.55,
+    1.3
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRL",
+   "x": [
+    -1.2,
+    -0.1
+   ],
+   "y": [
+    1.0,
+    1.8
+   ],
+   "z": [
+    -1.3,
+    -0.55
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRR",
+   "x": [
+    -1.2,
+    -0.1
+   ],
+   "y": [
+    1.0,
+    1.8
+   ],
+   "z": [
+    0.55,
+    1.3
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQL",
+   "x": [
+    -2.0,
+    -1.2
+   ],
+   "y": [
+    1.0,
+    1.8
+   ],
+   "z": [
+    -1.3,
+    -0.55
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQR",
+   "x": [
+    -2.0,
+    -1.2
+   ],
+   "y": [
+    1.0,
+    1.8
+   ],
+   "z": [
+    0.55,
+    1.3
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    1.2,
+    2.5
+   ],
+   "y": [
+    0.95,
+    1.4
+   ],
+   "z": [
+    -0.85,
+    0.85
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    1.9,
+    2.8
+   ],
+   "y": [
+    0.0,
+    0.95
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    1.0,
+    2.1
+   ],
+   "y": [
+    0.25,
+    1.3
+   ],
+   "z": [
+    -1.3,
+    -0.55
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    1.0,
+    2.1
+   ],
+   "y": [
+    0.25,
+    1.3
+   ],
+   "z": [
+    0.55,
+    1.3
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFL",
+   "x": [
+    -0.15,
+    1.05
+   ],
+   "y": [
+    0.25,
+    1.65
+   ],
+   "z": [
+    -1.3,
+    -0.55
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFR",
+   "x": [
+    -0.15,
+    1.05
+   ],
+   "y": [
+    0.25,
+    1.65
+   ],
+   "z": [
+    0.55,
+    1.3
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorRL",
+   "x": [
+    -1.2,
+    -0.15
+   ],
+   "y": [
+    0.25,
+    1.65
+   ],
+   "z": [
+    -1.3,
+    -0.55
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorRR",
+   "x": [
+    -1.2,
+    -0.15
+   ],
+   "y": [
+    0.25,
+    1.65
+   ],
+   "z": [
+    0.55,
+    1.3
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -2.8,
+    -1.5
+   ],
+   "y": [
+    0.0,
+    0.85
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.8,
+    -1.5
+   ],
+   "y": [
+    0.85,
+    1.8
+   ],
+   "z": [
+    -0.7,
+    0.7
+   ],
+   "notMats": [
+    "glass"
+   ]
+  }
+ ],
+ "splitPolygons": [
+  "glass"
+ ],
+ "splitSize": 0.6,
+ "dropTiny": 0.015,
+ "reportMin": 150,
+ "title": "Lexus RX 350",
+ "credit": {
+  "title": "Lexus RX 350 + rigged (+ rigged driver (human))",
+  "author": "menarzuw",
+  "license": "CC BY 4.0",
+  "url": "https://sketchfab.com/3d-models/lexus-rx-350-rigged-rigged-driver-human-6b9a1994b2dd445c8248270c81eead6b"
+ },
+ "decimate": {
+  "RIGID_Cage": 0.5,
+  "DEFORM": 0.6,
+  "BREAKAWAY": 0.35,
+  "BRITTLE_Light": 0.18,
+  "BRITTLE_Glass": 1.0,
+  "wheel": 0.09,
+  "chrome": 0.25
+ },
+ "hipBone": {
+  "armature": "Armature.002",
+  "bone": "mixamorig7:Hips"
+ },
+ "expectGlass": 9
+}

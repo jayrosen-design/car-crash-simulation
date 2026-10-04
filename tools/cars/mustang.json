@@ -1,0 +1,674 @@
+{
+ "name": "mustang",
+ "title": "Ford Mustang GT500",
+ "credit": {
+  "title": "Ford Mustang Gt 500 With pro Rig FOR FREE!",
+  "author": "NoOb StUfFs",
+  "license": "CC BY 4.0",
+  "url": "https://sketchfab.com/3d-models/ford-mustang-gt-500-with-pro-rig-for-free-f26a29f766844f46910547d6d2cc291d"
+ },
+ "blend": "C:/Users/studi/Downloads/ford-mustang-gt-500-with-pro-rig-for-free/source/ford mustang fully rigged.blend",
+ "wheelbase": 2.72,
+ "body": [
+  "muDEF-Body"
+ ],
+ "objects": {
+  "bonnet_ok": "DEFORM_Hood",
+  "door_lf_ok": "DEFORM_DoorFL",
+  "door_rf_ok": "DEFORM_DoorFR"
+ },
+ "wheels": {
+  "FL": "muDEF- Wheel.Ft.L",
+  "FR": "muDEF- Wheel.Ft.R",
+  "RL": "muDEF- Wheel.Bk.L",
+  "RR": "muDEF- Wheel.Bk.R"
+ },
+ "materials": {
+  "drop": [
+   "interior",
+   "interior.0",
+   "interior.3",
+   "interior.4",
+   "interior.6",
+   "interior with emission",
+   "interior upper light",
+   "blue interior lights"
+  ],
+  "glass": [
+   "window.001",
+   "window",
+   "glass"
+  ],
+  "light": [
+   "breaklight l",
+   "foglight l",
+   "right front light",
+   "revlight r",
+   "indicator lr",
+   "indicator rr",
+   "left rear light",
+   "light night",
+   "Material.003",
+   "Material.004",
+   "glass.002"
+  ],
+  "mech": [
+   "engine.0",
+   "engine.1",
+   "engine.4",
+   "engine_a.0",
+   "engine_a.1",
+   "engine_a.2",
+   "engine_a.3",
+   "v8_a.1",
+   "extra1.0",
+   "fanar.0"
+  ],
+  "trim": [
+   "chassis.6",
+   "secondary",
+   "bump_front_ok.5",
+   "bump_front_ok.3",
+   "bump_rear_ok.5",
+   "bump_rear_ok.6",
+   "log.0",
+   "tahook.0",
+   "0.0",
+   "door_lf_ok.1",
+   "interior.2",
+   "Material.005"
+  ],
+  "tire": [
+   "wheel.0"
+  ],
+  "rim": [
+   "wheel.1",
+   "wheel.002",
+   "wheel.003"
+  ]
+ },
+ "regions": [
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.2,
+    0.65
+   ],
+   "y": [
+    0.9,
+    1.25
+   ],
+   "z": [
+    -1.15,
+    -0.78
+   ],
+   "override": true
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.2,
+    0.65
+   ],
+   "y": [
+    0.9,
+    1.25
+   ],
+   "z": [
+    0.78,
+    1.15
+   ],
+   "override": true
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    -0.8,
+    0.9
+   ],
+   "y": [
+    0.85,
+    1.45
+   ],
+   "z": [
+    -1.15,
+    -0.5
+   ],
+   "mats": [
+    "glass"
+   ],
+   "override": true
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    -0.8,
+    0.9
+   ],
+   "y": [
+    0.85,
+    1.45
+   ],
+   "z": [
+    0.5,
+    1.15
+   ],
+   "mats": [
+    "glass"
+   ],
+   "override": true
+  },
+  {
+   "part": "BRITTLE_LightHL",
+   "x": [
+    1.6,
+    2.6
+   ],
+   "y": [
+    0.55,
+    0.95
+   ],
+   "z": [
+    -1.0,
+    -0.42
+   ],
+   "mats": [
+    "light",
+    "trim"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHR",
+   "x": [
+    1.6,
+    2.6
+   ],
+   "y": [
+    0.55,
+    0.95
+   ],
+   "z": [
+    0.42,
+    1.0
+   ],
+   "mats": [
+    "light",
+    "trim"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTL",
+   "x": [
+    -2.6,
+    -1.95
+   ],
+   "y": [
+    0.72,
+    1.08
+   ],
+   "z": [
+    -0.95,
+    -0.3
+   ],
+   "mats": [
+    "light",
+    "trim"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTR",
+   "x": [
+    -2.6,
+    -1.95
+   ],
+   "y": [
+    0.72,
+    1.08
+   ],
+   "z": [
+    0.3,
+    0.95
+   ],
+   "mats": [
+    "light",
+    "trim"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQL",
+   "x": [
+    -1.3,
+    -0.7
+   ],
+   "y": [
+    0.85,
+    1.45
+   ],
+   "z": [
+    -0.8,
+    -0.6
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQR",
+   "x": [
+    -1.3,
+    -0.7
+   ],
+   "y": [
+    0.85,
+    1.45
+   ],
+   "z": [
+    0.6,
+    0.8
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassWS",
+   "x": [
+    0.0,
+    1.2
+   ],
+   "y": [
+    0.9,
+    1.5
+   ],
+   "z": [
+    -0.78,
+    0.78
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -2.0,
+    -0.6
+   ],
+   "y": [
+    0.9,
+    1.45
+   ],
+   "z": [
+    -0.72,
+    0.72
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": null,
+   "x": [
+    -1.4,
+    1.05
+   ],
+   "y": [
+    0.2,
+    1.32
+   ],
+   "z": [
+    -0.8,
+    0.8
+   ],
+   "notMats": [
+    "glass",
+    "paint"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    1.3,
+    2.6
+   ],
+   "y": [
+    0.0,
+    1.1
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "minTris": 3000
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    1.95,
+    2.6
+   ],
+   "y": [
+    0.0,
+    0.85
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "mats": [
+    "paint",
+    "trim"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -2.6,
+    -1.3
+   ],
+   "y": [
+    0.0,
+    1.0
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "minTris": 3000
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -2.6,
+    -2.0
+   ],
+   "y": [
+    0.0,
+    0.78
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "mats": [
+    "paint",
+    "trim"
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.6,
+    -1.45
+   ],
+   "y": [
+    0.82,
+    1.3
+   ],
+   "z": [
+    -0.78,
+    0.78
+   ],
+   "notMats": [
+    "glass",
+    "light"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    0.7,
+    2.05
+   ],
+   "y": [
+    0.25,
+    1.05
+   ],
+   "z": [
+    -1.15,
+    -0.5
+   ],
+   "mats": [
+    "paint"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    0.7,
+    2.05
+   ],
+   "y": [
+    0.25,
+    1.05
+   ],
+   "z": [
+    0.5,
+    1.15
+   ],
+   "mats": [
+    "paint"
+   ]
+  }
+ ],
+ "reportMin": 300,
+ "decimate": {
+  "RIGID_Cage": 0.45,
+  "DEFORM": 0.45,
+  "BREAKAWAY": 0.35,
+  "BRITTLE_Light": 0.2,
+  "BRITTLE_Glass": 1.0,
+  "wheel": 0.4
+ },
+ "dropTiny": 0.012,
+ "splitPolygons": [],
+ "splitSize": 0.8,
+ "colors": {
+  "bump_front_ok.5": [
+   0.03,
+   0.03,
+   0.03
+  ],
+  "bump_front_ok.3": [
+   0.05,
+   0.05,
+   0.05
+  ],
+  "bump_rear_ok.5": [
+   0.04,
+   0.04,
+   0.04
+  ],
+  "bump_rear_ok.6": [
+   0.04,
+   0.04,
+   0.04
+  ],
+  "chassis.6": [
+   0.04,
+   0.04,
+   0.045
+  ],
+  "secondary": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "interior.2": [
+   0.05,
+   0.05,
+   0.05
+  ],
+  "extra1.0": [
+   0.1,
+   0.1,
+   0.11
+  ],
+  "engine.0": [
+   0.3,
+   0.3,
+   0.32
+  ],
+  "engine.1": [
+   0.25,
+   0.25,
+   0.27
+  ],
+  "engine.4": [
+   0.2,
+   0.2,
+   0.2
+  ],
+  "engine_a.0": [
+   0.35,
+   0.35,
+   0.37
+  ],
+  "engine_a.1": [
+   0.35,
+   0.35,
+   0.37
+  ],
+  "engine_a.2": [
+   0.6,
+   0.1,
+   0.1
+  ],
+  "engine_a.3": [
+   0.35,
+   0.35,
+   0.37
+  ],
+  "v8_a.1": [
+   0.3,
+   0.3,
+   0.32
+  ],
+  "fanar.0": [
+   0.35,
+   0.35,
+   0.36
+  ],
+  "log.0": [
+   0.7,
+   0.7,
+   0.72
+  ],
+  "tahook.0": [
+   0.2,
+   0.2,
+   0.2
+  ],
+  "0.0": [
+   0.1,
+   0.1,
+   0.1
+  ],
+  "door_lf_ok.1": [
+   0.04,
+   0.04,
+   0.04
+  ],
+  "Material.005": [
+   0.1,
+   0.1,
+   0.1
+  ],
+  "wheel.0": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "wheel.1": [
+   0.55,
+   0.56,
+   0.58
+  ],
+  "wheel.002": [
+   0.4,
+   0.4,
+   0.42
+  ],
+  "wheel.003": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "window.001": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "window": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "glass": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "Material.003": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "Material.004": [
+   0.6,
+   0.05,
+   0.05
+  ],
+  "glass.002": [
+   0.7,
+   0.05,
+   0.05
+  ],
+  "breaklight l": [
+   0.7,
+   0.05,
+   0.05
+  ],
+  "indicator lr": [
+   0.9,
+   0.4,
+   0.0
+  ],
+  "indicator rr": [
+   0.9,
+   0.4,
+   0.0
+  ],
+  "foglight l": [
+   0.9,
+   0.9,
+   0.85
+  ],
+  "right front light": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "revlight r": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "left rear light": [
+   0.7,
+   0.05,
+   0.05
+  ],
+  "light night": [
+   0.8,
+   0.85,
+   0.95
+  ]
+ },
+ "hPoint": [
+  -0.3,
+  0.52,
+  -0.37
+ ],
+ "expectGlass": 6
+}
