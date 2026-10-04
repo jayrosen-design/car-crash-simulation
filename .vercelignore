@@ -1,0 +1,4 @@
+# Not part of the website: dotfiles and folders, documents, developer tools
+/.*
+/*.md
+/tools
