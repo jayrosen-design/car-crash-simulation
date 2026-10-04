@@ -2,3 +2,5 @@
 /.*
 /*.md
 /tools
+# the developer page: a real file at / would be served ahead of the rewrite to home.html
+/index.html
