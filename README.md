@@ -33,13 +33,14 @@ There are eight simulations: the two **barrier tests** (a free simulator with fu
 5. [How the physics works](#how-the-physics-works)
 6. [Occupant and injury models](#occupant-and-injury-models)
 7. [How each crash lab works](#how-each-crash-lab-works)
-8. [Rendering the damage](#rendering-the-damage)
-9. [Verification](#verification)
-10. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
-11. [Design decisions](#design-decisions)
-12. [Limitations](#limitations)
-13. [Project structure](#project-structure)
-14. [Credits](#credits)
+8. [Simulation diagrams](#simulation-diagrams): [rigid barrier](#rigid-barrier), [brick wall](#brick-wall), [frontal overlap](#frontal-overlap-lab), [two vehicles](#two-vehicle-collision-lab), [side impact](#side-impact-lab), [whiplash](#whiplash-sled-lab), [restraints](#occupant-restraint-lab), [pedestrian](#pedestrian-and-emergency-braking-lab)
+9. [Rendering the damage](#rendering-the-damage)
+10. [Verification](#verification)
+11. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
+12. [Design decisions](#design-decisions)
+13. [Limitations](#limitations)
+14. [Project structure](#project-structure)
+15. [Credits](#credits)
 
 ---
 
@@ -438,6 +439,934 @@ The brain and the heart are masses on springs inside the head (50 Hz) and the ch
 | Whiplash sled | No vehicle physics: the sled pulse drives the seat and spine model directly. |
 | Occupant restraints | A 35 mph (56 km/h) full-width rigid-barrier crash of the Lexus. The same crash pulse drives three dummy runs (unbelted, plain belt, full system), and the organ model splits the crash into its three collisions. |
 | Pedestrian & braking | The car's motion is planned first: constant speed, sensor detection and braking. The impact is then computed with the pedestrian chain; the pedestrian is too light to change the car's motion. The other bumper is run too, for comparison. |
+
+---
+
+## Simulation diagrams
+
+Each simulation as a pipeline from its settings to what you see, followed by the timing or state logic that drives it. The numbers are the model's actual thresholds and settings.
+
+Colour key for the pipeline charts:
+- **blue:** settings;
+- **amber:** the model that is built;
+- **purple:** computation;
+- **red:** decisions;
+- **green:** results on screen.
+
+### Rigid barrier
+
+`Simulator.html?preset=rigid`: the free simulator's full-frontal test (preset 56 km/h, Realistic damage).
+
+```mermaid
+flowchart TB
+  classDef input fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef model fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef calc fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef decide fill:#fee2e2,stroke:#dc2626,color:#0f172a
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#0f172a
+
+  subgraph SET["1 · Setup"]
+    direction TB
+    S1["Vehicle<br/>Lexus RX 350 · Mustang GT500 · Lab sedan"]
+    S2["Speed 10–150 km/h<br/>approach angle −45° to +45°"]
+    S3["Mass Light / Standard / Heavy<br/>0.73× · 1× · 1.47× curb mass"]
+    S4["Front stiffness<br/>Soft 0.6× · Standard · Stiff 1.7×"]
+    S5["Damage<br/>Realistic, or Dramatic: break limits × 0.3"]
+    S6["Seatbelt on/off · airbag on/off"]
+  end
+
+  subgraph APP["2 · Approach"]
+    direction TB
+    A1["Start 30–130 m back (3 s at speed)<br/>0.6 m off the line, 4° heading error"]
+    A2["PID speed control → drive or brake force"]
+    A3["Pure-pursuit steering on a kinematic bicycle model"]
+    A4{"Gap ≤ 1 cm + 4 ms of travel?"}
+    A1 --> A2 --> A3 --> A4
+    A4 -- "no: 1 ms steps" --> A2
+  end
+
+  subgraph BUILD["3 · Model"]
+    direction TB
+    B1["Lattice fitted to the body<br/>Lexus: 999 nodes · 9,913 springs<br/>13 neighbours per node"]
+    B2["Zones: crumple zone 1× · engine block 2.5×<br/>safety cell 2.5× k, 2.4× yield · rear 1.5×"]
+    B3["Mass: 12% on the engine · 20 kg per wheel corner<br/>ghost nodes 0.25 kg carry the render mesh"]
+    B4["Rigid barrier: concrete block, face at x = 0<br/>18 m wide · 3 m tall · friction 0.3"]
+    B5["Parts on the lattice: bumpers, hood, fenders,<br/>doors, trunk, mirrors, panes, lamps, wheels"]
+  end
+
+  subgraph RUN["4 · One substep, repeated"]
+    direction TB
+    R1["Predict: gravity, x ← x + v·Δt"]
+    R2["XPBD springs with compliance 1/k<br/>and 8% critical damping"]
+    R3["Plastic yield: strain beyond yield<br/>moves the rest length (0.25–1.8× L₀)"]
+    R4["Contacts: ground, tyres, barrier face<br/>(forces summed like a load-cell wall)"]
+    R5["Coulomb friction → friction heat"]
+    R6["Velocities v = (x − x*) / Δt"]
+    R7["Every 5th substep: damage checks<br/>part off at mean plastic strain of its mounts<br/>wheel off at 30% or 45 cm back · tyre burst at the rim"]
+    R1 --> R2 --> R3 --> R4 --> R5 --> R6 --> R7
+    R7 -- "Δt = 0.1 ms to T0 + 0.3 s, then 0.5 ms" --> R1
+  end
+
+  REC["Record: every node, its plastic strain, cabin frame,<br/>energy · every 1 ms to +0.3 s, 4 ms to +1 s, then 10 ms"]
+  STOP{"T0 + 2.0 s<br/>(1.2 s Lab sedan)?"}
+
+  subgraph FIN["5 · finalize()"]
+    direction TB
+    F1["Crash pulse: cabin velocity on a 0.1 ms grid<br/>CFC 60 filter → deceleration"]
+    F2["Metrics: impact speed · Δv · rebound · peak g<br/>time to stop · max and permanent crush · intrusion"]
+    F3["Glass and lamps from the recorded strain<br/>tempered 6% · roof 12% · lamps 10% · windshield cracks 2.5%"]
+  end
+
+  subgraph DUMMY["6 · Occupant"]
+    direction TB
+    D1["7-particle side-view dummy<br/>driven by the crash pulse"]
+    D2["Belt: pretensioner up to 8 cm · 4.5 kN load limiter<br/>Airbag: fires at Δv 2 m/s within 45 ms"]
+    D3["Contacts: wheel and column · windshield · roof<br/>knee bolster · chin to chest"]
+    D4["SAE J211 filters → HIC15 · chest 3 ms<br/>deflection · Nij · neck tension and compression"]
+    D1 --> D2 --> D3 --> D4
+  end
+
+  subgraph HAZ["7 · After the crash"]
+    direction TB
+    H1{"Front crushed back<br/>to the radiator?"}
+    H2{"Engine driven back<br/>≥ 30 cm?"}
+    H3["Steam vents"]
+    H4["Engine-bay fire<br/>smoke 0.3 s · flames 1.2 s · well alight 9 s"]
+    H1 -- yes --> H3
+    H2 -- yes --> H4
+  end
+
+  subgraph OUT["8 · Playback and results"]
+    direction TB
+    O1["Slow-motion replay 1/40× to 1×<br/>free camera follows the car"]
+    O2["Injury criteria vs FMVSS 208 limits<br/>HIC15 700 · chest 60 g, 63 mm · Nij 1.0"]
+    O3["Charts: occupant · vehicle (pulse, force vs crush)<br/>energy: where ½mv² went"]
+    O4["Damage list: parts off · panes · tyres"]
+    O5["Re-run the dummy with other restraints<br/>on the same crash"]
+  end
+
+  SET --> APP --> BUILD --> RUN
+  RUN --> REC --> STOP
+  STOP -- no --> RUN
+  STOP -- yes --> FIN
+  FIN --> DUMMY --> OUT
+  FIN --> HAZ --> OUT
+  D3 -. "head strike cracks the windshield" .-> O1
+
+  S1 ~~~ S4
+  S2 ~~~ S5
+  S3 ~~~ S6
+  B1 ~~~ B4
+  B2 ~~~ B5
+  O1 ~~~ O4
+  O2 ~~~ O5
+
+  class S1,S2,S3,S4,S5,S6 input
+  class B1,B2,B3,B4,B5 model
+  class A1,A2,A3,R1,R2,R3,R4,R5,R6,R7,REC,F1,F2,F3,D1,D2,D3,D4 calc
+  class A4,STOP,H1,H2 decide
+  class H3,H4,O1,O2,O3,O4,O5 out
+```
+
+The first 150 ms, as the restraints see it (times are relative to the airbag's firing time, *t_fire*):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Car as Car structure (lattice)
+  participant Pulse as Cabin pulse
+  participant Ctl as Restraint controller
+  participant Belt as Seatbelt
+  participant Bag as Airbag
+  participant Dum as Dummy
+  Car->>Car: First node reaches the barrier face (T0)
+  Car->>Car: Crumple zone yields, rest lengths shorten
+  Car->>Pulse: Cabin decelerates (CFC 60)
+  Pulse->>Ctl: Speed change reaches 2 m/s within 45 ms of T0 (t_fire)
+  Ctl->>Belt: Pretensioner pulls from t_fire + 1 ms to + 9 ms, up to 8 cm, while belt force is below 1.5 kN
+  Ctl->>Bag: Starts inflating at t_fire + 4 ms, full 26 ms later
+  Dum->>Belt: Torso loads the shoulder and lap belts
+  Belt-->>Dum: Load limiter pays out webbing at 4.5 kN
+  Dum->>Bag: Head and chest ride down on the bag
+  Note over Bag,Dum: From t_fire + 110 ms the bag vents, its stiffness falling to 25% over 120 ms
+  Car->>Car: Maximum crush, then elastic rebound
+  Dum->>Dum: Rebounds into the seat
+  Note over Dum: Scored over T0 − 5 ms to T0 + 300 ms
+```
+
+### Brick wall
+
+`Simulator.html?preset=brick`: the same free simulator into a breakable wall (preset 64 km/h, Dramatic damage).
+
+```mermaid
+flowchart TB
+  classDef input fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef model fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef calc fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef decide fill:#fee2e2,stroke:#dc2626,color:#0f172a
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#0f172a
+
+  subgraph SET["1 · Setup"]
+    direction TB
+    S1["Vehicle · speed · angle · mass · stiffness<br/>damage · restraints (as for the rigid barrier)"]
+    S2["Mortar strength per joint<br/>weak 8 kN · standard 30 kN · strong 120 kN"]
+  end
+
+  subgraph WALL["2 · The wall"]
+    direction TB
+    W1["366 bricks, 40 × 20 × 25 cm, 2,000 kg/m³<br/>12 courses in running bond, 12 m wide"]
+    W2["Each brick a rigid body:<br/>position · quaternion · velocity · spin"]
+    W3["Mortar joints: two bond points each,<br/>front and back, so joints carry bending"]
+    W4["Anchors: footing under the bottom course<br/>and a pillar at each end, 1.5× strength"]
+    W1 --> W2
+    W1 --> W3 --> W4
+  end
+
+  subgraph CAR["2 · The car"]
+    direction TB
+    C1["Lattice, zones and parts<br/>as for the rigid barrier"]
+  end
+
+  subgraph RUN["3 · One substep, repeated"]
+    direction TB
+    R1["Predict nodes and awake bricks<br/>(gyroscopic term for free spin)"]
+    R2["Car springs: XPBD with plastic yield"]
+    R3["Mortar bonds touching an awake brick:<br/>stiff point constraints, compliance 2×10⁻⁸ m/N"]
+    R4{"Tension or shear<br/>above the bond's strength?"}
+    R5["Bond breaks: stored energy → fracture<br/>break event: sound, dust, chips"]
+    R6["Support search from the anchors<br/>through intact bonds: cut-off bricks wake and fall"]
+    R7["Node–brick contacts through a spatial hash<br/>brick–brick and brick–ground contacts"]
+    R8["Friction · velocities · contact velocity pass<br/>still bricks go to sleep"]
+    R1 --> R2 --> R3 --> R4
+    R4 -- yes --> R5 --> R6 --> R7
+    R4 -- no --> R7
+    R7 --> R8
+    R8 -- "next substep" --> R1
+  end
+
+  subgraph FIN["4 · After the run"]
+    direction TB
+    F1["Brick poses recorded every frame<br/>(position + quaternion)"]
+    F2["Crash pulse, metrics, glass,<br/>dummy and injury criteria as for the rigid barrier"]
+    F3["Steam / fire rule"]
+  end
+
+  subgraph OUT["5 · Playback and results"]
+    direction TB
+    O1["Bricks fly, tumble and settle in slow motion"]
+    O2["Energy chart includes mortar fracture and<br/>the bricks' gravitational energy"]
+    O3["Note: a breaking wall absorbs energy and lengthens<br/>the crash, so injury numbers aren't comparable<br/>with rigid-barrier tests"]
+  end
+
+  SET --> WALL & CAR
+  WALL --> RUN
+  CAR --> RUN
+  RUN -- "2.2 s (Lab sedan) or 2.4 s after T0" --> FIN --> OUT
+
+  class S1,S2 input
+  class W1,W2,W3,W4,C1 model
+  class R1,R2,R3,R5,R6,R7,R8,F1,F2,F3 calc
+  class R4 decide
+  class O1,O2,O3 out
+```
+
+A brick's life, and a mortar bond's:
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  state "Dormant (held by its bonds)" as Dormant
+  state "Awake (simulated)" as Awake
+  state "Sleeping (loose, at rest)" as Sleeping
+  [*] --> Dormant
+  Dormant --> Awake: a car node touches it
+  Dormant --> Awake: a bond to it reaches 40% of its strength
+  Dormant --> Awake: its path to the footing or pillars is cut
+  Awake --> Dormant: still for 0.15 s, supported and bonded
+  Awake --> Sleeping: still for 0.15 s, loose or unsupported
+  Sleeping --> Awake: pushed hard by the car
+  note right of Awake
+    still means below 0.08 m/s
+    and 0.5 rad/s
+  end note
+```
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  state "Intact" as Intact
+  state "Broken" as Broken
+  [*] --> Intact
+  Intact --> Broken: tension, combined force above its strength
+  Intact --> Broken: compression, shear above strength + 0.6 × compression
+  Broken --> [*]: stored energy booked as fracture
+  note right of Intact
+    each joint is two bond points
+    sharing the joint's strength
+  end note
+```
+
+### Frontal overlap lab
+
+`Simulator.html?lab=overlap`: part of the front hits a barrier.
+
+```mermaid
+flowchart TB
+  classDef input fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef model fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef calc fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef decide fill:#fee2e2,stroke:#dc2626,color:#0f172a
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#0f172a
+
+  subgraph SET["1 · Settings"]
+    direction TB
+    S1["Speed 10–50 mph (mph)<br/>default 40 mph = 64 km/h"]
+    S2["Overlap (overlap)<br/>40% moderate · 25% small"]
+    S3["Barrier face (barrier)<br/>aluminium honeycomb · rigid"]
+  end
+
+  subgraph BAR["2 · Offset barrier"]
+    direction TB
+    B1["Rigid block 1 m wide, 1.5 m tall<br/>inner edge at −W/2 + overlap × W"]
+    B2{"Honeycomb?"}
+    B3["5 cm cell grid: main block 0.20–0.85 m high,<br/>0.45 m deep, crushes at 0.342 MPa"]
+    B4["Front strip 0.28–0.61 m high, 0.09 m deep,<br/>1.711 MPa: 0.54 m in front of the block"]
+    B5["No honeycomb: block edge rounded<br/>to 150 mm"]
+    B1 --> B2
+    B2 -- yes --> B3 --> B4
+    B2 -- no --> B5
+  end
+
+  subgraph CAR["2 · Lexus RX 350"]
+    direction TB
+    C1["Standard lattice and zones"]
+    C2["Footwell option: cabin's outer three node layers,<br/>last 0.55 m before the firewall:<br/>sheet-metal strength 1.1× k, 1× yield"]
+    C3["Measurement points: steering column · brake pedal<br/>toe pan · hinge pillar · dash"]
+    C1 --> C2
+    C1 --> C3
+  end
+
+  subgraph APP["3 · Guided approach"]
+    direction TB
+    A1["Same controllers as the barrier tests<br/>stops 0.54 m earlier with honeycomb"]
+  end
+
+  subgraph RUN["4 · Impact substeps"]
+    direction TB
+    R1["XPBD springs and plastic yield"]
+    R2["Node vs barrier: signed-distance contact<br/>(block with rounded edge)"]
+    R3["Node vs honeycomb: claims the cells under<br/>its share of the face"]
+    R4{"Pressure above<br/>the cell's crush stress?"}
+    R5["Cell holds: node stopped"]
+    R6["Cell crushes at constant force,<br/>at most the node's forward advance per step<br/>crush work booked separately"]
+    R7["Cell bottoms out with 6 cm left"]
+    R1 --> R2 --> R3 --> R4
+    R4 -- no --> R5
+    R4 -- yes --> R6 --> R7
+  end
+
+  subgraph ANA["5 · Analysis"]
+    direction TB
+    N1["Intrusion of each point in a frame fitted<br/>to the undamaged rear cabin (polar decomposition)"]
+    N2{"Over the limit?<br/>column 10 cm · pedal, toe pan, hinge 15 cm"}
+    N3["Dummy: belt and airbag, scored as<br/>for the barrier tests"]
+    N4["Yaw: how far the car turned"]
+    N5["Steam / fire rule"]
+    N1 --> N2
+  end
+
+  subgraph OUT["6 · Results"]
+    direction TB
+    O1["Live: time · pulse · column vertical and lateral<br/>pedal · toe pan"]
+    O2["Intrusion, largest and permanent, flagged"]
+    O3["Charts: crash pulse (longitudinal, lateral) · cabin speed<br/>barrier force · column · lower intrusion<br/>head acceleration · chest deflection · energy"]
+    O4["Honeycomb crushed (cm), cells drawn crushed"]
+  end
+
+  SET --> BAR & CAR
+  BAR --> APP
+  CAR --> APP
+  APP --> RUN --> ANA --> OUT
+
+  O1 ~~~ O3
+  O2 ~~~ O4
+
+  class S1,S2,S3 input
+  class B1,B3,B4,B5,C1,C2,C3 model
+  class A1,R1,R2,R3,R5,R6,R7,N1,N3,N4,N5 calc
+  class B2,R4,N2 decide
+  class O1,O2,O3,O4 out
+```
+
+Why the two overlaps differ (the claim the physics check holds it to):
+
+```mermaid
+flowchart LR
+  classDef good fill:#dcfce7,stroke:#16a34a,color:#0f172a
+  classDef bad fill:#fee2e2,stroke:#dc2626,color:#0f172a
+  subgraph M40["40% moderate overlap"]
+    direction TB
+    a1["Barrier covers 77 cm<br/>of the 192 cm front"]
+    a2["Engine block and crumple zone<br/>in the load path"]
+    a3["Front crushes progressively<br/>(honeycomb crushes like another car)"]
+    a4["Cabin holds: check at 40 mph,<br/>hinge pillar 6.8 cm"]
+    a1 --> a2 --> a3 --> a4
+  end
+  subgraph M25["25% small overlap"]
+    direction TB
+    b1["Barrier covers 48 cm,<br/>mostly outside the engine block"]
+    b2["Wheel and suspension<br/>driven back"]
+    b3["Wheel pushes into the hinge pillar<br/>and toe pan (sheet-metal strength)"]
+    b4["Footwell and pillar intrude, car yaws:<br/>check at 40 mph rigid, hinge pillar 15.8 cm"]
+    b1 --> b2 --> b3 --> b4
+  end
+  class a4 good
+  class b4 bad
+```
+
+### Two-vehicle collision lab
+
+`Simulator.html?lab=multi`: two cars crash into each other in one solver.
+
+```mermaid
+flowchart TB
+  classDef input fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef model fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef calc fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#0f172a
+
+  subgraph SET["1 · Settings"]
+    direction TB
+    SA["Car A: class (aCls), mass 800–3,000 kg (aMass),<br/>speed 0–60 mph (aMph)<br/>default: Mustang 1,890 kg at 40 mph"]
+    SB["Car B: class (bCls), mass (bMass), speed (bMph)<br/>default: Lexus, heavy, 2,400 kg at 40 mph"]
+    SG["Approach angle 0–45° (angle)"]
+    SC["Classes: coupe = Mustang · suv / heavy = Lexus<br/>compact = Lab sedan (simple model)"]
+  end
+
+  subgraph GEO["2 · Placement"]
+    direction TB
+    G1["Car A at x below 0, heading 0<br/>Car B nose to nose, heading 180° − angle"]
+    G2["Gap 2 cm + (vA + vB) × 4 ms"]
+    G3["Approach: both drive at constant speed<br/>for 2.4 s into position"]
+  end
+
+  subgraph BUILD["3 · One solver, two units"]
+    direction TB
+    U1["Both lattices concatenated into one node<br/>and constraint array, each with its own zones"]
+    U2["Car-to-car contacts: nodes as 12 cm spheres,<br/>spatial hash over the bounding-box overlap"]
+    U3["Approach-only: a contact never separates<br/>faster than 2 cm/s (crushed fronts interlock)"]
+    U4["Sheet metal on sheet metal: friction 0.4"]
+    U1 --> U2 --> U3 --> U4
+  end
+
+  subgraph RUN["4 · Impact, 1.4 s"]
+    direction TB
+    R1["Same substep: XPBD, plastic yield,<br/>ground and car-to-car contacts, friction"]
+    R2["Per car: cabin frame, crush, contact force,<br/>plastic work, momentum and kinetic energy"]
+    R3["Per car: crash pulse and metrics"]
+    R1 --> R2 --> R3
+  end
+
+  subgraph ANA["5 · Analysis"]
+    direction TB
+    N1["A dummy in each car: belt and airbag"]
+    N2["Δv of each driver (vector)"]
+    N3["Momentum: before, and 150 ms after<br/>(tyres and road take a little)"]
+    N4["Energy: motion of each car · bent metal of each<br/>springback and parts · heat"]
+    N5["Steam / fire rule for each car"]
+  end
+
+  subgraph OUT["6 · Results"]
+    direction TB
+    O1["Δv bars: each driver's speed change,<br/>peak g, crush, HIC, chest"]
+    O2["Momentum arrows in the scene:<br/>car A, car B, and the total"]
+    O3["Charts: Δv of each car · cabin deceleration<br/>force between the cars · energy · drivers"]
+    O4["Free camera follows the pair's centre of mass"]
+  end
+
+  SET --> GEO --> BUILD --> RUN --> ANA --> OUT
+
+  SA ~~~ SG
+  SB ~~~ SC
+  N1 ~~~ N4
+  N2 ~~~ N5
+  O1 ~~~ O3
+  O2 ~~~ O4
+
+  class SA,SB,SG,SC input
+  class G1,G2,U1,U2,U3,U4 model
+  class G3,R1,R2,R3,N1,N2,N3,N4,N5 calc
+  class O1,O2,O3,O4 out
+```
+
+What the lab teaches, step by step:
+
+```mermaid
+sequenceDiagram
+  participant A as Car A (mass mA)
+  participant I as Contact between the fronts
+  participant B as Car B (mass mB)
+  A->>I: Fronts meet, both crumple zones crush
+  I->>A: Force F pushes A back
+  I->>B: Force F pushes B back (Newton's third law)
+  Note over A,B: The same force for the same time gives each car the same impulse J
+  A->>A: Speed change ΔvA = J / mA
+  B->>B: Speed change ΔvB = J / mB
+  Note over A,B: The lighter car's speed changes more, so its driver's crash is harder
+  Note over A,B: Total momentum is kept, while the kinetic energy becomes bent metal and heat
+```
+
+### Side impact lab
+
+`Simulator.html?lab=side`: a barrier trolley or a pole hits the driver's door.
+
+```mermaid
+flowchart TB
+  classDef input fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef model fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef calc fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef decide fill:#fee2e2,stroke:#dc2626,color:#0f172a
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#0f172a
+
+  subgraph SET["1 · Settings"]
+    direction TB
+    S1["Striking object (impactor)<br/>barrier trolley at 37 mph · pole at 20 mph"]
+    S2["B-pillar and door ring steel (steel)<br/>mild · hot-stamped"]
+    S3["Curtain airbag (curtain)"]
+  end
+
+  S1 --> K{"Impactor?"}
+
+  subgraph MDB["2a · Barrier trolley"]
+    direction TB
+    M1["1,900 kg lattice, 480 nodes, 3.6 m long"]
+    M2["Crushable face: 0.38–1.14 m high (SUV height),<br/>0.45 m deep, 1.68 m wide · 0.8× k, 0.9× yield"]
+    M3["Rigid trolley behind it: 6× k, 30× yield"]
+    M4["Heads across the car at 37 mph,<br/>aimed just behind the driver's H-point"]
+  end
+
+  subgraph POLE["2b · Pole"]
+    direction TB
+    P1["Fixed 254 mm cylinder<br/>in line with the driver"]
+    P2["The car slides sideways into it at 20 mph<br/>on a low-friction carrier (friction 0.03)"]
+  end
+
+  subgraph CAR["2 · Struck Lexus"]
+    direction TB
+    C1["Door ring (doors, B-pillar, sill, roof rail),<br/>outer two node layers along the cabin:<br/>mild 0.6× k, 0.6× yield · hot-stamped 1.4× k, 1.8× yield"]
+    C2["Cabin between floor and roof hollow<br/>(cross springs 0.12×), so the door can come in"]
+    C3["Measurement points: B-pillar at three heights<br/>door at pelvis, chest and window height"]
+  end
+
+  subgraph RUN["3 · Impact, 0.5 s"]
+    direction TB
+    R1["Trolley: car-to-car contacts in one solver<br/>Pole: signed-distance contact"]
+    R2["Telemetry: velocity of the car's far half<br/>(where the seats are mounted)"]
+    R3["Intrusion in a frame fitted to the far side"]
+    R1 --> R2 --> R3
+  end
+
+  subgraph INPUT["4 · Dummy input"]
+    direction TB
+    I1["Lateral acceleration of the far half"]
+    I2["Door's inner surface: pelvis and chest<br/>(trim 20 cm in) · window (16 cm in)"]
+    I3["Striker surface: the trolley face's top edge<br/>or the pole, in the car's frame"]
+  end
+
+  subgraph DUM["5 · Side dummy"]
+    direction TB
+    D1["Pelvis 14 kg · thorax 20 kg · T1 8 kg<br/>neck 1.2 kg · head 4.6 kg · struck-side ribs"]
+    D2["Padding: elastic, then a plateau force,<br/>then bottoming out"]
+    D3["Window glass breaks at 4 kN<br/>or when the striker reaches it"]
+    D4["Curtain: fires at a 1 m/s lateral speed change<br/>within 30 ms · vented, up to 1.2 kN"]
+    D5["Scores: HIC36 · rib deflection · pelvis force"]
+    D1 --> D2 --> D3 --> D4 --> D5
+  end
+
+  subgraph OUT["6 · Results"]
+    direction TB
+    O1{"B-pillar intrusion over 15 cm?"}
+    O2["Dummy vs limits: HIC36 1,000<br/>rib deflection 44 mm · pelvis 6 kN"]
+    O3["Charts: intrusion with the curtain's inflation window<br/>rib deflection · pelvis force · head · car lateral g"]
+    O4["Re-run the dummy with or without<br/>the curtain on the same crash"]
+    O5["3D: crushed door, curtain unrolling inside<br/>the window, honeycomb face crushing"]
+  end
+
+  K -- trolley --> MDB
+  K -- pole --> POLE
+  S2 --> CAR
+  MDB --> RUN
+  POLE --> RUN
+  CAR --> RUN
+  RUN --> INPUT --> DUM --> OUT
+  S3 --> DUM
+
+  M1 ~~~ M3
+  M2 ~~~ M4
+  O1 ~~~ O4
+  O2 ~~~ O5
+
+  class S1,S2,S3 input
+  class M1,M2,M3,M4,P1,P2,C1,C2,C3 model
+  class R1,R2,R3,I1,I2,I3,D1,D2,D3,D4,D5 calc
+  class K,O1 decide
+  class O2,O3,O4,O5 out
+```
+
+The race between the door and the curtain airbag:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Str as Trolley or pole
+  participant Door as Door ring (lattice)
+  participant Car as Struck car (far half)
+  participant Ctl as Curtain controller
+  participant Cur as Curtain airbag
+  participant Glass as Window glass
+  participant Dum as Side dummy
+  Str->>Door: Contact: face crushes, door ring yields
+  Door->>Dum: Door trim reaches the pelvis, ribs and shoulder
+  Door->>Car: Load passes through the floor to the far side
+  Car->>Ctl: Lateral speed change reaches 1 m/s within 30 ms (t_fire)
+  Ctl->>Cur: Inflates from t_fire + 6 ms, full 18 ms later, 12 cm thick
+  Dum->>Glass: Head swings toward the window
+  alt Glass load above 4 kN, or the striker reaches the window
+    Glass-->>Dum: Glass breaks, the striker becomes the hard surface
+  end
+  Cur-->>Dum: Cushions the head, force levelling off at 1.2 kN as it vents
+  Note over Door,Dum: Scored: B-pillar intrusion, HIC36, rib deflection, pelvis force
+```
+
+### Whiplash sled lab
+
+`Simulator.html?lab=whiplash`: a seat on a sled is shoved forward, as when a stopped car is hit from behind.
+
+```mermaid
+flowchart TB
+  classDef input fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef model fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef calc fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef decide fill:#fee2e2,stroke:#dc2626,color:#0f172a
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#0f172a
+
+  subgraph SET["1 · Settings"]
+    direction TB
+    S1["Striking-car speed 20–30 mph (mph)"]
+    S2["Head-restraint backset 0–12 cm (backset)"]
+    S3["Head-restraint height −12 to +4 cm<br/>vs the top of the head (height)"]
+  end
+
+  subgraph PULSE["2 · Sled pulse"]
+    direction TB
+    P1["Speed change = half the striking speed<br/>(a stationary car struck from behind)"]
+    P2["Triangular, 91 ms long, starting at 10 ms<br/>peak = 2 × Δv / 91 ms (20 mph: about 10 g)"]
+    P1 --> P2
+  end
+
+  subgraph SEAT["3 · Seat"]
+    direction TB
+    T1["Seatback 25° from vertical,<br/>surface 13.5 cm behind the H-point"]
+    T2["Foam 2,100 N/m per contact point, 12 cm deep"]
+    T3["Recliner 12,000 N·m/rad, yields above 2.2 kN·m"]
+    T4["Head restraint 24 cm tall,<br/>placed by the backset and height settings"]
+  end
+
+  subgraph DUM["4 · Dummy, 26 bodies"]
+    direction TB
+    D1["Pelvis 15 kg"]
+    D2["Lumbar L5–L1: 5 × 1.6 kg<br/>350 N·m/rad per joint"]
+    D3["Thoracic T12–T1: 12 × 2.6 kg<br/>600 N·m/rad per joint"]
+    D4["Cervical C7–C1: 7 × 0.3 kg<br/>11 N·m/rad, stops at ±0.25 rad"]
+    D5["Head 4.5 kg, radius 9.5 cm"]
+    D1 --> D2 --> D3 --> D4 --> D5
+  end
+
+  subgraph RUN["5 · 0.1 ms steps, 0.3 s"]
+    direction TB
+    R1["Sled acceleration applied to the seat frame"]
+    R2["Joint springs; damping integrated exactly<br/>per joint (stable on 2 cm vertebrae)"]
+    R3["Seatback foam and recliner moment"]
+    R4{"Head touching the restraint?"}
+    R5["Restraint force on the head<br/>contact time recorded"]
+    R1 --> R2 --> R3 --> R4
+    R4 -- yes --> R5
+  end
+
+  subgraph SCORE["6 · Scores"]
+    direction TB
+    C1{"Contact time ≤ 70 ms?"}
+    C2{"T1 peak ≤ 9.5 g?"}
+    C3["NIC = 0.2 × a_rel + v_rel², until contact<br/>or 150 ms (limit 15 m²/s²)"]
+    C4["Neck extension · restraint force"]
+  end
+
+  subgraph OUT["7 · Results"]
+    direction TB
+    O1["Both seat-design criteria met, or which failed"]
+    O2["Charts: sled, T1 and head acceleration<br/>restraint force · neck extension · NIC"]
+    O3["3D: spine bends vertebra by vertebra,<br/>restraint turns orange on contact"]
+  end
+
+  SET --> PULSE --> RUN
+  SET --> SEAT
+  SEAT --> RUN
+  DUM --> RUN
+  RUN --> SCORE --> OUT
+
+  T1 ~~~ T3
+  T2 ~~~ T4
+  C1 ~~~ C3
+  C2 ~~~ C4
+
+  class S1,S2,S3 input
+  class P1,P2,T1,T2,T3,T4,D1,D2,D3,D4,D5 model
+  class R1,R2,R3,R5,C3,C4 calc
+  class R4,C1,C2 decide
+  class O1,O2,O3 out
+```
+
+The rear-impact sequence:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Sled
+  participant Seat as Seat and seatback
+  participant Torso as Pelvis, lumbar and thoracic spine
+  participant Neck as Cervical spine
+  participant Head
+  participant HR as Head restraint
+  Sled->>Seat: Pulse starts at 10 ms and lasts 91 ms
+  Seat->>Torso: Foam pushes the torso forward
+  Torso->>Torso: T1 accelerates (scored, 9.5 g or less passes)
+  Torso->>Neck: The neck is dragged forward under the head
+  Neck->>Head: The head lags and tips back (extension)
+  Note over Neck,Head: NIC builds from the motion of T1 relative to the head
+  Head->>HR: Head reaches the restraint (70 ms or less passes)
+  HR-->>Head: The restraint stops the backward swing
+  Seat->>Seat: Recliner yields if the moment passes 2.2 kN·m
+  Head->>Torso: Rebound forward
+```
+
+### Occupant restraint lab
+
+`Simulator.html?lab=restraint`: one crash, three restraint systems, three collisions.
+
+```mermaid
+flowchart TB
+  classDef input fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef model fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef calc fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#0f172a
+
+  subgraph SET["1 · Setting"]
+    direction TB
+    S1["Restraint system (restraint)<br/>unbelted · plain 3-point belt · belt + limiter + airbags"]
+  end
+
+  subgraph CRASH["2 · One crash"]
+    direction TB
+    C1["Lexus RX 350, 35 mph (56 km/h)<br/>full-width rigid barrier, guided approach"]
+    C2["Vehicle physics run once → crash pulse"]
+    C1 --> C2
+  end
+
+  subgraph RUNS["3 · Three dummy runs"]
+    direction TB
+    D1["Unbelted<br/>no belt, no airbag"]
+    D2["Plain belt<br/>no pretensioner, no load limiter, no airbag"]
+    D3["Full system<br/>pretensioner, 4.5 kN limiter, airbag"]
+  end
+
+  subgraph ORG["4 · Organs"]
+    direction TB
+    G1["Brain: mass on a spring in the skull<br/>50 Hz, 30% damping, driven by head acceleration"]
+    G2["Heart: mass on a spring in the chest<br/>25 Hz, 25% damping, driven by chest acceleration"]
+  end
+
+  subgraph PH["5 · Three collisions"]
+    direction TB
+    P1["1 · Vehicle: first contact until the cabin stops"]
+    P2["2 · Occupant: belt, airbag and interior force<br/>above max(1 kN, 20% of its peak)"]
+    P3["3 · Organs: from the peak restraint load until<br/>the organs settle below 20% of their peak movement"]
+    P1 --> P2 --> P3
+  end
+
+  subgraph OUT["6 · Results"]
+    direction TB
+    O1["The three collisions as bars, 0–200 ms"]
+    O2["Selected system: HIC15 · chest compression<br/>(target under 50 mm) · chest 3 ms"]
+    O3["All three compared: HIC15 · chest · peak load<br/>head forward movement"]
+    O4["Charts: head path from the side · head acceleration<br/>chest compression · belt and airbag forces<br/>brain and heart movement"]
+    O5["3D: head-path trail · onboard inset<br/>switch systems on the same crash"]
+  end
+
+  S1 --> CRASH --> RUNS
+  RUNS --> ORG --> PH --> OUT
+  RUNS --> OUT
+
+  O1 ~~~ O4
+  O2 ~~~ O5
+
+  class S1 input
+  class C1,G1,G2 model
+  class C2,D1,D2,D3,P1,P2,P3 calc
+  class O1,O2,O3,O4,O5 out
+```
+
+What each system does with the same crash (the physics check's numbers at 56 km/h):
+
+```mermaid
+flowchart LR
+  classDef bad fill:#fee2e2,stroke:#dc2626,color:#0f172a
+  classDef mid fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef good fill:#dcfce7,stroke:#16a34a,color:#0f172a
+  P["Crash pulse:<br/>the cabin stops in about 63 ms"]
+  P --> U["Unbelted: the body keeps going at 35 mph<br/>until the wheel, windshield and dash stop it<br/>HIC15 about 2,184"]
+  P --> B["Plain belt: stops the torso, but with slack<br/>and no force limit, loading the chest hard<br/>HIC15 about 1,022"]
+  P --> F["Full system: pretensioner removes slack,<br/>limiter pays out at 4.5 kN, airbag catches the head<br/>HIC15 about 357"]
+  class U bad
+  class B mid
+  class F good
+```
+
+### Pedestrian and emergency braking lab
+
+`Simulator.html?lab=pedestrian`: a pedestrian crosses, and the car may or may not brake in time.
+
+```mermaid
+flowchart TB
+  classDef input fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef model fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef calc fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef decide fill:#fee2e2,stroke:#dc2626,color:#0f172a
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#0f172a
+
+  subgraph SET["1 · Settings"]
+    direction TB
+    S1["Speed 12–37 mph (mph)"]
+    S2["Pedestrian (target)<br/>adult 1.75 m, 75 kg · child 6 years, 1.17 m, 23 kg"]
+    S3["Bumper (bumper)<br/>rigid steel · energy-absorbing foam"]
+    S4["Automatic emergency braking (aeb)"]
+  end
+
+  subgraph PLAN["2 · Plan, 2 ms steps"]
+    direction TB
+    L1["Pedestrian walks at 1.39 m/s from the kerb<br/>(3.5 m out, 3.0 m for the child)"]
+    L2["Timed so the unbraked car's front meets them"]
+    L3["Child: steps out from in front of a parked car"]
+    L4["Sensor each step: in the cone, in range,<br/>line of sight clear (segment vs parked car)"]
+    L5["AEB state machine (below)"]
+    L6{"Contact before the car stops?"}
+    L1 --> L2 --> L4
+    L3 --> L4
+    L4 --> L5 --> L6
+  end
+
+  subgraph IMP["3 · Impact, 0.05 ms steps"]
+    direction TB
+    I1["6-mass chain: feet · knees · pelvis · chest<br/>neck · head, seen from the car's side"]
+    I2["Joint springs: knee ligaments give way past 15°<br/>hip stop · damped joints"]
+    I3["The car's front from its own side profile:<br/>bumper · hood edge · hood · windshield · roof edge"]
+    I4["Surfaces crush in two stages: the chosen bumper,<br/>steel 12 kN then 25 kN, or foam 4 kN then 15 kN"]
+    I5["The car's motion is imposed (the pedestrian<br/>is too light to change it)"]
+    I6["The road: the body lands on it after the throw"]
+    I1 --> I2
+    I3 --> I4
+  end
+
+  subgraph SC["4 · Scores"]
+    direction TB
+    C1["HIC15 on the car (limit 1,000), and the surface hit"]
+    C2["HIC15 falling onto the road, scored separately"]
+    C3["Knee bending (15°) · tibia (170 g) · pelvis (80 g)"]
+    C4["Head wrap-around distance · throw distance"]
+    C5["The same impact with the other bumper,<br/>for comparison"]
+  end
+
+  subgraph OUT["5 · Results"]
+    direction TB
+    O1["Avoided: distance to spare<br/>or impact speed, and energy taken off"]
+    O2["First seen · warning · full braking<br/>(seconds before impact)"]
+    O3["Charts: car speed with the braking window<br/>tibia, head and pelvis pulses for both bumpers"]
+    O4["3D: sensor cone changes colour by state,<br/>box around a tracked pedestrian"]
+    O5["Playback: real time until 0.12 s before impact,<br/>0.06× through the impact, then 0.3×"]
+  end
+
+  SET --> PLAN
+  L6 -- yes --> IMP --> SC --> OUT
+  L6 -- "no: stopped short" --> OUT
+
+  S1 ~~~ S3
+  S2 ~~~ S4
+  I2 ~~~ I5
+  I4 ~~~ I6
+  C1 ~~~ C4
+  C2 ~~~ C5
+  O1 ~~~ O4
+  O2 ~~~ O5
+
+  class S1,S2,S3,S4 input
+  class L1,L2,L3,I1,I2,I3,I4,I5,I6 model
+  class L4,L5,C1,C2,C3,C4,C5 calc
+  class L6 decide
+  class O1,O2,O3,O4,O5 out
+```
+
+The emergency-braking system's states (the colour of the sensor cone in the scene):
+
+```mermaid
+stateDiagram-v2
+  state "Scanning" as Scan
+  state "Pedestrian in view" as View
+  state "Tracking (confirmed)" as Track
+  state "Warning chime" as Warn
+  state "Braking" as Brake
+  state "Stopped short" as Stop
+  state "Impact" as Hit
+  [*] --> Scan
+  Scan --> View: in the cone of ±25°, within 60 m (45 m for a child), line of sight clear
+  View --> Scan: lost before it is confirmed
+  View --> Track: seen for 0.25 s
+  Track --> Warn: paths conflict, time to collision below 1.8 s
+  Warn --> Brake: time to collision below 1.1 s
+  Brake --> Stop: car stops before reaching them
+  Brake --> Hit: contact at a lower speed
+  Track --> Hit: AEB off, no warning or braking
+  Stop --> [*]
+  Hit --> [*]
+  note right of Brake
+    0.1 s latency, then braking builds
+    to 0.85 g over 0.25 s
+  end note
+  note left of Hit
+    without AEB the driver brakes
+    0.6 s after the impact, at 0.8 g
+  end note
+```
+
+The impact itself:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Car as Car front (imposed motion)
+  participant Leg as Feet and knees
+  participant Pel as Pelvis
+  participant Up as Chest and neck
+  participant Head
+  participant Road
+  Car->>Leg: Bumper strikes the leg (steel 12 kN plateau, foam 4 kN)
+  Note over Leg: Knee bends, ligaments give way past 15°, tibia acceleration scored
+  Car->>Pel: Hood edge loads the upper leg and pelvis
+  Pel->>Up: Upper body rotates onto the hood
+  Up->>Head: Head swings down toward the hood or windshield
+  Head->>Car: Head strikes the car, HIC15 on the car and the wrap-around distance
+  Car-->>Up: The car brakes or keeps going, and the body is thrown ahead
+  Up->>Road: Body lands on the road
+  Head->>Road: Head strikes the road, scored as a separate HIC15
+```
 
 ---
 
