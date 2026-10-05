@@ -37,12 +37,14 @@ There are eight simulations: the two **barrier tests** (a free simulator with fu
 7. [How each crash lab works](#how-each-crash-lab-works)
 8. [Simulation diagrams](#simulation-diagrams): [rigid barrier](#rigid-barrier), [brick wall](#brick-wall), [frontal overlap](#frontal-overlap-lab), [two vehicles](#two-vehicle-collision-lab), [side impact](#side-impact-lab), [whiplash](#whiplash-sled-lab), [restraints](#occupant-restraint-lab), [pedestrian](#pedestrian-and-emergency-braking-lab)
 9. [Rendering the damage](#rendering-the-damage)
-10. [Verification](#verification)
-11. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
-12. [Design decisions](#design-decisions)
-13. [Limitations](#limitations)
-14. [Project structure](#project-structure)
-15. [Credits](#credits)
+10. [Equations and sources](#equations-and-sources)
+11. [Verification](#verification)
+12. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
+13. [Design decisions](#design-decisions)
+14. [Limitations](#limitations)
+15. [Project structure](#project-structure)
+16. [Credits](#credits)
+17. [References](#references)
 
 ---
 
@@ -471,13 +473,14 @@ The dummies are **driven by the crash**, like a sled test. The vehicle simulatio
   - the knee bolster (its padding crushes), the floor and the toe pan (with friction), and the centre console;
   - chin to chest.
 - **The cabin deforming around it.** `physics.js cabinInput()` embeds interior points in the lattice: the wheel hub and a point down the column, the knee bolster, the toe pan, the windshield's edges, the roof, the A-pillar's foot and top, and the door at chest and window height. It reports where they are at every recorded frame, in the cabin frame the crash pulse is measured in. The contact surfaces move with them, so a column driven back carries the wheel and airbag (drawn moving too), and a toe pan pushed in pushes the feet. In the 25% small-overlap test the toe pan comes back about 10 cm, and the driver's left foot ends up about 10 cm further back than with a fixed cabin.
-- **Injury criteria.** Channels are filtered per SAE J211 (CFC 1000 head, CFC 180 chest, CFC 600 neck and femur) and scored against FMVSS 208-style limits. The upper neck's axial force comes from Newton's law on the head; its flexion moment, for Nij, is the upper neck joint's torque at the occipital condyle.
+- **Injury criteria.** Channels are filtered per SAE J211 (CFC 1000 head, CFC 180 chest, CFC 600 neck and femur) and scored against FMVSS 208-style limits. The upper neck's axial force comes from Newton's law on the head; its flexion moment, for Nij, is the upper neck joint's torque at the occipital condyle. The formulas are in [Equations and sources](#injury-criteria).
 
   | Criterion | Limit |
   |---|---|
   | HIC15 (head injury criterion, 15 ms window) | 700 |
   | Chest acceleration, 3 ms clip | 60 g |
   | Chest deflection | 63 mm |
+  | VC (viscous criterion: chest compression × its rate, for soft-tissue injury) | 1.0 m/s |
   | Nij (neck injury criterion: axial force and flexion/extension moment) | 1.0 |
   | Neck tension / compression | 4.17 / 4.0 kN |
   | Femur axial force | 10 kN |
@@ -1502,6 +1505,389 @@ This is visual only: intrusion and every number come from the lattice.
 
 ---
 
+## Equations and sources
+
+The models written out as the code computes them. Numbers in square brackets point to the [references](#references). Where a value is the model's own setting rather than a published one, it says so.
+
+### Energy, momentum and the crash pulse
+
+The setup readouts are the kinetic energy, the height the car would have to fall from to reach the same speed, and the momentum:
+
+```math
+E_k = \tfrac12 m v^2, \qquad h = \frac{v^2}{2g}, \qquad p = m v
+```
+
+Energy grows with the square of speed, so 112 km/h carries four times the energy of 56 km/h \[[20](#ref-20), [23](#ref-23)\]. The impulse-momentum theorem links the force to the time it acts for. For the same speed change, a longer crush means a lower average deceleration:
+
+```math
+J = \int F\,dt = m\,\Delta v, \qquad \bar a = \frac{v_0^2}{2s}
+```
+
+Stopping from 56 km/h over the Lexus's 0.58 m of crush averages 21 g. The measured peak (CFC 60) is 69 g, because a real pulse isn't square \[[20](#ref-20), [21](#ref-21)\].
+
+The energy books (section 6 of the physics) account for the initial kinetic energy at every recorded frame:
+
+```math
+\tfrac12 m v_0^2 = E_k + E_\text{elastic} + W_\text{plastic} + W_\text{fracture} + Q_\text{friction} + \Delta E_\text{pot} + W_\text{honeycomb} + E_\text{contact, damping, solver}
+```
+
+When two cars crush together and leave at a common speed, momentum fixes each one's speed change. The lighter car's Δv is larger in proportion to the other car's mass, which is what the two-vehicle lab checks \[[20](#ref-20), [22](#ref-22)\]:
+
+```math
+\Delta v_A = \frac{m_B}{m_A + m_B}\,v_\text{closing}, \qquad \frac{\Delta v_A}{\Delta v_B} = \frac{m_B}{m_A}
+```
+
+The labs split a crash into three collisions, as crash-science teaching does: the car against the barrier, the occupant against the restraints and interior, and the organs inside the body \[[24](#ref-24), [25](#ref-25)\].
+
+### The lattice and the XPBD step
+
+Each substep first predicts every node's motion, keeping its old position *x\**:
+
+```math
+\mathbf v \leftarrow \mathbf v + \Delta t\,\mathbf g, \qquad \mathbf x^* = \mathbf x, \qquad \mathbf x \leftarrow \mathbf x + \Delta t\,\mathbf v
+```
+
+Each spring between nodes *a* and *b* is a distance constraint with unit direction **n** from *a* to *b*:
+
+```math
+C = \lvert \mathbf x_b - \mathbf x_a \rvert - L_0
+```
+
+Its compliance is *α* = 1/*k*. Its damping is *c* = 2*ζ*√(*k m_ab*), with the pair's reduced mass *m_ab* = *m_a m_b*/(*m_a* + *m_b*) and *ζ* = 0.08 (a model setting); *γ* = *cα*/Δ*t*. The projection is XPBD's with one iteration per substep \[[2](#ref-2), [3](#ref-3)\]:
+
+```math
+\Delta\lambda = -\frac{C + \gamma\,\mathbf n \cdot \big[(\mathbf x_b - \mathbf x_b^*) - (\mathbf x_a - \mathbf x_a^*)\big]}{(1+\gamma)(w_a + w_b) + \alpha/\Delta t^2}, \qquad \mathbf x_a \mathrel{-}= w_a\,\Delta\lambda\,\mathbf n, \quad \mathbf x_b \mathrel{+}= w_b\,\Delta\lambda\,\mathbf n
+```
+
+- *w* = 1/*m* are the inverse masses.
+- With one iteration per substep the multiplier starts at zero, so the −*α̃λ* term of the full XPBD update drops out: this is the "small steps" scheme \[[3](#ref-3)\].
+- XPBD comes from implicit (backward Euler) integration of the spring energy, so *k* is a real stiffness whatever the step size. Plain position-based dynamics \[[1](#ref-1)\] has a stiffness that depends on the step and the iteration count \[[4](#ref-4)\].
+- The stiffness is *k* = *K₀* · *s_h* · *f*_zone · *s*_front, with *K₀* = 1.1 MN/m, *s_h* the lattice-spacing scale, *f*_zone from the zone table and *s*_front the Soft/Standard/Stiff setting (all model settings).
+
+Velocities come from the positions after all corrections:
+
+```math
+\mathbf v = \frac{\mathbf x - \mathbf x^*}{\Delta t}
+```
+
+**Why 0.1 ms works.** Explicit finite-element crash codes are limited by the Courant–Friedrichs–Lewy condition \[[11](#ref-11)\]:
+
+```math
+\Delta t \le \frac{L_e}{c}, \qquad c = \sqrt{E/\rho} \approx 5{,}200\ \text{m/s in steel}
+```
+
+A 5 mm shell element gives about 1 µs, so a 100 ms crash needs about 10⁵ steps. The lattice's position-level solve is stable at much larger steps. Here the 0.1 ms step is set by the injury filters (below), not by stability.
+
+**Plastic flow.** After the correction, the spring's elastic extension is *e* = |*x_b* − *x_a*| − *L₀*, and its yield extension is *e_y* = *ε_y L*_orig. If |*e*| > *e_y*, the rest length moves by the excess and the steel stays bent \[[8](#ref-8)\]:
+
+```math
+L_0 \leftarrow \operatorname{clamp}\!\Big(L_0 + \operatorname{sign}(e)\,\big(\lvert e \rvert - e_y\big),\; 0.25\,L_\text{orig},\; 1.8\,L_\text{orig}\Big)
+```
+
+The plastic work is the yield force times the flow, and the plastic strain accumulates per spring:
+
+```math
+\Delta W_p = k\,e_y\,\lvert \Delta L_0 \rvert, \qquad \varepsilon_p \mathrel{+}= \frac{\lvert \Delta L_0 \rvert}{L_\text{orig}}
+```
+
+### Contacts, friction and rigid bodies
+
+A node that penetrates the ground or the barrier by *d* is moved back onto the surface. The barrier's load cell sums the forces those corrections imply:
+
+```math
+F_\text{barrier} = \sum_i \frac{m_i\,d_i}{\Delta t^2}
+```
+
+Contacts with bricks, debris, the lab obstacles and the other car cancel the approach in that substep but never push apart faster than *v*_sep. That is 1 m/s, or 2 cm/s between two cars, whose crushed fronts interlock (model settings):
+
+```math
+d \leftarrow \min\!\Big(d,\; \max\big(0,\; -\Delta\mathbf x_\text{rel} \cdot \mathbf n + v_\text{sep}\,\Delta t\big)\Big)
+```
+
+**Friction** is Coulomb friction at the position level \[[5](#ref-5), [6](#ref-6)\]. The tangential displacement Δ**x**_t of the substep is removed while it fits inside the friction cone, μ times the normal correction *d*, and is reduced by that much otherwise:
+
+```math
+\Delta\mathbf x_t \leftarrow
+\begin{cases}
+\mathbf 0 & \lvert \Delta\mathbf x_t \rvert \le \mu\,d \quad \text{(sticking)} \\
+\Delta\mathbf x_t \left(1 - \dfrac{\mu\,d}{\lvert \Delta\mathbf x_t \rvert}\right) & \text{otherwise (sliding)}
+\end{cases}
+```
+
+- Wheel nodes split this along the car's heading (rolling resistance μ = 0.015, or 0.3 once the tyre bursts) and across it (μ = 0.8).
+- Other surfaces (model settings): body on the ground 0.5, barrier 0.3, brick 0.5, car on car 0.4.
+
+**Rigid bodies** (bricks, parts that came off, wheels) take contact and bond corrections at a point **r** from their centre of mass. They use the generalised inverse mass of XPBD rigid bodies \[[6](#ref-6)\]:
+
+```math
+w = \frac1m + (\mathbf r \times \mathbf n)^{\mathsf T}\, I^{-1}\, (\mathbf r \times \mathbf n)
+```
+
+The spin is integrated with the gyroscopic term, so a free spin keeps its energy \[[7](#ref-7)\]. Debris orientation uses the exact quaternion exponential; bricks use the first-order update, then renormalise \[[6](#ref-6)\]:
+
+```math
+\boldsymbol\omega \leftarrow \boldsymbol\omega - \Delta t\, I^{-1}\big(\boldsymbol\omega \times I\boldsymbol\omega\big), \qquad q \leftarrow \exp\!\big(\tfrac12 \Delta t\,\boldsymbol\omega\big) \otimes q
+```
+
+**Spatial hashing.** Bricks and the other car's nodes are found through a hash of the grid cell *(i, j, k)*, with *T* a power of two \[[9](#ref-9)\]:
+
+```math
+h(i,j,k) = \big(73856093\,i \oplus 19349663\,j \oplus 83492791\,k\big) \bmod T
+```
+
+### The honeycomb barrier face
+
+The offset barrier's aluminium honeycomb uses the deformable barrier's specified crush strengths: *σ_c* = 0.342 MPa for the main block and 1.711 MPa for the bumper strip \[[37](#ref-37)\]. Honeycomb crushes at a nearly constant stress \[[16](#ref-16)\]. A node pressing on the cells under it can be stopped by at most their crush force, and anything beyond that crushes them:
+
+```math
+F_\text{cap} = \sum_\text{free cells} \sigma_c A_\text{cell}, \qquad
+\Delta x =
+\begin{cases}
+d & m\,d/\Delta t^2 \le F_\text{cap} \\
+F_\text{cap}\,\Delta t^2/m & \text{otherwise (the cells crush)}
+\end{cases}, \qquad
+W_\text{hc} = \sum \sigma_c A_\text{cell}\,\Delta c
+```
+
+### Mortar bonds
+
+Each bond is a stiff XPBD point constraint between the two bricks' bond points **p_a** and **p_b**, with compliance *α_b* = 2 × 10⁻⁸ m/N (a model setting) \[[6](#ref-6)\]. The force it carries follows from the correction:
+
+```math
+\Delta\lambda = -\frac{\lvert \mathbf p_a - \mathbf p_b \rvert}{w_a + w_b + \alpha_b/\Delta t^2}, \qquad \mathbf f = \frac{\Delta\lambda}{\Delta t^2}\,\mathbf n
+```
+
+The force is split into the part across the joint, *f_n* (tension positive), and the shear *f_s*. The bond fails under a Coulomb criterion, the kind used for masonry joints: compression raises the shear it can carry \[[17](#ref-17)\]. The friction coefficient 0.6 is a model setting:
+
+```math
+\sqrt{f_n^2 + f_s^2} > S \quad (f_n > 0), \qquad f_s > S + 0.6\,\lvert f_n \rvert \quad (f_n \le 0)
+```
+
+*S* is 8, 30 or 120 kN for weak, standard and strong mortar (model settings). The energy stored in the broken bond, ½|**p_a** − **p_b**|²/*α_b*, is booked as fracture.
+
+### Parts, wheels and glass
+
+A part comes off when the mean plastic strain of the springs it is mounted on reaches its limit, *ε̄_p* ≥ *ε_f* (the table in section 5 of the physics). That is the simplest ductile-fracture rule: a constant strain to failure, as in the Johnson–Cook model with only its first constant \[[18](#ref-18)\]. Criteria such as Cockcroft–Latham's integrate the tensile plastic work instead \[[19](#ref-19)\]; they need panel stresses the lattice doesn't resolve.
+
+When a part comes off it takes mass *m_i* from each node it sat on, and starts as a rigid body from their momentum:
+
+```math
+M = \sum m_i, \qquad \mathbf v_\text{cm} = \frac1M \sum m_i \mathbf v_i, \qquad \mathbf L = \sum m_i\,(\mathbf x_i - \mathbf x_\text{cm}) \times \mathbf v_i, \qquad \boldsymbol\omega = I^{-1}\mathbf L
+```
+
+If the body would have more kinetic energy than the nodes gave up, *ω* is scaled down. The difference is booked as fracture, so a break never adds energy.
+
+- **Tyre burst.** The wheel nodes' floor sinks from the tyre radius *R* to the rim plus a quarter of the sidewall over 50 ms. Rolling resistance rises to 0.3. Tyre-blowout models in the literature also lower the rolling radius and raise the rolling resistance \[[55](#ref-55), [56](#ref-56)\].
+- **Wheel off.** A rigid wheel starts spinning at *ω* = *v*/*R*, with equal inertia about every axis, so it doesn't drift gyroscopically.
+- **Glass** breaks by rule from the recorded strain around each pane (section 5 of the physics). The shards are visual only.
+
+### Measuring: filters, pulse and intrusion
+
+**SAE J211 channel filters** \[[26](#ref-26), [27](#ref-27)\]. A 2-pole Butterworth filter, with its corner pre-warped for the bilinear transform:
+
+```math
+\omega_d = 2\pi \cdot \text{CFC} \cdot 2.0775, \qquad \omega_a = \tan\frac{\omega_d\,\Delta t}{2}
+```
+
+```math
+a_0 = \frac{\omega_a^2}{1 + \sqrt2\,\omega_a + \omega_a^2}, \quad a_1 = 2a_0, \quad a_2 = a_0, \quad
+b_1 = \frac{-2(\omega_a^2 - 1)}{1 + \sqrt2\,\omega_a + \omega_a^2}, \quad
+b_2 = \frac{-1 + \sqrt2\,\omega_a - \omega_a^2}{1 + \sqrt2\,\omega_a + \omega_a^2}
+```
+
+```math
+y_i = a_0 x_i + a_1 x_{i-1} + a_2 x_{i-2} + b_1 y_{i-1} + b_2 y_{i-2}
+```
+
+- **Zero phase.** The filter runs forward, then backward over its own output. The result has no phase lag and a 4-pole response, so peaks stay at the right time.
+- **Ends.** Each end is padded with up to 200 samples of an odd reflection, *x*₋ₖ = 2*x*₀ − *x*ₖ, so a signal that doesn't start at zero doesn't ring.
+- **Step size.** Pre-warping needs *ω_d* Δ*t*/2 < π/2, so Δ*t* < 1/(4.155 · CFC): 0.24 ms for CFC 1000 and 0.40 ms for CFC 600. This is why the impact is computed at 0.1 ms.
+- **Classes:**
+  - CFC 1000: head and pelvis acceleration;
+  - CFC 600: neck loads and femur force;
+  - CFC 180: chest acceleration and chest deflection;
+  - CFC 60: the vehicle crash pulse.
+
+**The crash pulse** is the derivative of the cabin's velocity, filtered at CFC 60. Δ*v*, the peak and the time to stop are read from it \[[20](#ref-20)\].
+
+**Intrusion** is measured in a frame fitted to the undamaged rear corner of the cabin, so the car's own rotation doesn't count. **p**ᵢ and **q**ᵢ are that corner's node positions now and at rest, relative to their centroids. The fitted rotation is the rotational part of their covariance's polar decomposition, as in shape matching \[[14](#ref-14), [15](#ref-15)\]:
+
+```math
+A = \sum_i \mathbf p_i\, \mathbf q_i^{\mathsf T}, \qquad R = A\,\big(A^{\mathsf T} A\big)^{-1/2}
+```
+
+**Skinned normals.** The render mesh is embedded in the lattice cells. Each vertex is a trilinear blend of its cell's eight nodes. Each normal turns with the cell's deformation gradient through its cofactor, which keeps it perpendicular to the deformed surface \[[12](#ref-12), [13](#ref-13)\]:
+
+```math
+\mathbf x = \sum_{c=1}^{8} N_c(\mathbf t)\,\mathbf x_c, \qquad F = \frac{\partial \mathbf x}{\partial \mathbf X}, \qquad \mathbf n' \propto \operatorname{cof}(F)\,\mathbf n = \det(F)\,F^{-\mathsf T}\mathbf n
+```
+
+### Injury criteria
+
+Limits and filter classes follow the US occupant-protection standard, FMVSS 208, for the frontal dummy \[[28](#ref-28)\]. The criteria come from the biomechanics behind them \[[30](#ref-30), [31](#ref-31), [32](#ref-32)\].
+
+**Head injury criterion** \[[30](#ref-30), [33](#ref-33), [34](#ref-34)\]. *a* is the resultant head acceleration in g, at CFC 1000. The windows are at most 15 ms (36 ms for the side dummy), and every pair of samples is tried, using a trapezoidal running integral:
+
+```math
+\text{HIC} = \max_{t_1 < t_2} \left\{ (t_2 - t_1) \left[ \frac{1}{t_2 - t_1} \int_{t_1}^{t_2} a(t)\,dt \right]^{2.5} \right\}
+```
+
+**Chest acceleration, 3 ms clip** \[[28](#ref-28)\]. The standard limits the level exceeded for a *cumulative* 3 ms, adding up every interval above it. With the chest resultant (CFC 180) sorted so that *a*₍₁₎ ≥ *a*₍₂₎ ≥ …:
+
+```math
+a_{3\,\text{ms}} = a_{(k)}, \qquad k = \operatorname{round}(3\ \text{ms} / \Delta t)
+```
+
+**Neck injury criterion** \[[28](#ref-28), [30](#ref-30)\]. Each sample's quadrant (tension or compression, flexion or extension) picks the intercepts:
+
+```math
+N_{ij} = \frac{\lvert F_z \rvert}{F_\text{int}} + \frac{\lvert M_y \rvert}{M_\text{int}}, \qquad
+F_\text{int} = 6806\ \text{N (tension)},\ 6160\ \text{N (compression)}, \qquad
+M_\text{int} = 310\ \text{N·m (flexion)},\ 135\ \text{N·m (extension)}
+```
+
+A physical dummy's upper-neck load cell sits below the occipital condyle, so tests correct its moment by *M*_OC = *M_y* − *d F_x* (*d* = 17.78 mm in the Hybrid III \[[35](#ref-35)\]). Here *M_y* is the neck joint's torque at the condyle itself, so no correction is needed.
+
+**Viscous criterion** \[[36](#ref-36), [37](#ref-37)\]. Soft-tissue injury depends on how fast the chest is compressed as well as how far. *D* is the chest deflection (CFC 180), and its rate comes from the 4th-order central difference of J211. The model takes the Hybrid III constants (a 0.229 m chest, scale factor 1.3); the limit is 1.0 m/s:
+
+```math
+\text{VC} = \max_t \left[ 1.3\,\frac{D(t)}{0.229\ \text{m}}\,\frac{dD}{dt} \right], \qquad
+\left.\frac{dD}{dt}\right|_i = \frac{8\,(D_{i+1} - D_{i-1}) - (D_{i+2} - D_{i-2})}{12\,\Delta t}
+```
+
+**Other frontal limits** \[[28](#ref-28), [32](#ref-32)\]:
+- chest deflection 63 mm;
+- neck tension 4.17 kN and compression 4.0 kN;
+- femur force 10 kN.
+
+**Side-impact dummy** \[[29](#ref-29)\]: HIC over a 36 ms window 1,000, rib deflection 44 mm, pelvis (pubic symphysis) force 6 kN.
+
+**Organs.** The brain and heart are damped masses on springs driven by their cavity's acceleration. *f* = 50 Hz and *ζ* = 0.3 for the brain, 25 Hz and 0.25 for the heart (model settings):
+
+```math
+\ddot u + 2\zeta\omega\,\dot u + \omega^2 u = -a_\text{cavity}(t), \qquad \omega = 2\pi f
+```
+
+**Whiplash.** The spine has 24 vertebrae, as in the BioRID II rear-impact dummy \[[39](#ref-39)\]. The neck injury criterion uses T1's motion relative to the head, along the car, until head-restraint contact or 150 ms; its limit is 15 m²/s² \[[38](#ref-38)\]:
+
+```math
+\text{NIC}(t) = 0.2\,a_\text{rel}(t) + v_\text{rel}(t)\,\lvert v_\text{rel}(t) \rvert
+```
+
+The seat criteria, T1 acceleration of at most 9.5 g and head-restraint contact within 70 ms, follow the RCAR-IIWPG seat evaluation protocol \[[48](#ref-48)\]. Each joint's damping is integrated exactly over the step, because explicit damping is unstable on 2 cm vertebrae. *k* is the joint's effective inverse inertia, Σ|∇*ω*|²/*m*:
+
+```math
+\Delta\lambda = -\,\omega_\text{rel}\,\frac{1 - e^{-c\,k\,\Delta t}}{k}
+```
+
+**Pedestrian.** The limits are from the pedestrian-safety regulations:
+- head HIC15 1,000, which GTR 9 allows over part of the hood (1,700 over the rest) \[[40](#ref-40)\];
+- knee bending 15°, the EEVC WG17 legform limit \[[41](#ref-41)\];
+- tibia acceleration 170 g, the GTR 9 legform limit \[[40](#ref-40)\].
+
+Euro NCAP grades the head on a sliding scale instead, from HIC15 650 (full marks) to 1,700 (none) \[[42](#ref-42)\]. The emergency braking is a rule-based model. It warns at a time to collision of 1.8 s and brakes at 1.1 s, ramping to 0.85 g over 0.25 s after 0.1 s of latency (model settings, in the spirit of the AEB test protocols \[[49](#ref-49), [50](#ref-50)\]):
+
+```math
+\text{TTC} = \frac{d}{v_\text{closing}}, \qquad a_\text{brake}(t) = 0.85\,g \cdot \min\!\left(1,\ \frac{t - t_\text{brake} - 0.1\ \text{s}}{0.25\ \text{s}}\right)
+```
+
+### The test set-ups
+
+The simulations are set up after published tests. They take each test's geometry, speed and limits, not its full procedure (dummy positioning, instrumentation, the rating's weighting of results).
+
+| Simulation | Set up after | What the model takes from it |
+|---|---|---|
+| Rigid barrier; restraint lab | The US New Car Assessment Program's frontal test \[[43](#ref-43)\] | Full-width rigid barrier at 56 km/h (35 mph) |
+| Frontal overlap, 40% | The moderate-overlap test \[[44](#ref-44)\] | 40% of the width at 40 mph into a deformable honeycomb face \[[37](#ref-37)\] |
+| Frontal overlap, 25% | The small-overlap test \[[45](#ref-45)\] | 25% of the width at 40 mph into a rigid barrier with a 150 mm rounded edge |
+| Intrusion flags | Structural rating guidelines \[[46](#ref-46)\] | Toe pan, brake pedal and lower hinge pillar flagged over 15 cm, the guidelines' bound for "good". The steering column is flagged over 10 cm, their bound for "acceptable" ("good" is 5 cm) |
+| Side impact, barrier | The updated side test \[[47](#ref-47)\] | A 1,900 kg SUV-height barrier at 60 km/h (37 mph). The rating measures the space left between the B-pillar and the seat's centreline ("good" is over 18 cm); the lab flags B-pillar intrusion over 15 cm instead (a model threshold) |
+| Side impact, pole | The side-impact standard's pole test \[[29](#ref-29)\] | A 254 mm rigid pole at 20 mph (32 km/h). The standard strikes at 75°; the lab strikes at 90° |
+| Whiplash sled | The RCAR-IIWPG seat test \[[48](#ref-48)\] | A triangular sled pulse of 91 ms, as in the test (which peaks at 10 g for a Δv of 16 km/h); the lab scales Δv to half the striking car's speed. The T1 and head-restraint contact criteria |
+| Pedestrian | Pedestrian AEB tests \[[49](#ref-49), [50](#ref-50)\]; head and leg limits \[[40](#ref-40), [41](#ref-41), [42](#ref-42)\] | Adult and child targets crossing ahead; braking times; HIC15, knee and tibia limits |
+
+### The approach
+
+The car is driven on a kinematic bicycle model \[[51](#ref-51), [52](#ref-52)\], with *L* the wheelbase and *δ* the steering angle:
+
+```math
+\dot x = v\cos\psi, \qquad \dot z = v\sin\psi, \qquad \dot\psi = \frac{v}{L}\tan\delta
+```
+
+Pure-pursuit steering aims at a point *L_d* ahead on the approach line, *α* being its angle from the heading \[[53](#ref-53)\]:
+
+```math
+\delta = \arctan\frac{2L\sin\alpha}{L_d}, \qquad L_d = \operatorname{clamp}(0.9\,v,\ 5\ \text{m},\ 25\ \text{m})
+```
+
+The speed controller is a PID with the derivative on the measured speed and conditional integration, so the integral doesn't wind up while the force is saturated \[[54](#ref-54)\]:
+
+```math
+F = K_p\,e + K_i \int e\,dt - K_d\,\dot v, \qquad e = v_\text{target} - v
+```
+
+### Bullet-time, shake and sound
+
+**Bullet-time.** *ĝ* is the crash pulse divided by its peak, widened and smoothed. The replay speed is a geometric blend between the fast speed *s_f* and 1/40×:
+
+```math
+s(t) = s_f(t) \left( \frac{1/40}{s_f(t)} \right)^{\min(1,\ 1.15\,\hat g(t))^{0.6}}
+```
+
+*s_f* is 1/4× until 97% of the pulse's impulse has gone by, then rises to 1× over 250 ms (model settings).
+
+**Shake** grows with the deceleration, with decaying kicks for single events. It wobbles with three sines (23, 37 and 61 Hz) in replay time:
+
+```math
+S(t) = \min\!\Big(1.5,\ \big(a(t)/50\,g\big)^{0.8}\Big), \qquad S_\text{kick}(t) = k\,e^{-(t - t_e)/30\ \text{ms}}
+```
+
+Game cameras often use a "trauma" value with shake ∝ trauma² and Perlin noise \[[63](#ref-63)\]. Here the deceleration itself plays the part of trauma.
+
+**Sound** \[[57](#ref-57)\]:
+- **Distance.** Each sound plays through an HRTF panner with the inverse distance model (*d*_ref = 6 m, *ρ* = 0.7):
+
+  ```math
+  g(d) = \frac{d_\text{ref}}{d_\text{ref} + \rho\,\big(\max(d, d_\text{ref}) - d_\text{ref}\big)}
+  ```
+
+- **Slow motion.** The pitch follows the replay speed, *r* = clamp(*s*^0.25, 0.4, 1).
+- **Structural groan.** Its level follows the power the crash is absorbing, *P* = d(*W_p* + *W_f* + *E*_contact, damping, solver)/d*t*:
+
+  ```math
+  \ell = \min\!\left(1.3,\ \tfrac12 \log_{10} \frac{P}{100\ \text{kW}}\right)
+  ```
+
+- **Distortion.** It grows through a tanh waveshaper, tanh(*k x*)/tanh(*k*).
+- **Synthesis.** These are procedural sounds shaped by the crash's own numbers. Physically based synthesis computes sound from a structure's vibration modes instead: modal sound \[[58](#ref-58), [59](#ref-59)\], thin shells \[[60](#ref-60)\], crumpling \[[61](#ref-61)\] and fracture \[[62](#ref-62)\]. See [further reading](#further-reading).
+
+**Video** \[[64](#ref-64), [65](#ref-65)\]:
+- Frame *k* of the saved video is rendered at a replay time that advances by *s*(*t*)/30 per frame, so no frame depends on the computer's speed.
+- The encoder waits while more than four frames are queued.
+- The MP4 is written with its index first (fast start).
+
+**Bloom** blurs the glow layer down a chain of half-size buffers and back up, a dual-filter blur \[[66](#ref-66)\].
+
+### The GPU solver
+
+The springs are split by greedy graph colouring into groups that share no node. Each group is solved in parallel and the groups run in turn: a parallel Gauss-Seidel \[[10](#ref-10)\]. Car-against-car contacts are solved Jacobi-style from the same positions \[[5](#ref-5)\]. The kernels are written in WGSL \[[67](#ref-67)\].
+
+### Further reading
+
+Methods from the research behind this section that the app doesn't use, and what each would take:
+
+| Method | What it would add | What it would take |
+|---|---|---|
+| Stable neo-Hookean tetrahedra in XPBD \[[68](#ref-68)\] | A continuum material that keeps its volume, instead of springs | Tetrahedral meshes of the cars, and retuning every zone |
+| Anisotropic shell plasticity \[[69](#ref-69)\] and ductile fracture \[[18](#ref-18), [19](#ref-19)\], with edge splitting | Panels that tear along lines instead of coming off whole | A shell mesh per panel and stresses through its thickness |
+| GJK distance and contact \[[70](#ref-70)\] | Debris colliding with the car (a current limitation) | Convex hulls for the parts and the body |
+| Position-based fluids \[[71](#ref-71)\], smoke on a grid \[[72](#ref-72)\], screen-space fluid rendering \[[73](#ref-73)\] | Coolant and oil spills, volumetric smoke and fire | A fluid solver and a volume renderer |
+| Magic Formula tyres \[[55](#ref-55)\] | Tyre forces from slip during the approach and spins | Slip states per wheel. During the ~100 ms impact, Coulomb friction dominates |
+| Modal, thin-shell and crumpling sound \[[58](#ref-58), [59](#ref-59), [60](#ref-60), [61](#ref-61), [62](#ref-62)\] | Sounds computed from the structure's vibration | Precomputed modes of each part |
+| Learned surrogates \[[74](#ref-74), [75](#ref-75), [76](#ref-76)\] | Fast prediction of detailed FE deformation | Finite-element crash data to train on. They predict rather than explain |
+
+---
+
 ## Verification
 
 ```
@@ -1716,4 +2102,107 @@ Both models are split into parts, re-oriented, scaled and simplified for this ap
 - the Draco decoder (Apache 2.0);
 - the simplex noise in the crumple shader, after Ashima Arts and Stefan Gustavson (MIT).
 
-**References:** Macklin, Müller & Chentanez, "XPBD: Position-Based Simulation of Compliant Constrained Dynamics" (2016); Macklin et al., "Small Steps in Physics Simulation" (2019); SAE J211-1 (instrumentation for impact tests); FMVSS 208 (occupant crash protection).
+The methods, standards and test protocols behind the models are listed under [References](#references); the equations are under [Equations and sources](#equations-and-sources).
+
+---
+
+## References
+
+Every entry was checked against the original publication, standard or protocol. Numbers match the citations in [Equations and sources](#equations-and-sources).
+
+**Physics engine: position-based dynamics, contacts, plasticity**
+
+1. <a id="ref-1"></a>Müller, M., Heidelberger, B., Hennix, M., Ratcliff, J. (2007). Position based dynamics. *Journal of Visual Communication and Image Representation* 18(2), 109–118. [doi](https://doi.org/10.1016/j.jvcir.2007.01.005)
+2. <a id="ref-2"></a>Macklin, M., Müller, M., Chentanez, N. (2016). XPBD: position-based simulation of compliant constrained dynamics. *Proc. Motion in Games (MIG ’16)*, 49–54. [doi](https://doi.org/10.1145/2994258.2994272)
+3. <a id="ref-3"></a>Macklin, M., Storey, K., Lu, M., Terdiman, P., Chentanez, N., Jeschke, S., Müller, M. (2019). Small steps in physics simulation. *Proc. ACM SIGGRAPH/Eurographics Symposium on Computer Animation (SCA ’19)*, 1–7. [doi](https://doi.org/10.1145/3309486.3340247)
+4. <a id="ref-4"></a>Bender, J., Koschier, D., Charrier, P., Weber, D. (2014). Position-based simulation of continuous materials. *Computers & Graphics* 44, 1–10. [doi](https://doi.org/10.1016/j.cag.2014.07.004)
+5. <a id="ref-5"></a>Macklin, M., Müller, M., Chentanez, N., Kim, T.-Y. (2014). Unified particle physics for real-time applications. *ACM Transactions on Graphics* 33(4), 153. [doi](https://doi.org/10.1145/2601097.2601152)
+6. <a id="ref-6"></a>Müller, M., Macklin, M., Chentanez, N., Jeschke, S., Kim, T.-Y. (2020). Detailed rigid body simulation with extended position based dynamics. *Computer Graphics Forum* 39(8), 101–112. [doi](https://doi.org/10.1111/cgf.14105)
+7. <a id="ref-7"></a>Baraff, D. (2001). Physically based modeling: rigid body simulation. *SIGGRAPH 2001 Course Notes*, Pixar Animation Studios. [pdf](http://graphics.stanford.edu/courses/cs348c-23-winter/BWCourseNotes/notesg_rigid.pdf)
+8. <a id="ref-8"></a>Terzopoulos, D., Fleischer, K. (1988). Modeling inelastic deformation: viscoelasticity, plasticity, fracture. *Computer Graphics (SIGGRAPH ’88)* 22(4), 269–278. [doi](https://doi.org/10.1145/378456.378522)
+9. <a id="ref-9"></a>Teschner, M., Heidelberger, B., Müller, M., Pomeranets, D., Gross, M. (2003). Optimized spatial hashing for collision detection of deformable objects. *Proc. Vision, Modeling, and Visualization (VMV 2003)*, 47–54. [pdf](https://matthias-research.github.io/pages/publications/tetraederCollision.pdf)
+10. <a id="ref-10"></a>Fratarcangeli, M., Tibaldo, V., Pellacini, F. (2016). Vivace: a practical Gauss-Seidel method for stable soft body dynamics. *ACM Transactions on Graphics* 35(6), 214. [doi](https://doi.org/10.1145/2980179.2982437)
+11. <a id="ref-11"></a>Courant, R., Friedrichs, K., Lewy, H. (1928). Über die partiellen Differenzengleichungen der mathematischen Physik. *Mathematische Annalen* 100(1), 32–74. [doi](https://doi.org/10.1007/BF01448839)
+12. <a id="ref-12"></a>Barr, A. H. (1984). Global and local deformations of solid primitives. *Computer Graphics (SIGGRAPH ’84)* 18(3), 21–30. [doi](https://doi.org/10.1145/964965.808573)
+13. <a id="ref-13"></a>Bower, A. F. (2009). *Applied Mechanics of Solids*. CRC Press; §2.2.7, transformation of area elements. [doi](https://doi.org/10.1201/9781439802489) · [free text](http://solidmechanics.org)
+14. <a id="ref-14"></a>Müller, M., Heidelberger, B., Teschner, M., Gross, M. (2005). Meshless deformations based on shape matching. *ACM Transactions on Graphics* 24(3), 471–478. [doi](https://doi.org/10.1145/1073204.1073216)
+15. <a id="ref-15"></a>Kabsch, W. (1976). A solution for the best rotation to relate two sets of vectors. *Acta Crystallographica* A32(5), 922–923. [doi](https://doi.org/10.1107/S0567739476001873)
+16. <a id="ref-16"></a>Wierzbicki, T. (1983). Crushing analysis of metal honeycombs. *International Journal of Impact Engineering* 1(2), 157–174. [doi](https://doi.org/10.1016/0734-743X(83)90004-0)
+17. <a id="ref-17"></a>Lourenço, P. B., Rots, J. G. (1997). Multisurface interface model for analysis of masonry structures. *Journal of Engineering Mechanics* 123(7), 660–668. [doi](https://doi.org/10.1061/(ASCE)0733-9399(1997)123:7(660))
+18. <a id="ref-18"></a>Johnson, G. R., Cook, W. H. (1985). Fracture characteristics of three metals subjected to various strains, strain rates, temperatures and pressures. *Engineering Fracture Mechanics* 21(1), 31–48. [doi](https://doi.org/10.1016/0013-7944(85)90052-9)
+19. <a id="ref-19"></a>Cockcroft, M. G., Latham, D. J. (1968). Ductility and the workability of metals. *Journal of the Institute of Metals* 96, 33–39.
+
+**Crash mechanics and teaching**
+
+20. <a id="ref-20"></a>Huang, M. (2002). *Vehicle Crash Mechanics*. CRC Press. [doi](https://doi.org/10.1201/9781420041866)
+21. <a id="ref-21"></a>Prasad, P., Belwafa, J. E. (eds.) (2004). *Vehicle Crashworthiness and Occupant Protection*. American Iron and Steel Institute, Southfield, MI.
+22. <a id="ref-22"></a>Ambrósio, J. A. C. (ed.) (2001). *Crashworthiness: Energy Management and Occupant Protection*. CISM Courses and Lectures 423, Springer. [doi](https://doi.org/10.1007/978-3-7091-2572-4)
+23. <a id="ref-23"></a>Insurance Institute for Highway Safety (2000). *Understanding Car Crashes: It’s Basic Physics*. Video, presented by Griff Jones. [video](https://classroom.iihs.org/its-basic-physics-full-video/)
+24. <a id="ref-24"></a>Insurance Institute for Highway Safety (n.d.). *Understanding Car Crashes: When Physics Meets Biology*. Video, presented by Griff Jones. [video](https://classroom.iihs.org/when-physics-meets-biology-video-segments-with-questions/)
+25. <a id="ref-25"></a>Insurance Institute for Highway Safety (n.d.). *Crash Science in the Classroom*. Teaching resources. [site](https://classroom.iihs.org/crash-science-in-the-classroom/)
+
+**Instrumentation, injury criteria and dummies**
+
+26. <a id="ref-26"></a>SAE International (2022). *SAE J211-1: Instrumentation for Impact Test, Part 1: Electronic Instrumentation*. J211/1_202208. [sae.org](https://saemobilus.sae.org/standards/j2111_202208-instrumentation-impact-test-part-1-electronic-instrumentation)
+27. <a id="ref-27"></a>ISO (2015). *ISO 6487:2015 Road vehicles: Measurement techniques in impact tests, Instrumentation*. With Amendment 1:2017. [iso.org](https://www.iso.org/standard/64041.html)
+28. <a id="ref-28"></a>NHTSA (current). *FMVSS No. 208, Occupant crash protection*. 49 CFR 571.208 (S6, injury criteria). [eCFR](https://www.ecfr.gov/current/title-49/subtitle-B/chapter-V/part-571/subpart-B/section-571.208)
+29. <a id="ref-29"></a>NHTSA (current). *FMVSS No. 214, Side impact protection*. 49 CFR 571.214 (S7.2.5, ES-2re criteria; S9–S10, pole test). [eCFR](https://www.ecfr.gov/current/title-49/subtitle-B/chapter-V/part-571/subpart-B/section-571.214)
+30. <a id="ref-30"></a>Eppinger, R., Sun, E., Bandak, F., Haffner, M., Khaewpong, N., Maltese, M., Kuppa, S., Nguyen, T., Takhounts, E., Tannous, R., Zhang, A., Saul, R. (1999). *Development of improved injury criteria for the assessment of advanced automotive restraint systems II*. NHTSA. [report](https://rosap.ntl.bts.gov/view/dot/14738)
+31. <a id="ref-31"></a>Kleinberger, M., Sun, E., Eppinger, R., Kuppa, S., Saul, R. (1998). *Development of improved injury criteria for the assessment of advanced automotive restraint systems*. NHTSA. [report](https://rosap.ntl.bts.gov/view/dot/14737)
+32. <a id="ref-32"></a>Mertz, H. J., Irwin, A. L., Prasad, P. (2003). Biomechanical and scaling bases for frontal and side impact injury assessment reference values. *Stapp Car Crash Journal* 47, 155–188. [doi](https://doi.org/10.4271/2003-22-0009)
+33. <a id="ref-33"></a>Versace, J. (1971). A review of the severity index. *Proc. 15th Stapp Car Crash Conference*, SAE 710881. [doi](https://doi.org/10.4271/710881)
+34. <a id="ref-34"></a>Gadd, C. W. (1966). Use of a weighted-impulse criterion for estimating injury hazard. *Proc. 10th Stapp Car Crash Conference*, SAE 660793. [doi](https://doi.org/10.4271/660793)
+35. <a id="ref-35"></a>Foster, J. K., Kortge, J. O., Wolanin, M. J. (1977). Hybrid III: a biomechanically-based crash test dummy. SAE 770938. [doi](https://doi.org/10.4271/770938)
+36. <a id="ref-36"></a>Lau, I. V., Viano, D. C. (1986). The viscous criterion: bases and applications of an injury severity index for soft tissues. *Proc. 30th Stapp Car Crash Conference*, SAE 861882, 123–142. [doi](https://doi.org/10.4271/861882)
+37. <a id="ref-37"></a>UNECE (Rev. 3). *UN Regulation No. 94: Protection of the occupants in the event of a frontal collision*. Annex 4 (viscous criterion), Annex 9 (deformable barrier). [pdf](https://unece.org/fileadmin/DAM/trans/main/wp29/wp29regs/2017/R094r3e.pdf)
+38. <a id="ref-38"></a>Boström, O., Svensson, M. Y., Aldman, B., Hansson, H. A., Håland, Y., Lövsund, P., Seeman, T., Suneson, A., Säljö, A., Örtengren, T. (1996). A new neck injury criterion candidate based on injury findings in the cervical spinal ganglia after experimental neck extension trauma. *Proc. IRCOBI 1996*, 123–136. [pdf](https://www.ircobi.org/wordpress/downloads/irc1996/pdf_files/1996_9.pdf)
+39. <a id="ref-39"></a>Davidsson, J. (1999). *BioRID II final report*. Crash Safety Division, Chalmers University of Technology. [pdf](https://webfiles.ita.chalmers.se/~mys/BioRID/BioRIDIIFinal.pdf)
+40. <a id="ref-40"></a>UNECE (2009). *Global Technical Regulation No. 9: Pedestrian safety*. ECE/TRANS/180/Add.9. [pdf](https://documents.un.org/doc/undoc/gen/g09/203/78/pdf/g0920378.pdf)
+41. <a id="ref-41"></a>EEVC Working Group 17 (1998, updated 2002). *Improved test methods to evaluate pedestrian protection afforded by passenger cars*. European Enhanced Vehicle-safety Committee. [pdf](https://www.unece.org/fileadmin/DAM/trans/doc/2006/wp29grsp/ps-187r1e.pdf)
+42. <a id="ref-42"></a>Euro NCAP (2023). *Assessment Protocol: Vulnerable Road User Protection*. Version 11.4. [pdf](https://cdn.euroncap.com/cars/assets/euro_ncap_assessment_protocol_vru_v114_f7ec79190c.pdf)
+
+**Test protocols and regulations**
+
+43. <a id="ref-43"></a>NHTSA (2015). *Laboratory Test Procedure for the New Car Assessment Program Frontal Impact Testing*. Docket NHTSA-2015-0046. [pdf](https://downloads.regulations.gov/NHTSA-2015-0046-0010/attachment_1.pdf)
+44. <a id="ref-44"></a>Insurance Institute for Highway Safety (2021). *Moderate Overlap Frontal Crashworthiness Evaluation: Crash Test Protocol*. Version XIX. [protocols](https://www.iihs.org/ratings/about-our-tests/test-protocols-and-technical-information)
+45. <a id="ref-45"></a>Insurance Institute for Highway Safety (2025). *Small Overlap Frontal Crashworthiness Evaluation: Crash Test Protocol*. Version VIII. [pdf](https://www.iihs.org/media/b24c70f3-5354-4251-af20-0408adad2cf0/JjvNIg/Ratings/Protocols/current/small_overlap_test_protocol.pdf)
+46. <a id="ref-46"></a>Insurance Institute for Highway Safety (2017, 2024). *Moderate Overlap: Guidelines for Rating Structural Performance* (Version III) and *Small Overlap: Rating Protocol* (Version VII). Intrusion rating bands. [moderate](https://www.iihs.org/media/5b0cc829-1945-4dfe-9db7-1ea879f787fd/BHYE7A/Ratings/Protocols/current/structural.pdf) · [small](https://www.iihs.org/media/4ff6d6ee-2dc9-459c-a588-1cdcae448531/S7n0Kg/Ratings/Protocols/current/small_overlap_rating_protocol.pdf)
+47. <a id="ref-47"></a>Insurance Institute for Highway Safety (2024, 2025). *Side Impact 2.0: Crash Test Protocol* (Version III) and *Rating Guidelines* (Version IV). 1,900 kg barrier at 60 km/h. [protocol](https://www.iihs.org/media/43dd2426-9644-494b-a06a-691796dc342c/ZJFIBQ/Ratings/Protocols/current/test_protocol_side-2.0.pdf) · [rating](https://www.iihs.org/media/d87f7873-a584-473c-9f23-1c14788b7335/G19jBw/Ratings/Protocols/current/side_impact_2.0_rating_guidelines.pdf)
+48. <a id="ref-48"></a>RCAR-IIWPG; Insurance Institute for Highway Safety (2008, 2020). *RCAR-IIWPG Seat/Head Restraint Evaluation Protocol* (Version 3) and *Vehicle Seat/Head Restraint Evaluation Protocol: Dynamic Criteria* (Version VI). Sled pulse and seat criteria. [RCAR-IIWPG](https://www.iihs.org/media/84f361de-a61a-4614-985c-c420c1d20634/9i3Vqg/Ratings/Protocols/archive/rcar-iiwpg_evaluation_protocol_v3_0308.pdf) · [IIHS](https://www.iihs.org/media/30da9417-bb37-4247-807e-aeb5e78ba8b0/5rL9NQ/Ratings/Protocols/current/head_restraint_protocol_dynamic_vi.pdf)
+49. <a id="ref-49"></a>Insurance Institute for Highway Safety (2024). *Pedestrian Automatic Emergency Braking Test Protocol*. Version IV. [pdf](https://www.iihs.org/media/f6a24355-fe4b-4d71-bd19-0aab8b39aa7e/5ZH5qg/Ratings/Protocols/current/test_protocol_pedestrian_aeb.pdf)
+50. <a id="ref-50"></a>Euro NCAP (2024). *AEB/LSS VRU Test Protocol*. Version 4.5.1. [pdf](https://cdn.euroncap.com/cars/assets/euro_ncap_aeb_lss_vru_test_protocol_v451_cb0d5dfd0a.pdf)
+
+**Vehicle dynamics and the approach**
+
+51. <a id="ref-51"></a>Rajamani, R. (2012). *Vehicle Dynamics and Control*, 2nd ed.. Springer. [doi](https://doi.org/10.1007/978-1-4614-1433-9)
+52. <a id="ref-52"></a>Kong, J., Pfeiffer, M., Schildbach, G., Borrelli, F. (2015). Kinematic and dynamic vehicle models for autonomous driving control design. *IEEE Intelligent Vehicles Symposium (IV 2015)*, 1094–1099. [doi](https://doi.org/10.1109/IVS.2015.7225830)
+53. <a id="ref-53"></a>Coulter, R. C. (1992). *Implementation of the pure pursuit path tracking algorithm*. Tech. Rep. CMU-RI-TR-92-01, Carnegie Mellon University. [report](https://www.ri.cmu.edu/publications/implementation-of-the-pure-pursuit-path-tracking-algorithm/)
+54. <a id="ref-54"></a>Åström, K. J., Murray, R. M. (2021). *Feedback Systems: An Introduction for Scientists and Engineers*, 2nd ed.. Princeton University Press. [book](https://press.princeton.edu/books/hardcover/9780691193984/feedback-systems)
+55. <a id="ref-55"></a>Pacejka, H. B., Besselink, I. (2012). *Tire and Vehicle Dynamics*, 3rd ed.. Butterworth-Heinemann. [doi](https://doi.org/10.1016/C2010-0-68548-8)
+56. <a id="ref-56"></a>Blythe, W., Day, T. D., Grimes, W. D. (1998). 3-dimensional simulation of vehicle response to tire blow-outs. SAE 980221. [doi](https://doi.org/10.4271/980221)
+
+**Sound, cameras, video and rendering**
+
+57. <a id="ref-57"></a>W3C (2021). *Web Audio API*. W3C Recommendation, 17 June 2021. [w3.org](https://www.w3.org/TR/2021/REC-webaudio-20210617/)
+58. <a id="ref-58"></a>van den Doel, K., Kry, P. G., Pai, D. K. (2001). FoleyAutomatic: physically-based sound effects for interactive simulation and animation. *Proc. SIGGRAPH 2001*, 537–544. [doi](https://doi.org/10.1145/383259.383322)
+59. <a id="ref-59"></a>O’Brien, J. F., Shen, C., Gatchalian, C. M. (2002). Synthesizing sounds from rigid-body simulations. *Proc. SCA 2002*, 175–181. [doi](https://doi.org/10.1145/545261.545290)
+60. <a id="ref-60"></a>Chadwick, J. N., An, S. S., James, D. L. (2009). Harmonic shells: a practical nonlinear sound model for near-rigid thin shells. *ACM Transactions on Graphics* 28(5). [doi](https://doi.org/10.1145/1618452.1618465)
+61. <a id="ref-61"></a>Cirio, G., Li, D., Grinspun, E., Otaduy, M. A., Zheng, C. (2016). Crumpling sound synthesis. *ACM Transactions on Graphics* 35(6). [doi](https://doi.org/10.1145/2980179.2982400)
+62. <a id="ref-62"></a>Zheng, C., James, D. L. (2010). Rigid-body fracture sound with precomputed soundbanks. *ACM Transactions on Graphics* 29(4). [doi](https://doi.org/10.1145/1778765.1778806)
+63. <a id="ref-63"></a>Eiserloh, S. (2016). Math for game programmers: juicing your cameras with math. *Game Developers Conference 2016*. [talk](https://gdcvault.com/play/1023146/Math-for-Game-Programmers-Juicing)
+64. <a id="ref-64"></a>W3C (2026). *WebCodecs*. Working Draft. [w3.org](https://www.w3.org/TR/webcodecs/)
+65. <a id="ref-65"></a>ISO/IEC (2026). *ISO/IEC 14496-12: ISO base media file format*. 8th edition. [iso.org](https://www.iso.org/standard/85596.html)
+66. <a id="ref-66"></a>Bjørge, M. (2015). Bandwidth-efficient rendering. *SIGGRAPH 2015 course: Moving Mobile Graphics*. [slides](https://community.arm.com/cfs-file/__key/communityserver-blogs-components-weblogfiles/00-00-00-20-66/siggraph2015_2D00_mmg_2D00_marius_2D00_slides.pdf)
+67. <a id="ref-67"></a>W3C (2026). *WebGPU* and *WebGPU Shading Language (WGSL)*. Candidate Recommendation Drafts. [WebGPU](https://www.w3.org/TR/webgpu/) · [WGSL](https://www.w3.org/TR/WGSL/)
+
+**Further reading (methods the app does not use)**
+
+68. <a id="ref-68"></a>Macklin, M., Müller, M. (2021). A constraint-based formulation of stable neo-Hookean materials. *Proc. Motion, Interaction and Games (MIG ’21)*, 12. [doi](https://doi.org/10.1145/3487983.3488289)
+69. <a id="ref-69"></a>Hill, R. (1948). A theory of the yielding and plastic flow of anisotropic metals. *Proceedings of the Royal Society A* 193(1033), 281–297. [doi](https://doi.org/10.1098/rspa.1948.0045)
+70. <a id="ref-70"></a>Gilbert, E. G., Johnson, D. W., Keerthi, S. S. (1988). A fast procedure for computing the distance between complex objects in three-dimensional space. *IEEE Journal on Robotics and Automation* 4(2), 193–203. [doi](https://doi.org/10.1109/56.2083)
+71. <a id="ref-71"></a>Macklin, M., Müller, M. (2013). Position based fluids. *ACM Transactions on Graphics* 32(4). [doi](https://doi.org/10.1145/2461912.2461984)
+72. <a id="ref-72"></a>Fedkiw, R., Stam, J., Jensen, H. W. (2001). Visual simulation of smoke. *Proc. SIGGRAPH 2001*, 15–22. [doi](https://doi.org/10.1145/383259.383260)
+73. <a id="ref-73"></a>van der Laan, W. J., Green, S., Sainz, M. (2009). Screen space fluid rendering with curvature flow. *Proc. I3D 2009*, 91–98. [doi](https://doi.org/10.1145/1507149.1507164)
+74. <a id="ref-74"></a>Pfaff, T., Fortunato, M., Sanchez-Gonzalez, A., Battaglia, P. W. (2021). Learning mesh-based simulation with graph networks. *ICLR 2021*. [paper](https://openreview.net/forum?id=roNqYL0_XP)
+75. <a id="ref-75"></a>Wu, H., Luo, H., Wang, H., Wang, J., Long, M. (2024). Transolver: a fast transformer solver for PDEs on general geometries. *ICML 2024*, PMLR 235, 53681–53705. [paper](https://proceedings.mlr.press/v235/wu24r.html)
+76. <a id="ref-76"></a>Elrefaie, M., Shu, D., Klenk, M., Ahmed, F. (2026). CarCrashNet: a large-scale dataset and hierarchical neural solver for data-driven structural crash simulation. arXiv:2605.07098 (preprint). [arXiv](https://arxiv.org/abs/2605.07098)

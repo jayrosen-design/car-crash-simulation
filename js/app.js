@@ -341,6 +341,7 @@
     metricRow(oc, 'Head injury criterion (HIC15)', q.hic15, '', L.hic15);
     metricRow(oc, 'Chest acceleration, 3 ms', q.chest3ms, ' g', L.chest3ms, 1);
     metricRow(oc, 'Chest deflection', q.chestDeflMm, ' mm', L.chestDefl, 1);
+    metricRow(oc, 'Viscous criterion (VC)', q.vc, ' m/s', L.vc, 2);
     metricRow(oc, 'Neck injury criterion (Nij)', q.nij, '', L.nij, 2);
     metricRow(oc, 'Neck tension', q.neckTension / 1000, ' kN', L.neckTension / 1000, 2);
     metricRow(oc, 'Neck compression', q.neckCompression / 1000, ' kN', L.neckCompression / 1000, 2);

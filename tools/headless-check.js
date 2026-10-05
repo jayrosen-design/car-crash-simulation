@@ -109,7 +109,7 @@ for (const sc of scenarios) {
   for (const [label, opts] of [['belt+bag', { belt: true, airbag: true }], ['belt only', { belt: true, airbag: false }], ['unbelted+bag', { belt: false, airbag: true }], ['none', { belt: false, airbag: false }]]) {
     const o = Occ.simulate(res.pulse, Object.assign({ cabin: res.cabin || (res.cabin = Phys.cabinInput(res, 0)) }, opts)), q = o.metrics;
     if (hasNaN(o.headAx) || !Number.isFinite(q.hic15)) problems.push('NaN in occupant ' + label);
-    console.log(`  ${label.padEnd(13)} HIC15 ${q.hic15.toFixed(0).padStart(5)}  head ${q.headPeakG.toFixed(0).padStart(4)} g  chest3ms ${q.chest3ms.toFixed(1).padStart(5)} g  defl ${q.chestDeflMm.toFixed(1).padStart(5)} mm  Nij ${q.nij.toFixed(2)} (${q.nijMode})  tension ${(q.neckTension / 1000).toFixed(2)} kN  pelvis ${q.pelvisPeakG.toFixed(0)} g  fire ${o.tFire >= 0 ? ((o.tFire - res.T0) * 1000).toFixed(1) + ' ms' : 'no'}`);
+    console.log(`  ${label.padEnd(13)} HIC15 ${q.hic15.toFixed(0).padStart(5)}  head ${q.headPeakG.toFixed(0).padStart(4)} g  chest3ms ${q.chest3ms.toFixed(1).padStart(5)} g  defl ${q.chestDeflMm.toFixed(1).padStart(5)} mm  VC ${q.vc.toFixed(2)}  Nij ${q.nij.toFixed(2)} (${q.nijMode})  tension ${(q.neckTension / 1000).toFixed(2)} kN  pelvis ${q.pelvisPeakG.toFixed(0)} g  fire ${o.tFire >= 0 ? ((o.tFire - res.T0) * 1000).toFixed(1) + ' ms' : 'no'}`);
   }
   if (problems.length) { failures++; console.log('  PROBLEMS: ' + problems.join('; ')); }
 }

@@ -114,6 +114,15 @@
   .cta { text-align: center; }
   .cta .actions { justify-content: center; }
 
+  /* sources */
+  .refs { columns: 2; column-gap: 40px; }
+  @media (max-width: 820px) { .refs { columns: 1; } }
+  .refgroup h3 { font-size: 16px; margin: 0 0 8px; padding-top: 18px; break-after: avoid; }
+  .refgroup:first-child h3 { padding-top: 0; }
+  .refgroup ol { margin: 0; padding-left: 28px; color: #b4bcc6; font-size: 13.5px; line-height: 1.5; }
+  .refgroup li { margin: 0 0 6px; overflow-wrap: anywhere; break-inside: avoid; }
+  .refgroup li::marker { color: var(--muted); }
+
   footer { border-top: 1px solid var(--line); padding: 32px 0 44px; color: var(--muted); font-size: 14px; }
   footer p { margin: 0 0 8px; }
   footer .name { color: var(--text); font-weight: 650; }
@@ -129,6 +138,7 @@
       <a href="#features">What it simulates</a>
       <a href="#how">How it works</a>
       <a href="#vehicles">Vehicles</a>
+      <a href="#sources">Sources</a>
     </nav>
     <a class="btn primary small" href="Simulator.html">Open <span class="hide-sm">the </span>simulator</a>
   </div>
@@ -277,7 +287,7 @@
         <div class="feature">
           <div class="ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><path d="M12 8v7M8 11h8M9 22l3-7 3 7"/></svg></div>
           <h3>A crash-test dummy</h3>
-          <p>A seated 3D dummy feels the cabin's deceleration and the interior pushed in around it, held by a three-point belt with pretensioner and force limiter, and by an airbag. It reports head injury criterion (HIC), chest acceleration and deflection, and neck and thigh loads, against standard limits.</p>
+          <p>A seated 3D dummy feels the cabin's deceleration and the interior pushed in around it, held by a three-point belt with pretensioner and force limiter, and by an airbag. It reports head injury criterion (HIC), chest acceleration, deflection and viscous criterion, and neck and thigh loads, against standard limits.</p>
         </div>
         <div class="feature">
           <div class="ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></div>
@@ -338,6 +348,125 @@
         <a class="btn" href="Simulator.html?preset=rigid">Rigid barrier test</a>
         <a class="btn" href="Simulator.html?preset=brick">Brick wall test</a>
         <a class="btn" href="#simulations">All simulations</a>
+      </div>
+    </div>
+  </section>
+  <section id="sources" class="alt">
+    <div class="wrap">
+      <h2>Science and sources</h2>
+      <p class="sub">The physics, injury criteria and test set-ups follow published research, standards and crash-test protocols. Every reference was checked against the original. The equations, with these numbers as citations, are in the <a href="https://github.com/jayrosen-design/car-crash-simulation#equations-and-sources">project README</a>.</p>
+      <div class="refs">
+      <div class="refgroup">
+        <h3>Physics engine: position-based dynamics, contacts, plasticity</h3>
+        <ol start="1">
+          <li>Müller, M., Heidelberger, B., Hennix, M., Ratcliff, J. (2007). Position based dynamics. <i>Journal of Visual Communication and Image Representation</i> 18(2), 109–118. <a href="https://doi.org/10.1016/j.jvcir.2007.01.005">doi</a></li>
+          <li>Macklin, M., Müller, M., Chentanez, N. (2016). XPBD: position-based simulation of compliant constrained dynamics. <i>Proc. Motion in Games (MIG ’16)</i>, 49–54. <a href="https://doi.org/10.1145/2994258.2994272">doi</a></li>
+          <li>Macklin, M., Storey, K., Lu, M., Terdiman, P., Chentanez, N., Jeschke, S., Müller, M. (2019). Small steps in physics simulation. <i>Proc. ACM SIGGRAPH/Eurographics Symposium on Computer Animation (SCA ’19)</i>, 1–7. <a href="https://doi.org/10.1145/3309486.3340247">doi</a></li>
+          <li>Bender, J., Koschier, D., Charrier, P., Weber, D. (2014). Position-based simulation of continuous materials. <i>Computers &amp; Graphics</i> 44, 1–10. <a href="https://doi.org/10.1016/j.cag.2014.07.004">doi</a></li>
+          <li>Macklin, M., Müller, M., Chentanez, N., Kim, T.-Y. (2014). Unified particle physics for real-time applications. <i>ACM Transactions on Graphics</i> 33(4), 153. <a href="https://doi.org/10.1145/2601097.2601152">doi</a></li>
+          <li>Müller, M., Macklin, M., Chentanez, N., Jeschke, S., Kim, T.-Y. (2020). Detailed rigid body simulation with extended position based dynamics. <i>Computer Graphics Forum</i> 39(8), 101–112. <a href="https://doi.org/10.1111/cgf.14105">doi</a></li>
+          <li>Baraff, D. (2001). Physically based modeling: rigid body simulation. <i>SIGGRAPH 2001 Course Notes</i>, Pixar Animation Studios. <a href="http://graphics.stanford.edu/courses/cs348c-23-winter/BWCourseNotes/notesg_rigid.pdf">pdf</a></li>
+          <li>Terzopoulos, D., Fleischer, K. (1988). Modeling inelastic deformation: viscoelasticity, plasticity, fracture. <i>Computer Graphics (SIGGRAPH ’88)</i> 22(4), 269–278. <a href="https://doi.org/10.1145/378456.378522">doi</a></li>
+          <li>Teschner, M., Heidelberger, B., Müller, M., Pomeranets, D., Gross, M. (2003). Optimized spatial hashing for collision detection of deformable objects. <i>Proc. Vision, Modeling, and Visualization (VMV 2003)</i>, 47–54. <a href="https://matthias-research.github.io/pages/publications/tetraederCollision.pdf">pdf</a></li>
+          <li>Fratarcangeli, M., Tibaldo, V., Pellacini, F. (2016). Vivace: a practical Gauss-Seidel method for stable soft body dynamics. <i>ACM Transactions on Graphics</i> 35(6), 214. <a href="https://doi.org/10.1145/2980179.2982437">doi</a></li>
+          <li>Courant, R., Friedrichs, K., Lewy, H. (1928). Über die partiellen Differenzengleichungen der mathematischen Physik. <i>Mathematische Annalen</i> 100(1), 32–74. <a href="https://doi.org/10.1007/BF01448839">doi</a></li>
+          <li>Barr, A. H. (1984). Global and local deformations of solid primitives. <i>Computer Graphics (SIGGRAPH ’84)</i> 18(3), 21–30. <a href="https://doi.org/10.1145/964965.808573">doi</a></li>
+          <li>Bower, A. F. (2009). <i>Applied Mechanics of Solids</i>. CRC Press; §2.2.7, transformation of area elements. <a href="https://doi.org/10.1201/9781439802489">doi</a> · <a href="http://solidmechanics.org">free text</a></li>
+          <li>Müller, M., Heidelberger, B., Teschner, M., Gross, M. (2005). Meshless deformations based on shape matching. <i>ACM Transactions on Graphics</i> 24(3), 471–478. <a href="https://doi.org/10.1145/1073204.1073216">doi</a></li>
+          <li>Kabsch, W. (1976). A solution for the best rotation to relate two sets of vectors. <i>Acta Crystallographica</i> A32(5), 922–923. <a href="https://doi.org/10.1107/S0567739476001873">doi</a></li>
+          <li>Wierzbicki, T. (1983). Crushing analysis of metal honeycombs. <i>International Journal of Impact Engineering</i> 1(2), 157–174. <a href="https://doi.org/10.1016/0734-743X(83)90004-0">doi</a></li>
+          <li>Lourenço, P. B., Rots, J. G. (1997). Multisurface interface model for analysis of masonry structures. <i>Journal of Engineering Mechanics</i> 123(7), 660–668. <a href="https://doi.org/10.1061/(ASCE)0733-9399(1997)123:7(660)">doi</a></li>
+          <li>Johnson, G. R., Cook, W. H. (1985). Fracture characteristics of three metals subjected to various strains, strain rates, temperatures and pressures. <i>Engineering Fracture Mechanics</i> 21(1), 31–48. <a href="https://doi.org/10.1016/0013-7944(85)90052-9">doi</a></li>
+          <li>Cockcroft, M. G., Latham, D. J. (1968). Ductility and the workability of metals. <i>Journal of the Institute of Metals</i> 96, 33–39.</li>
+        </ol>
+      </div>
+      <div class="refgroup">
+        <h3>Crash mechanics and teaching</h3>
+        <ol start="20">
+          <li>Huang, M. (2002). <i>Vehicle Crash Mechanics</i>. CRC Press. <a href="https://doi.org/10.1201/9781420041866">doi</a></li>
+          <li>Prasad, P., Belwafa, J. E. (eds.) (2004). <i>Vehicle Crashworthiness and Occupant Protection</i>. American Iron and Steel Institute, Southfield, MI.</li>
+          <li>Ambrósio, J. A. C. (ed.) (2001). <i>Crashworthiness: Energy Management and Occupant Protection</i>. CISM Courses and Lectures 423, Springer. <a href="https://doi.org/10.1007/978-3-7091-2572-4">doi</a></li>
+          <li>Insurance Institute for Highway Safety (2000). <i>Understanding Car Crashes: It’s Basic Physics</i>. Video, presented by Griff Jones. <a href="https://classroom.iihs.org/its-basic-physics-full-video/">video</a></li>
+          <li>Insurance Institute for Highway Safety (n.d.). <i>Understanding Car Crashes: When Physics Meets Biology</i>. Video, presented by Griff Jones. <a href="https://classroom.iihs.org/when-physics-meets-biology-video-segments-with-questions/">video</a></li>
+          <li>Insurance Institute for Highway Safety (n.d.). <i>Crash Science in the Classroom</i>. Teaching resources. <a href="https://classroom.iihs.org/crash-science-in-the-classroom/">site</a></li>
+        </ol>
+      </div>
+      <div class="refgroup">
+        <h3>Instrumentation, injury criteria and dummies</h3>
+        <ol start="26">
+          <li>SAE International (2022). <i>SAE J211-1: Instrumentation for Impact Test, Part 1: Electronic Instrumentation</i>. J211/1_202208. <a href="https://saemobilus.sae.org/standards/j2111_202208-instrumentation-impact-test-part-1-electronic-instrumentation">sae.org</a></li>
+          <li>ISO (2015). <i>ISO 6487:2015 Road vehicles: Measurement techniques in impact tests, Instrumentation</i>. With Amendment 1:2017. <a href="https://www.iso.org/standard/64041.html">iso.org</a></li>
+          <li>NHTSA (current). <i>FMVSS No. 208, Occupant crash protection</i>. 49 CFR 571.208 (S6, injury criteria). <a href="https://www.ecfr.gov/current/title-49/subtitle-B/chapter-V/part-571/subpart-B/section-571.208">eCFR</a></li>
+          <li>NHTSA (current). <i>FMVSS No. 214, Side impact protection</i>. 49 CFR 571.214 (S7.2.5, ES-2re criteria; S9–S10, pole test). <a href="https://www.ecfr.gov/current/title-49/subtitle-B/chapter-V/part-571/subpart-B/section-571.214">eCFR</a></li>
+          <li>Eppinger, R., Sun, E., Bandak, F., Haffner, M., Khaewpong, N., Maltese, M., Kuppa, S., Nguyen, T., Takhounts, E., Tannous, R., Zhang, A., Saul, R. (1999). <i>Development of improved injury criteria for the assessment of advanced automotive restraint systems II</i>. NHTSA. <a href="https://rosap.ntl.bts.gov/view/dot/14738">report</a></li>
+          <li>Kleinberger, M., Sun, E., Eppinger, R., Kuppa, S., Saul, R. (1998). <i>Development of improved injury criteria for the assessment of advanced automotive restraint systems</i>. NHTSA. <a href="https://rosap.ntl.bts.gov/view/dot/14737">report</a></li>
+          <li>Mertz, H. J., Irwin, A. L., Prasad, P. (2003). Biomechanical and scaling bases for frontal and side impact injury assessment reference values. <i>Stapp Car Crash Journal</i> 47, 155–188. <a href="https://doi.org/10.4271/2003-22-0009">doi</a></li>
+          <li>Versace, J. (1971). A review of the severity index. <i>Proc. 15th Stapp Car Crash Conference</i>, SAE 710881. <a href="https://doi.org/10.4271/710881">doi</a></li>
+          <li>Gadd, C. W. (1966). Use of a weighted-impulse criterion for estimating injury hazard. <i>Proc. 10th Stapp Car Crash Conference</i>, SAE 660793. <a href="https://doi.org/10.4271/660793">doi</a></li>
+          <li>Foster, J. K., Kortge, J. O., Wolanin, M. J. (1977). Hybrid III: a biomechanically-based crash test dummy. SAE 770938. <a href="https://doi.org/10.4271/770938">doi</a></li>
+          <li>Lau, I. V., Viano, D. C. (1986). The viscous criterion: bases and applications of an injury severity index for soft tissues. <i>Proc. 30th Stapp Car Crash Conference</i>, SAE 861882, 123–142. <a href="https://doi.org/10.4271/861882">doi</a></li>
+          <li>UNECE (Rev. 3). <i>UN Regulation No. 94: Protection of the occupants in the event of a frontal collision</i>. Annex 4 (viscous criterion), Annex 9 (deformable barrier). <a href="https://unece.org/fileadmin/DAM/trans/main/wp29/wp29regs/2017/R094r3e.pdf">pdf</a></li>
+          <li>Boström, O., Svensson, M. Y., Aldman, B., Hansson, H. A., Håland, Y., Lövsund, P., Seeman, T., Suneson, A., Säljö, A., Örtengren, T. (1996). A new neck injury criterion candidate based on injury findings in the cervical spinal ganglia after experimental neck extension trauma. <i>Proc. IRCOBI 1996</i>, 123–136. <a href="https://www.ircobi.org/wordpress/downloads/irc1996/pdf_files/1996_9.pdf">pdf</a></li>
+          <li>Davidsson, J. (1999). <i>BioRID II final report</i>. Crash Safety Division, Chalmers University of Technology. <a href="https://webfiles.ita.chalmers.se/~mys/BioRID/BioRIDIIFinal.pdf">pdf</a></li>
+          <li>UNECE (2009). <i>Global Technical Regulation No. 9: Pedestrian safety</i>. ECE/TRANS/180/Add.9. <a href="https://documents.un.org/doc/undoc/gen/g09/203/78/pdf/g0920378.pdf">pdf</a></li>
+          <li>EEVC Working Group 17 (1998, updated 2002). <i>Improved test methods to evaluate pedestrian protection afforded by passenger cars</i>. European Enhanced Vehicle-safety Committee. <a href="https://www.unece.org/fileadmin/DAM/trans/doc/2006/wp29grsp/ps-187r1e.pdf">pdf</a></li>
+          <li>Euro NCAP (2023). <i>Assessment Protocol: Vulnerable Road User Protection</i>. Version 11.4. <a href="https://cdn.euroncap.com/cars/assets/euro_ncap_assessment_protocol_vru_v114_f7ec79190c.pdf">pdf</a></li>
+        </ol>
+      </div>
+      <div class="refgroup">
+        <h3>Test protocols and regulations</h3>
+        <ol start="43">
+          <li>NHTSA (2015). <i>Laboratory Test Procedure for the New Car Assessment Program Frontal Impact Testing</i>. Docket NHTSA-2015-0046. <a href="https://downloads.regulations.gov/NHTSA-2015-0046-0010/attachment_1.pdf">pdf</a></li>
+          <li>Insurance Institute for Highway Safety (2021). <i>Moderate Overlap Frontal Crashworthiness Evaluation: Crash Test Protocol</i>. Version XIX. <a href="https://www.iihs.org/ratings/about-our-tests/test-protocols-and-technical-information">protocols</a></li>
+          <li>Insurance Institute for Highway Safety (2025). <i>Small Overlap Frontal Crashworthiness Evaluation: Crash Test Protocol</i>. Version VIII. <a href="https://www.iihs.org/media/b24c70f3-5354-4251-af20-0408adad2cf0/JjvNIg/Ratings/Protocols/current/small_overlap_test_protocol.pdf">pdf</a></li>
+          <li>Insurance Institute for Highway Safety (2017, 2024). <i>Moderate Overlap: Guidelines for Rating Structural Performance</i> (Version III) and <i>Small Overlap: Rating Protocol</i> (Version VII). Intrusion rating bands. <a href="https://www.iihs.org/media/5b0cc829-1945-4dfe-9db7-1ea879f787fd/BHYE7A/Ratings/Protocols/current/structural.pdf">moderate</a> · <a href="https://www.iihs.org/media/4ff6d6ee-2dc9-459c-a588-1cdcae448531/S7n0Kg/Ratings/Protocols/current/small_overlap_rating_protocol.pdf">small</a></li>
+          <li>Insurance Institute for Highway Safety (2024, 2025). <i>Side Impact 2.0: Crash Test Protocol</i> (Version III) and <i>Rating Guidelines</i> (Version IV). 1,900 kg barrier at 60 km/h. <a href="https://www.iihs.org/media/43dd2426-9644-494b-a06a-691796dc342c/ZJFIBQ/Ratings/Protocols/current/test_protocol_side-2.0.pdf">protocol</a> · <a href="https://www.iihs.org/media/d87f7873-a584-473c-9f23-1c14788b7335/G19jBw/Ratings/Protocols/current/side_impact_2.0_rating_guidelines.pdf">rating</a></li>
+          <li>RCAR-IIWPG; Insurance Institute for Highway Safety (2008, 2020). <i>RCAR-IIWPG Seat/Head Restraint Evaluation Protocol</i> (Version 3) and <i>Vehicle Seat/Head Restraint Evaluation Protocol: Dynamic Criteria</i> (Version VI). Sled pulse and seat criteria. <a href="https://www.iihs.org/media/84f361de-a61a-4614-985c-c420c1d20634/9i3Vqg/Ratings/Protocols/archive/rcar-iiwpg_evaluation_protocol_v3_0308.pdf">RCAR-IIWPG</a> · <a href="https://www.iihs.org/media/30da9417-bb37-4247-807e-aeb5e78ba8b0/5rL9NQ/Ratings/Protocols/current/head_restraint_protocol_dynamic_vi.pdf">IIHS</a></li>
+          <li>Insurance Institute for Highway Safety (2024). <i>Pedestrian Automatic Emergency Braking Test Protocol</i>. Version IV. <a href="https://www.iihs.org/media/f6a24355-fe4b-4d71-bd19-0aab8b39aa7e/5ZH5qg/Ratings/Protocols/current/test_protocol_pedestrian_aeb.pdf">pdf</a></li>
+          <li>Euro NCAP (2024). <i>AEB/LSS VRU Test Protocol</i>. Version 4.5.1. <a href="https://cdn.euroncap.com/cars/assets/euro_ncap_aeb_lss_vru_test_protocol_v451_cb0d5dfd0a.pdf">pdf</a></li>
+        </ol>
+      </div>
+      <div class="refgroup">
+        <h3>Vehicle dynamics and the approach</h3>
+        <ol start="51">
+          <li>Rajamani, R. (2012). <i>Vehicle Dynamics and Control</i>, 2nd ed.. Springer. <a href="https://doi.org/10.1007/978-1-4614-1433-9">doi</a></li>
+          <li>Kong, J., Pfeiffer, M., Schildbach, G., Borrelli, F. (2015). Kinematic and dynamic vehicle models for autonomous driving control design. <i>IEEE Intelligent Vehicles Symposium (IV 2015)</i>, 1094–1099. <a href="https://doi.org/10.1109/IVS.2015.7225830">doi</a></li>
+          <li>Coulter, R. C. (1992). <i>Implementation of the pure pursuit path tracking algorithm</i>. Tech. Rep. CMU-RI-TR-92-01, Carnegie Mellon University. <a href="https://www.ri.cmu.edu/publications/implementation-of-the-pure-pursuit-path-tracking-algorithm/">report</a></li>
+          <li>Åström, K. J., Murray, R. M. (2021). <i>Feedback Systems: An Introduction for Scientists and Engineers</i>, 2nd ed.. Princeton University Press. <a href="https://press.princeton.edu/books/hardcover/9780691193984/feedback-systems">book</a></li>
+          <li>Pacejka, H. B., Besselink, I. (2012). <i>Tire and Vehicle Dynamics</i>, 3rd ed.. Butterworth-Heinemann. <a href="https://doi.org/10.1016/C2010-0-68548-8">doi</a></li>
+          <li>Blythe, W., Day, T. D., Grimes, W. D. (1998). 3-dimensional simulation of vehicle response to tire blow-outs. SAE 980221. <a href="https://doi.org/10.4271/980221">doi</a></li>
+        </ol>
+      </div>
+      <div class="refgroup">
+        <h3>Sound, cameras, video and rendering</h3>
+        <ol start="57">
+          <li>W3C (2021). <i>Web Audio API</i>. W3C Recommendation, 17 June 2021. <a href="https://www.w3.org/TR/2021/REC-webaudio-20210617/">w3.org</a></li>
+          <li>van den Doel, K., Kry, P. G., Pai, D. K. (2001). FoleyAutomatic: physically-based sound effects for interactive simulation and animation. <i>Proc. SIGGRAPH 2001</i>, 537–544. <a href="https://doi.org/10.1145/383259.383322">doi</a></li>
+          <li>O’Brien, J. F., Shen, C., Gatchalian, C. M. (2002). Synthesizing sounds from rigid-body simulations. <i>Proc. SCA 2002</i>, 175–181. <a href="https://doi.org/10.1145/545261.545290">doi</a></li>
+          <li>Chadwick, J. N., An, S. S., James, D. L. (2009). Harmonic shells: a practical nonlinear sound model for near-rigid thin shells. <i>ACM Transactions on Graphics</i> 28(5). <a href="https://doi.org/10.1145/1618452.1618465">doi</a></li>
+          <li>Cirio, G., Li, D., Grinspun, E., Otaduy, M. A., Zheng, C. (2016). Crumpling sound synthesis. <i>ACM Transactions on Graphics</i> 35(6). <a href="https://doi.org/10.1145/2980179.2982400">doi</a></li>
+          <li>Zheng, C., James, D. L. (2010). Rigid-body fracture sound with precomputed soundbanks. <i>ACM Transactions on Graphics</i> 29(4). <a href="https://doi.org/10.1145/1778765.1778806">doi</a></li>
+          <li>Eiserloh, S. (2016). Math for game programmers: juicing your cameras with math. <i>Game Developers Conference 2016</i>. <a href="https://gdcvault.com/play/1023146/Math-for-Game-Programmers-Juicing">talk</a></li>
+          <li>W3C (2026). <i>WebCodecs</i>. Working Draft. <a href="https://www.w3.org/TR/webcodecs/">w3.org</a></li>
+          <li>ISO/IEC (2026). <i>ISO/IEC 14496-12: ISO base media file format</i>. 8th edition. <a href="https://www.iso.org/standard/85596.html">iso.org</a></li>
+          <li>Bjørge, M. (2015). Bandwidth-efficient rendering. <i>SIGGRAPH 2015 course: Moving Mobile Graphics</i>. <a href="https://community.arm.com/cfs-file/__key/communityserver-blogs-components-weblogfiles/00-00-00-20-66/siggraph2015_2D00_mmg_2D00_marius_2D00_slides.pdf">slides</a></li>
+          <li>W3C (2026). <i>WebGPU</i> and <i>WebGPU Shading Language (WGSL)</i>. Candidate Recommendation Drafts. <a href="https://www.w3.org/TR/webgpu/">WebGPU</a> · <a href="https://www.w3.org/TR/WGSL/">WGSL</a></li>
+        </ol>
+      </div>
+      <div class="refgroup">
+        <h3>Further reading (methods the app does not use)</h3>
+        <ol start="68">
+          <li>Macklin, M., Müller, M. (2021). A constraint-based formulation of stable neo-Hookean materials. <i>Proc. Motion, Interaction and Games (MIG ’21)</i>, 12. <a href="https://doi.org/10.1145/3487983.3488289">doi</a></li>
+          <li>Hill, R. (1948). A theory of the yielding and plastic flow of anisotropic metals. <i>Proceedings of the Royal Society A</i> 193(1033), 281–297. <a href="https://doi.org/10.1098/rspa.1948.0045">doi</a></li>
+          <li>Gilbert, E. G., Johnson, D. W., Keerthi, S. S. (1988). A fast procedure for computing the distance between complex objects in three-dimensional space. <i>IEEE Journal on Robotics and Automation</i> 4(2), 193–203. <a href="https://doi.org/10.1109/56.2083">doi</a></li>
+          <li>Macklin, M., Müller, M. (2013). Position based fluids. <i>ACM Transactions on Graphics</i> 32(4). <a href="https://doi.org/10.1145/2461912.2461984">doi</a></li>
+          <li>Fedkiw, R., Stam, J., Jensen, H. W. (2001). Visual simulation of smoke. <i>Proc. SIGGRAPH 2001</i>, 15–22. <a href="https://doi.org/10.1145/383259.383260">doi</a></li>
+          <li>van der Laan, W. J., Green, S., Sainz, M. (2009). Screen space fluid rendering with curvature flow. <i>Proc. I3D 2009</i>, 91–98. <a href="https://doi.org/10.1145/1507149.1507164">doi</a></li>
+          <li>Pfaff, T., Fortunato, M., Sanchez-Gonzalez, A., Battaglia, P. W. (2021). Learning mesh-based simulation with graph networks. <i>ICLR 2021</i>. <a href="https://openreview.net/forum?id=roNqYL0_XP">paper</a></li>
+          <li>Wu, H., Luo, H., Wang, H., Wang, J., Long, M. (2024). Transolver: a fast transformer solver for PDEs on general geometries. <i>ICML 2024</i>, PMLR 235, 53681–53705. <a href="https://proceedings.mlr.press/v235/wu24r.html">paper</a></li>
+          <li>Elrefaie, M., Shu, D., Klenk, M., Ahmed, F. (2026). CarCrashNet: a large-scale dataset and hierarchical neural solver for data-driven structural crash simulation. arXiv:2605.07098 (preprint). <a href="https://arxiv.org/abs/2605.07098">arXiv</a></li>
+        </ol>
+      </div>
       </div>
     </div>
   </section>

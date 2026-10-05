@@ -8,14 +8,14 @@
  * so intrusion pushes into the dummy; the dummy's forces are not fed back into the car.
  *
  * Channels are filtered per SAE J211 and scored with FMVSS 208-style criteria (HIC15, chest 3 ms
- * clip, chest deflection, Nij, neck tension/compression, femur force). Illustrative, not a
- * validated dummy.
+ * clip, chest deflection, Nij, neck tension/compression, femur force), plus the viscous criterion
+ * VC for the chest's soft tissue. Illustrative, not a validated dummy.
  */
 (function (root) {
 'use strict';
 
 const G = 9.81;
-const LIMITS = { hic15: 700, chest3ms: 60, chestDefl: 63, nij: 1.0, neckTension: 4170, neckCompression: 4000, femur: 10000 };
+const LIMITS = { hic15: 700, chest3ms: 60, chestDefl: 63, vc: 1.0, nij: 1.0, neckTension: 4170, neckCompression: 4000, femur: 10000 };
 
 // SAE J211-1 channel frequency class filter: 2-pole Butterworth run forward then backward
 // (phaseless, 4-pole). Ends are padded with an odd reflection to limit start-up transients.
@@ -726,16 +726,26 @@ function score(o) {
     if (femL[i] > femMax) { femMax = femL[i]; femSide = 'left'; }
     if (femR[i] > femMax) { femMax = femR[i]; femSide = 'right'; }
   }
+  // Viscous criterion (Lau & Viano 1986), as UN R94 computes it for a Hybrid III:
+  // VC = 1.3 (D / 0.229 m) dD/dt, with dD/dt from the 4th-order central difference of SAE J211
+  const vc = new Float64Array(N);
+  let vcMax = 0, vcT = 0;
+  for (let i = Math.max(2, i0); i <= Math.min(N - 3, i1); i++) {
+    const rate = (8 * (defl[i + 1] - defl[i - 1]) - (defl[i + 2] - defl[i - 2])) / (12 * dt);
+    vc[i] = Math.max(0, 1.3 * Math.max(0, defl[i]) / 0.229 * rate);
+    if (vc[i] > vcMax) { vcMax = vc[i]; vcT = i * dt; }
+  }
   return {
     hic15: h.value, hicT1: h.i1 * dt, hicT2: h.i2 * dt,
     headPeakG: headMax,
     chest3ms: clip3ms(chest.r, dt, i0, i1),
     chestDeflMm: deflMax * 1000,
+    vc: vcMax, vcT,
     pelvisPeakG: pelvisMax,
     nij: nijMax, nijMode,
     neckTension: tens, neckCompression: compr,
     femur: femMax, femurSide: femSide,
-    series: { head, chest, pelvis, defl, fz, my, nij, femL, femR },
+    series: { head, chest, pelvis, defl, vc, fz, my, nij, femL, femR },
   };
 }
 

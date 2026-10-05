@@ -627,6 +627,7 @@
         metricRow(oc, 'Head injury criterion (HIC15)', qm.hic15, '', L.hic15);
         metricRow(oc, 'Chest acceleration, 3 ms', qm.chest3ms, ' g', L.chest3ms, 1);
         metricRow(oc, 'Chest deflection', qm.chestDeflMm, ' mm', L.chestDefl, 1);
+        metricRow(oc, 'Viscous criterion (VC)', qm.vc, ' m/s', L.vc, 2);
         metricRow(oc, 'Neck injury criterion (Nij)', qm.nij, '', L.nij, 2);
         metricRow(oc, `Femur force (${qm.femurSide || 'either'} leg)`, qm.femur / 1000, ' kN', L.femur / 1000, 2);
         const vc = section('Vehicle', 'vehicle');
@@ -1161,6 +1162,7 @@
         const oc = section(`Occupant: ${OPTS[cfg.restraint].label.toLowerCase()}`);
         metricRow(oc, 'Head injury criterion (HIC15)', qm.hic15, '', L.hic15);
         metricRow(oc, 'Chest compression', qm.chestDeflMm, ' mm', 50, 1, { limitText: 'target under 50 mm' });
+        metricRow(oc, 'Viscous criterion (VC)', qm.vc, ' m/s', L.vc, 2);
         metricRow(oc, 'Chest acceleration, 3 ms', qm.chest3ms, ' g', L.chest3ms, 1);
         const sw = document.createElement('div'); sw.className = 'rerun';
         sw.innerHTML = segField('restraintPb', 'Try another restraint on the same crash', Object.entries(OPTS).map(([k, o]) => [k, o.label]));
