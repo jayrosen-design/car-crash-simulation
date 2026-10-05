@@ -3736,17 +3736,27 @@ function createImpactSim(cfg) {
   const now = (typeof performance !== 'undefined') ? () => performance.now() : () => Date.now();
 
   // ---------------------------------------------------------------- the GPU solver (opt-in)
-  // cfg.gpu: a device from CrashGPU.init() (gpu-lattice.js). For one car into the rigid barrier only,
-  // and parts don't come off nor tyres burst. The lattice steps run on the GPU in batches, one
-  // recorded frame's worth at a time; the state comes back at every frame, where the bookkeeping
-  // (telemetry, frames, energies) runs as for the CPU solver. Friction heat is not tracked there: it
-  // stays in the "contact, damping & solver" share of the energy.
-  let gpu = null, gpuRunning = false, gpuMs = 0, gpuBatches = 0, gpuSteps = 0, gpuError = null;
-  if (cfg.gpu && rigid && !multi && !wall && !staticObs) {
+  // cfg.gpu: a device from CrashGPU.init() (gpu-lattice.js). Every barrier but the brick wall, one or
+  // several vehicles; parts don't come off nor tyres burst. The lattice steps run on the GPU in
+  // batches, one recorded frame's worth at a time; the state comes back at every frame, where the
+  // bookkeeping (telemetry, frames, energies) runs as for the CPU solver. Friction heat is not
+  // tracked there: it stays in the "contact, damping & solver" share of the energy. If the GPU
+  // can't take this set-up, the CPU solves it (gpuFallback says why).
+  let gpu = null, gpuRunning = false, gpuMs = 0, gpuBatches = 0, gpuSteps = 0, gpuError = null, gpuFallback = null;
+  if (cfg.gpu && wall) gpuFallback = 'the GPU solver has no brick wall';
+  else if (cfg.gpu) {
     const floor = new Float64Array(n);
     for (let a = 0; a < n; a++) floor[a] = wheelNode[a] ? wheelFloor[a] : clear[a];
-    gpu = root.CrashGPU.lattice(cfg.gpu, { n, nc, X, V, W, floor, ghost, wheel: wheelNode, muRoll, ca, cb, rest, c0, comp, damp, cey, ck,
-      r: spec.nodeRadius, barrier: RIGID_BARRIER, G, MU_BODY, MU_WALL, MU_LAT: muLat, MIN_RATIO, MAX_RATIO });
+    const obstacle = rigid ? { kind: 'rigid', height: RIGID_BARRIER.height, halfWidth: RIGID_BARRIER.halfWidth }
+      : offset ? { kind: 'offset', side: offset.side, zEdge: offset.zEdge, width: offset.width, height: offset.height, edgeRadius: offset.edgeRadius }
+      : pole ? { kind: 'pole', x: pole.x, z: pole.z, r: pole.r, height: pole.height } : { kind: 'none' };
+    const honeycomb = hc ? { h: hc.h, nzc: hc.nzc, nyc: hc.nyc, y0: hc.y0, depth: hc.depth, crush: hc.crush, padY: 0.5 * car.sy, padZ: 0.5 * car.sz,
+      solid: HONEYCOMB.solid, mainDepth: HONEYCOMB.main.depth, bumperDepth: HONEYCOMB.bumper.depth, mainStress: HONEYCOMB.main.stress, bumperStress: HONEYCOMB.bumper.stress,
+      ijk: car.ijk, ny: spec.ny, nz: spec.nz } : null;
+    try {
+      gpu = root.CrashGPU.lattice(cfg.gpu, { n, nc, X, V, W, floor, ghost, wheel: wheelNode, muRoll, unitOf, units: NU, ca, cb, rest, c0, comp, damp, cey, ck,
+        r: spec.nodeRadius, obstacle, honeycomb, G, MU_BODY, MU_WALL, MU_LAT: muLat, MU_CAR, MIN_RATIO, MAX_RATIO, MAX_SEPARATION, NODE_SEPARATION });
+    } catch (e) { gpuFallback = e.message; }
   }
   async function gpuLoop() {
     gpuRunning = true;
@@ -3758,19 +3768,25 @@ function createImpactSim(cfg) {
           const fine = T0 < 0 ? tt < 0.6 : tt < T0 + FINE_WINDOW;
           dts.push((fine ? DT_FINE : DT_COARSE) * (cfg.dtScale || 1)); tt += dts[dts.length - 1];
         } while (tt < nextRecordT - 1e-9 && dts.length < gpu.maxSteps);
-        const fh = Math.hypot(frame.f[0], frame.f[2]) || 1, t1 = now();
-        const st = await gpu.run(dts, [frame.f[0] / fh, frame.f[2] / fh], gpuSteps);
+        const rolls = units.map(U => { const fh = Math.hypot(U.frame.f[0], U.frame.f[2]) || 1; return [U.frame.f[0] / fh, U.frame.f[2] / fh]; });
+        const t1 = now();
+        const st = await gpu.run(dts, rolls, gpuSteps);
         gpuMs += now() - t1; gpuBatches++;
         if (cancelled) break;
         X.set(st.X); V.set(st.V);
         for (let c = 0; c < nc; c++) { rest[c] = st.rest[c]; plastic[c] = st.plastic[c]; Wp += st.wp[c]; }
-        let imp = 0, ix = 0, iy = 0, iz = 0, first = 0xffffffff;
+        if (hc) { hc.crush.set(st.crush); for (let i = 0; i < st.whc.length; i++) Whc += st.whc[i]; }
+        // contact impulses: for the events (once per contact), the barrier's load cell, each vehicle
+        let imp = 0, ix = 0, iy = 0, iz = 0, bimp = 0, first = 0xffffffff;
+        for (const U of units) U.force = 0;
         for (let a = 0; a < n; a++) {
-          imp += st.imp[4 * a]; ix += st.imp[4 * a + 1]; iy += st.imp[4 * a + 2]; iz += st.imp[4 * a + 3];
+          const o = 8 * a;
+          imp += st.imps[o]; ix += st.imps[o + 1]; iy += st.imps[o + 2]; iz += st.imps[o + 3];
+          bimp += st.imps[o + 4]; units[unitOf[a]].force += st.imps[o + 5] / (tt - t);
           if (st.first[a] < first) first = st.first[a];
         }
         impAcc += imp; impX += ix; impY += iy; impZ += iz;
-        barrierForce = imp / (tt - t);   // the mean over the batch
+        barrierForce = bimp / (tt - t);   // the mean over the batch
         if (T0 < 0 && first !== 0xffffffff) {
           let tf = t;
           for (let k = 0; k < first - gpuSteps; k++) tf += dts[k];
@@ -3804,6 +3820,7 @@ function createImpactSim(cfg) {
     cancel() { cancelled = true; done = true; if (gpu && !gpuRunning) gpu.destroy(); },
     // the GPU solver, if in use: { name, colours, batches, steps, ms } so far; and why it stopped, if it failed
     get gpu() { return gpu ? { name: gpu.name, colours: gpu.colours, batches: gpuBatches, steps: gpuSteps, ms: gpuMs } : null; },
+    get gpuFallback() { return gpuFallback; },
     get error() { return gpuError; },
     // Advance for up to budgetMs of wall-clock time; returns progress 0..1. With the GPU solver the
     // steps run in the background and this only reports progress.
@@ -3957,7 +3974,7 @@ function createImpactSim(cfg) {
       offset: offset ? { zEdge: offset.zEdge, side: offset.side, width: offset.width, height: offset.height, edgeRadius: offset.edgeRadius,
         honeycomb: hc ? { cell: hc.h, nzc: hc.nzc, nyc: hc.nyc, y0: hc.y0, depth: hc.depth, frames: frames.honeycomb } : null } : null,
       pole: pole ? { x: pole.x, z: pole.z, r: pole.r } : null,
-      solver: sim.gpu ? Object.assign({ kind: 'gpu' }, sim.gpu) : { kind: 'cpu' },
+      solver: sim.gpu ? Object.assign({ kind: 'gpu' }, sim.gpu) : { kind: 'cpu', fallback: gpuFallback },
     };
   }
 
@@ -4049,23 +4066,31 @@ if (typeof module === 'object' && module.exports) module.exports = api;
 </script>
 <script>/* js/gpu-lattice.js */
 /* The car lattice on the GPU (WebGPU compute, WGSL): an opt-in alternative to the inner loop of
- * physics.js createImpactSim (cfg.gpu), for one car into the rigid barrier.
+ * physics.js createImpactSim (cfg.gpu). It covers the rigid barrier, the offset barrier with or
+ * without its honeycomb face, the pole, and several cars colliding with each other; not the brick
+ * wall, and parts don't come off.
  *
  * Each step runs the same equations as the CPU solver: predict; the lattice's distance constraints
- * (XPBD with damping, plastic yield and its rest-length limits); ground and barrier contact with
- * Coulomb friction (rolling along the car for the wheel nodes); velocities. The CPU solver projects
- * the constraints one after the other (Gauss-Seidel). Here they are split into colour groups, no two
- * constraints in a group sharing a node, so each group is projected in parallel and the groups one
- * after the other: the same method in a different order. Positions are 32-bit floats (the CPU uses
- * 64-bit), so results differ slightly from the CPU's.
+ * (XPBD with damping, plastic yield and its rest-length limits); contacts with the ground, the
+ * barrier or obstacle, the honeycomb and the other cars; Coulomb friction (rolling along the car for
+ * the wheel nodes); velocities. Two things differ:
+ * - the order. The CPU projects the constraints one after the other (Gauss-Seidel); here they are
+ *   split into colour groups, no two in a group sharing a node, projected in parallel group by group.
+ *   Car-against-car contacts are gathered per node from the same positions (Jacobi) instead of one
+ *   after the other. The honeycomb is crushed lane by lane (the nodes one behind the other), in the
+ *   CPU's order within a lane;
+ * - 32-bit floats (the CPU uses 64-bit).
+ * So results differ slightly from the CPU's.
  *
- * run(dts, rollDir, base) does a batch of steps (one recorded frame's worth) and resolves to the
+ * run(dts, rolls, base) does a batch of steps (one recorded frame's worth) and resolves to the
  * state read back from the GPU, for the CPU's bookkeeping (telemetry, energies, frames).
  * Browser only: needs navigator.gpu (a secure context: https, localhost or file://). */
 const CrashGPU = (() => {
   'use strict';
   const STEP_STRIDE = 256;   // uniform buffer offset alignment
+  const STEP_SIZE = 80;      // the Step struct
   const WG = 64;
+  const PAIRS = 6;           // car-to-car contacts kept per node for friction
 
   let devicePromise = null;
   // the GPU device, requested once; rejects with a readable message if there is none
@@ -4074,11 +4099,12 @@ const CrashGPU = (() => {
       if (typeof navigator === 'undefined' || !navigator.gpu) throw new Error('this browser has no WebGPU');
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (!adapter) throw new Error('no WebGPU adapter (GPU) available');
-      const device = await adapter.requestDevice();
+      const maxStorage = Math.min(16, adapter.limits.maxStorageBuffersPerShaderStage);
+      const device = await adapter.requestDevice({ requiredLimits: { maxStorageBuffersPerShaderStage: maxStorage } });
       const info = adapter.info || {};
       device.lost.then((e) => { devicePromise = null; console.warn('WebGPU device lost:', e.message); });
-      return { device, name: [info.vendor, info.architecture].filter(Boolean).join(' ') || 'GPU' };
-    })();
+      return { device, maxStorage, name: [info.vendor, info.architecture].filter(Boolean).join(' ') || 'GPU' };
+    })().catch((e) => { devicePromise = null; throw e; });
     return devicePromise;
   }
 
@@ -4104,14 +4130,16 @@ const CrashGPU = (() => {
     return { ncol, order, ranges: Array.from({ length: ncol }, (_, k) => [start[k], counts[k]]) };
   }
 
-  const STEP = 'struct Step { dt: f32, idx: u32, rx: f32, rz: f32 };\n@group(1) @binding(0) var<uniform> S: Step;\n';
+  const f = (v) => { const s = String(+v); return /[.e]/.test(s) ? s : s + '.0'; };
+  const STEP = 'struct Step { dt: f32, idx: u32, p0: u32, p1: u32, roll: array<vec4<f32>, 4> };\n@group(1) @binding(0) var<uniform> S: Step;\n';
+  const store = (bindings) => bindings.map(([name, type, rw], i) => `@group(0) @binding(${i}) var<storage, ${rw ? 'read_write' : 'read'}> ${name}: ${type};`).join('\n') + '\n';
+
+  // The kernels, for this simulation's set-up (obstacle, honeycomb, several cars)
   function shaders(d) {
-    const f = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; };
-    const head = `const N: u32 = ${d.n}u;\nconst G: f32 = ${f(d.G)};\n` + STEP;
-    const predict = head + `
-@group(0) @binding(0) var<storage, read_write> X: array<f32>;
-@group(0) @binding(1) var<storage, read_write> P: array<f32>;
-@group(0) @binding(2) var<storage, read_write> V: array<f32>;
+    const head = `const N: u32 = ${d.n}u;\nconst G: f32 = ${f(d.G)};\nconst R: f32 = ${f(d.r)};\nconst MAXSEP: f32 = ${f(d.MAX_SEPARATION)};\n` + STEP;
+    const ob = d.obstacle, hc = d.honeycomb;
+    const out = {};
+    out.predict = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>', 1], ['V', 'array<f32>', 1]]) + `
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   let a = g.x;
   if (a >= N) { return; }
@@ -4120,18 +4148,12 @@ const CrashGPU = (() => {
   V[i + 1u] = V[i + 1u] - G * S.dt;
   X[i] = X[i] + V[i] * S.dt; X[i + 1u] = X[i + 1u] + V[i + 1u] * S.dt; X[i + 2u] = X[i + 2u] + V[i + 2u] * S.dt;
 }`;
-    const solve = STEP + `
+    out.solve = STEP + `
 const MIN_RATIO: f32 = ${f(d.MIN_RATIO)};
 const MAX_RATIO: f32 = ${f(d.MAX_RATIO)};
 struct Con { a: u32, b: u32, c0: f32, comp: f32, damp: f32, cey: f32, ck: f32, pad: f32 };
 struct Range { off: u32, cnt: u32, pad0: u32, pad1: u32 };
-@group(0) @binding(0) var<storage, read_write> X: array<f32>;
-@group(0) @binding(1) var<storage, read> P: array<f32>;
-@group(0) @binding(2) var<storage, read> NI: array<vec4<f32>>;
-@group(0) @binding(3) var<storage, read> C: array<Con>;
-@group(0) @binding(4) var<storage, read_write> rest: array<f32>;
-@group(0) @binding(5) var<storage, read_write> plastic: array<f32>;
-@group(0) @binding(6) var<storage, read_write> wp: array<f32>;
+` + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['C', 'array<Con>'], ['rest', 'array<f32>', 1], ['plastic', 'array<f32>', 1], ['wp', 'array<f32>', 1]]) + `
 @group(2) @binding(0) var<uniform> Rg: Range;
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   if (g.x >= Rg.cnt) { return; }
@@ -4166,19 +4188,211 @@ struct Range { off: u32, cnt: u32, pad0: u32, pad1: u32 };
     rest[c] = nr;
   }
 }`;
-    const nodes = head + `
-const R: f32 = ${f(d.r)};
-const BH: f32 = ${f(d.barrier.height)};
-const BW: f32 = ${f(d.barrier.halfWidth)};
-const MU_BODY: f32 = ${f(d.MU_BODY)};
-const MU_WALL: f32 = ${f(d.MU_WALL)};
-const MU_LAT: f32 = ${f(d.MU_LAT)};
-@group(0) @binding(0) var<storage, read_write> X: array<f32>;
-@group(0) @binding(1) var<storage, read> P: array<f32>;
-@group(0) @binding(2) var<storage, read_write> V: array<f32>;
-@group(0) @binding(3) var<storage, read> NI: array<vec4<f32>>;
-@group(0) @binding(4) var<storage, read_write> IMP: array<vec4<f32>>;
-@group(0) @binding(5) var<storage, read_write> FIRST: array<u32>;
+    // the ground (and the rigid barrier): CT = (ground, barrier or honeycomb, surface) corrections
+    const rigid = ob.kind === 'rigid' ? `
+    if (x.x + R > 0.0 && x.y < ${f(ob.height)} && abs(x.z) < ${f(ob.halfWidth)}) {
+      ct.y = x.x + R; x.x = -R;
+      let imp = ct.y / (ni.x * S.dt);
+      IMPS[2u * a] = IMPS[2u * a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
+      IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + imp;
+      FIRST[a] = min(FIRST[a], S.idx);
+    }` : '';
+    out.ground = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + `
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let a = g.x;
+  if (a >= N) { return; }
+  let ni = NI[a];
+  var ct = vec4<f32>(0.0);
+  if ((u32(ni.z) & 1u) == 0u) {
+    let i = 3u * a;
+    var x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]);
+    if (x.y < ni.y) { ct.x = ni.y - x.y; x.y = ni.y; }${rigid}
+    X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;
+  }
+  CT[a] = ct;
+}`;
+    if (hc) out.honeycomb = head + `
+const NL: u32 = ${hc.lanes}u;
+const HH: f32 = ${f(hc.h)}; const NZC: u32 = ${hc.nzc}u; const NYC: u32 = ${hc.nyc}u; const HY0: f32 = ${f(hc.y0)};
+const PADY: f32 = ${f(hc.padY)}; const PADZ: f32 = ${f(hc.padZ)}; const SIDE: f32 = ${f(ob.side)}; const ZEDGE: f32 = ${f(ob.zEdge)};
+const SOLID: f32 = ${f(hc.solid)}; const MAIN_D: f32 = ${f(hc.mainDepth)}; const BUMP_D: f32 = ${f(hc.bumperDepth)};
+const MAIN_S: f32 = ${f(hc.mainStress)}; const BUMP_S: f32 = ${f(hc.bumperStress)};
+` + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1],
+      ['LN', 'array<u32>'], ['CD', 'array<vec2<f32>>', 1], ['CLAIM', 'array<atomic<u32>>', 1], ['WHC', 'array<f32>', 1]]) + `
+fn stressOf(c: f32, dep: f32) -> f32 { if (c < BUMP_D && dep > MAIN_D + 1e-6) { return BUMP_S; } return MAIN_S; }
+fn work(c0: f32, c1: f32, dep: f32) -> f32 {   // crushing a cell from c0 to c1 (J), as physics.js crushWork
+  let b = select(0.0, BUMP_D, dep > MAIN_D + 1e-6);
+  let inB = max(0.0, min(c1, b) - c0);
+  return HH * HH * (inB * BUMP_S + ((c1 - c0) - inB) * MAIN_S);
+}
+// One thread per lane of nodes (the nodes one behind the other at the same height and side
+// position, in the CPU's order), as physics.js honeycombContact; a cell is crushed by at most one
+// node per step (CLAIM holds the step that claimed it).
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let lane = g.x;
+  if (lane >= NL) { return; }
+  for (var q = LN[lane]; q < LN[lane + 1u]; q++) {
+    let a = LN[NL + 1u + q];
+    let ni = NI[a]; let i3 = 3u * a;
+    var x = vec3<f32>(X[i3], X[i3 + 1u], X[i3 + 2u]);
+    let p = vec3<f32>(P[i3], P[i3 + 1u], P[i3 + 2u]);
+    let w = -SIDE * (x.z - ZEDGE);
+    let iz0 = max(0, i32(ceil((-w - PADZ) / HH - 0.5))); let iz1 = min(i32(NZC) - 1, i32(floor((-w + PADZ) / HH - 0.5)));
+    let iy0 = max(0, i32(ceil((x.y - PADY - HY0) / HH - 0.5))); let iy1 = min(i32(NYC) - 1, i32(floor((x.y + PADY - HY0) / HH - 0.5)));
+    if (iz0 > iz1 || iy0 > iy1) { continue; }
+    var xf = 0.0; var cnt = 0.0; var cap = 0.0; var solid = false;
+    for (var iy = iy0; iy <= iy1; iy++) {
+      for (var iz = iz0; iz <= iz1; iz++) {
+        let i = u32(iy) * NZC + u32(iz);
+        let cd = CD[i];
+        xf = xf + cd.x - cd.y; cnt = cnt + 1.0;
+        if (cd.x >= cd.y - SOLID - 1e-9) { solid = true; }
+        else if (atomicLoad(&CLAIM[i]) != S.idx) { cap = cap + stressOf(cd.x, cd.y) * HH * HH; }
+      }
+    }
+    xf = xf / cnt;
+    var pen = x.x + R - xf;
+    if (pen <= 0.0) { continue; }
+    pen = min(pen, max(0.0, x.x - p.x + MAXSEP * S.dt));
+    if (pen <= 0.0) { continue; }
+    let m = 1.0 / ni.x;
+    let crush = !solid && m * pen > cap * S.dt * S.dt;
+    var dx = pen;
+    if (crush) { dx = cap * S.dt * S.dt / m; }
+    x.x = x.x - dx;
+    if (crush) {
+      let front = x.x + R; let adv = max(0.0, x.x - p.x);
+      for (var iy = iy0; iy <= iy1; iy++) {
+        for (var iz = iz0; iz <= iz1; iz++) {
+          let i = u32(iy) * NZC + u32(iz);
+          if (atomicExchange(&CLAIM[i], S.idx) == S.idx) { continue; }
+          let cd = CD[i];
+          let c1 = min(min(cd.y - SOLID, front + cd.y), cd.x + adv);
+          if (c1 > cd.x) { WHC[i] = WHC[i] + work(cd.x, c1, cd.y); CD[i] = vec2<f32>(c1, cd.y); }
+        }
+      }
+    }
+    var ct = CT[a]; ct.y = dx; CT[a] = ct;
+    let imp = dx / (ni.x * S.dt);
+    IMPS[2u * a] = IMPS[2u * a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
+    IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + imp;
+    FIRST[a] = min(FIRST[a], S.idx);
+    X[i3] = x.x; X[i3 + 1u] = x.y; X[i3 + 2u] = x.z;
+  }
+}`;
+    // the offset barrier's block or the pole, as a signed distance (physics.js obstacleSDF)
+    if (ob.kind === 'offset' || ob.kind === 'pole') {
+      const sdf = ob.kind === 'pole' ? `
+fn sdf(x: vec3<f32>) -> vec3<f32> {
+  let dx = x.x - ${f(ob.x)}; let dz = x.z - ${f(ob.z)}; let d = max(length(vec2<f32>(dx, dz)), 1e-9);
+  if (x.y > ${f(ob.height)}) { return vec3<f32>(1e9, dx / d, dz / d); }
+  return vec3<f32>(d - ${f(ob.r)}, dx / d, dz / d);
+}` : `
+fn sdf(x: vec3<f32>) -> vec3<f32> {
+  if (x.y > ${f(ob.height)}) { return vec3<f32>(1e9, -1.0, 0.0); }
+  let s = -(${f(ob.side)}); let w = s * (x.z - ${f(ob.zEdge)}); let rho = ${f(ob.edgeRadius)};
+  var d: f32; var nx: f32; var nw: f32;
+  if (x.x < rho && w > -rho) { let ex = x.x - rho; let ew = w + rho; let l = max(length(vec2<f32>(ex, ew)), 1e-9); d = l - rho; nx = ex / l; nw = ew / l; }
+  else if (w > -rho) { d = w; nx = 0.0; nw = 1.0; }
+  else if (x.x < rho || x.x < -w) { d = -x.x; nx = -1.0; nw = 0.0; }
+  else { d = w; nx = 0.0; nw = 1.0; }
+  if (-(${f(ob.width)}) - w > d) { d = -(${f(ob.width)}) - w; nx = 0.0; nw = -1.0; }
+  return vec3<f32>(d, nx, s * nw);
+}`;
+      out.surface = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['NRM', 'array<vec2<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + sdf + `
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let a = g.x;
+  if (a >= N) { return; }
+  let ni = NI[a];
+  if ((u32(ni.z) & 1u) != 0u) { return; }
+  let i = 3u * a;
+  var x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]);
+  let p = vec3<f32>(P[i], P[i + 1u], P[i + 2u]);
+  let gq = sdf(x);
+  if (gq.x >= R) { return; }
+  // cancel this step's approach, but never push the node out faster than MAXSEP
+  let pen = min(R - gq.x, max(0.0, -((x.x - p.x) * gq.y + (x.z - p.z) * gq.z) + MAXSEP * S.dt));
+  if (pen <= 0.0) { return; }
+  x.x = x.x + pen * gq.y; x.z = x.z + pen * gq.z;
+  var ct = CT[a]; ct.z = pen; CT[a] = ct;
+  NRM[a] = vec2<f32>(gq.y, gq.z);
+  let imp = pen / (ni.x * S.dt);
+  IMPS[2u * a] = IMPS[2u * a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
+  IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + ${ob.kind === 'pole' ? 'imp' : 'imp * max(0.0, -gq.y)'};
+  FIRST[a] = min(FIRST[a], S.idx);
+  X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;
+}`;
+    }
+    const multi = d.units > 1;
+    if (multi) out.cars = head + `
+const D: f32 = 2.0 * R;
+const NODE_SEP: f32 = ${f(d.NODE_SEPARATION)};
+const K: u32 = ${PAIRS}u;
+var<workgroup> TX: array<vec4<f32>, ${WG}>;
+var<workgroup> TP: array<vec4<f32>, ${WG}>;
+` + store([['X', 'array<f32>'], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['DC', 'array<vec4<f32>>', 1], ['PR', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + `
+// Car against car: each node against every node of the other cars (tiled through workgroup
+// memory), its own share of each correction gathered from the same positions (physics.js
+// carCarContacts does them one after the other). The contacts are kept for friction.
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let a = g.x;
+  let valid = a < N;
+  var xa = vec3<f32>(0.0); var pa = vec3<f32>(0.0); var wa = 0.0; var ua = 0u; var ghostA = true;
+  if (valid) {
+    xa = vec3<f32>(X[3u * a], X[3u * a + 1u], X[3u * a + 2u]); pa = vec3<f32>(P[3u * a], P[3u * a + 1u], P[3u * a + 2u]);
+    let ni = NI[a]; wa = ni.x; ua = u32(ni.z) >> 2u; ghostA = (u32(ni.z) & 1u) != 0u;
+  }
+  var dc = vec3<f32>(0.0); var np = 0u; var fimp = 0.0; var eimp = vec4<f32>(0.0); var first = 0xffffffffu;
+  for (var base = 0u; base < N; base = base + ${WG}u) {
+    let b = base + li;
+    if (b < N) {
+      TX[li] = vec4<f32>(X[3u * b], X[3u * b + 1u], X[3u * b + 2u], NI[b].x);
+      TP[li] = vec4<f32>(P[3u * b], P[3u * b + 1u], P[3u * b + 2u], NI[b].z);
+    } else { TP[li] = vec4<f32>(0.0, 0.0, 0.0, 1.0); }
+    workgroupBarrier();
+    if (valid && !ghostA) {
+      for (var j = 0u; j < ${WG}u; j++) {
+        let bb = base + j;
+        if (bb >= N) { break; }
+        let fl = u32(TP[j].w);
+        if ((fl & 1u) != 0u || (fl >> 2u) == ua) { continue; }
+        let xb = TX[j].xyz;
+        let dv = xa - xb; let d2 = dot(dv, dv);
+        if (d2 >= D * D || d2 < 1e-18) { continue; }
+        let dl0 = sqrt(d2); let nrm = dv / dl0;
+        let pen = min(D - dl0, max(0.0, -dot((xa - pa) - (xb - TP[j].xyz), nrm) + NODE_SEP * S.dt));
+        if (pen <= 0.0) { continue; }
+        let dl = pen / (wa + TX[j].w);
+        dc = dc + wa * dl * nrm;
+        if (np < K) { PR[2u * (a * K + np)] = vec4<f32>(bitcast<f32>(bb), dl, 0.0, 0.0); PR[2u * (a * K + np) + 1u] = vec4<f32>(nrm, 0.0); np = np + 1u; }
+        let imp = dl / S.dt;   // the contact force times the step
+        fimp = fimp + imp;
+        if (ua < (fl >> 2u)) { let mid = 0.5 * (xa + xb); eimp = eimp + vec4<f32>(imp, imp * mid); }
+        first = min(first, S.idx);
+      }
+    }
+    workgroupBarrier();
+  }
+  if (valid) {
+    DC[a] = vec4<f32>(dc, f32(np));
+    if (!ghostA) {
+      IMPS[2u * a] = IMPS[2u * a] + eimp;
+      IMPS[2u * a + 1u].y = IMPS[2u * a + 1u].y + fimp;
+      FIRST[a] = min(FIRST[a], first);
+    }
+  }
+}`;
+    // friction at the node's own contacts (physics.js frictionPass), then (one car) velocities
+    const surfFr = out.surface ? `
+    if (ct.z > 0.0) {
+      let nn = NRM[a];
+      var t = x - p;
+      let dn = t.x * nn.x + t.z * nn.y; t.x = t.x - dn * nn.x; t.z = t.z - dn * nn.y;
+      let len = length(t); let lim = ${f(d.MU_WALL)} * ct.z;
+      x = x - select(lim / len, 1.0, len <= lim) * t;
+    }` : '';
+    out.friction = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['V', 'array<f32>', 1], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>'],
+      ...(out.surface ? [['NRM', 'array<vec2<f32>>']] : []), ...(multi ? [['DC', 'array<vec4<f32>>']] : [])]) + `
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   let a = g.x;
   if (a >= N) { return; }
@@ -4186,64 +4400,132 @@ const MU_LAT: f32 = ${f(d.MU_LAT)};
   var x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]);
   let p = vec3<f32>(P[i], P[i + 1u], P[i + 2u]);
   let ni = NI[a];
-  let flags = u32(ni.z);
+  let flags = u32(ni.z);${multi ? '\n  x = x + DC[a].xyz;' : ''}
   if ((flags & 1u) == 0u) {
-    // contacts: the ground (or the tyre's radius), then the barrier face
-    var lg = 0.0; var lb = 0.0;
-    if (x.y < ni.y) { lg = ni.y - x.y; x.y = ni.y; }
-    if (x.x + R > 0.0 && x.y < BH && abs(x.z) < BW) {
-      lb = x.x + R; x.x = -R;
-      let imp = lb / (ni.x * S.dt);   // m d / dt, the impulse this step
-      IMP[a] = IMP[a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
-      FIRST[a] = min(FIRST[a], S.idx);
-    }
-    // friction (physics.js frictionPass): wheels roll along the car and grip sideways
-    if (lg > 0.0) {
+    let ct = CT[a];
+    if (ct.x > 0.0) {
       let dx = x.x - p.x; let dz = x.z - p.z;
-      if ((flags & 2u) != 0u) {
-        let fx = S.rx; let fz = S.rz; let lx = -fz; let lz = fx;
-        let rf = clamp(dx * fx + dz * fz, -ni.w * lg, ni.w * lg);
-        let rl = clamp(dx * lx + dz * lz, -MU_LAT * lg, MU_LAT * lg);
+      if ((flags & 2u) != 0u) {   // a wheel: rolls along its car, grips sideways
+        let r = S.roll[flags >> 2u];
+        let fx = r.x; let fz = r.y; let lx = -fz; let lz = fx;
+        let rf = clamp(dx * fx + dz * fz, -ni.w * ct.x, ni.w * ct.x);
+        let rl = clamp(dx * lx + dz * lz, -${f(d.MU_LAT)} * ct.x, ${f(d.MU_LAT)} * ct.x);
         x.x = x.x - (rf * fx + rl * lx); x.z = x.z - (rf * fz + rl * lz);
       } else {
-        let len = length(vec2<f32>(dx, dz)); let lim = MU_BODY * lg;
+        let len = length(vec2<f32>(dx, dz)); let lim = ${f(d.MU_BODY)} * ct.x;
         let s = select(lim / len, 1.0, len <= lim);
         x.x = x.x - s * dx; x.z = x.z - s * dz;
       }
     }
-    if (lb > 0.0) {
+    if (ct.y > 0.0) {
       let dy = x.y - p.y; let dz = x.z - p.z;
-      let len = length(vec2<f32>(dy, dz)); let lim = MU_WALL * lb;
+      let len = length(vec2<f32>(dy, dz)); let lim = ${f(d.MU_WALL)} * ct.y;
       let s = select(lim / len, 1.0, len <= lim);
       x.y = x.y - s * dy; x.z = x.z - s * dz;
-    }
+    }${surfFr}
   }
+  X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;${multi ? '' : `
+  let v = (x - p) / S.dt;
+  V[i] = v.x; V[i + 1u] = v.y; V[i + 2u] = v.z;`}
+}`;
+    if (multi) {
+      out.carFriction = head + `const K: u32 = ${PAIRS}u;\n` + store([['X', 'array<f32>'], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['DC', 'array<vec4<f32>>'], ['PR', 'array<vec4<f32>>'], ['D2', 'array<vec4<f32>>', 1]]) + `
+// friction at the car-against-car contacts, each node's share from the same positions
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let a = g.x;
+  if (a >= N) { return; }
+  let xa = vec3<f32>(X[3u * a], X[3u * a + 1u], X[3u * a + 2u]); let pa = vec3<f32>(P[3u * a], P[3u * a + 1u], P[3u * a + 2u]);
+  let wa = NI[a].x;
+  var d2 = vec3<f32>(0.0);
+  let np = u32(DC[a].w);
+  for (var k = 0u; k < np; k++) {
+    let e0 = PR[2u * (a * K + k)]; let nrm = PR[2u * (a * K + k) + 1u].xyz;
+    let b = bitcast<u32>(e0.x);
+    let xb = vec3<f32>(X[3u * b], X[3u * b + 1u], X[3u * b + 2u]); let pb = vec3<f32>(P[3u * b], P[3u * b + 1u], P[3u * b + 2u]);
+    var t = (xa - pa) - (xb - pb);
+    t = t - dot(t, nrm) * nrm;
+    let len = length(t);
+    if (len < 1e-12) { continue; }
+    let lt = min(len / (wa + NI[b].x), ${f(d.MU_CAR)} * e0.y);
+    d2 = d2 - wa * lt * (t / len);
+  }
+  D2[a] = vec4<f32>(d2, 0.0);
+}`;
+      out.finish = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['V', 'array<f32>', 1], ['D2', 'array<vec4<f32>>']]) + `
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let a = g.x;
+  if (a >= N) { return; }
+  let i = 3u * a;
+  let x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]) + D2[a].xyz;
+  let p = vec3<f32>(P[i], P[i + 1u], P[i + 2u]);
   X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;
   let v = (x - p) / S.dt;
   V[i] = v.x; V[i + 1u] = v.y; V[i + 2u] = v.z;
 }`;
-    return { predict, solve, nodes };
+    }
+    return out;
   }
 
   /* d: { n, nc, X, V, W (inverse masses), floor (ground height per node: the tyre radius for wheel
-   *      nodes), ghost, wheel (0/1 per node), muRoll, ca, cb, rest, c0, comp, damp, cey, ck,
-   *      r (node radius), barrier { height, halfWidth }, G, MU_BODY, MU_WALL, MU_LAT, MIN_RATIO,
-   *      MAX_RATIO, maxSteps } */
+   *      nodes), ghost, wheel (0/1 per node), muRoll, unitOf, units (count), ca, cb, rest, c0, comp,
+   *      damp, cey, ck, r (node radius), G, MU_BODY, MU_WALL, MU_LAT, MU_CAR, MIN_RATIO, MAX_RATIO,
+   *      MAX_SEPARATION, NODE_SEPARATION,
+   *      obstacle: { kind: 'rigid' (height, halfWidth) | 'offset' (side, zEdge, width, height,
+   *                  edgeRadius) | 'pole' (x, z, r, height) | 'none' },
+   *      honeycomb: null or { h, nzc, nyc, y0, depth, crush, padY, padZ, solid, mainDepth,
+   *                  bumperDepth, mainStress, bumperStress, ijk (the nodes' lattice indices), ny, nz },
+   *      maxSteps } */
   function lattice(gpu, d) {
-    const dev = gpu.device, n = d.n, nc = d.nc, maxSteps = d.maxSteps || 256;
+    const dev = gpu.device, n = d.n, nc = d.nc, maxSteps = d.maxSteps || 256, multi = d.units > 1;
+    if (d.units > 4) throw new Error('the GPU solver takes at most 4 vehicles');
+    if (d.honeycomb && multi) throw new Error('the GPU solver has no honeycomb with several vehicles');
+    if (d.honeycomb && gpu.maxStorage < 10) throw new Error('this GPU allows too few storage buffers for the honeycomb face');
     const C = colour(d.ca, d.cb, n);
-    const S = GPUBufferUsage.STORAGE, CD = GPUBufferUsage.COPY_DST, CS = GPUBufferUsage.COPY_SRC;
+    const SU = GPUBufferUsage.STORAGE, CD = GPUBufferUsage.COPY_DST, CS = GPUBufferUsage.COPY_SRC;
     const buf = (bytes, usage) => dev.createBuffer({ size: Math.max(16, Math.ceil(bytes / 16) * 16), usage });
     const put = (b, arr) => dev.queue.writeBuffer(b, 0, arr);
+    const B = {};
     // node state and properties
-    const bX = buf(12 * n, S | CD | CS), bP = buf(12 * n, S | CD), bV = buf(12 * n, S | CD | CS);
-    const bNI = buf(16 * n, S | CD), bIMP = buf(16 * n, S | CD | CS), bFIRST = buf(4 * n, S | CD | CS);
-    put(bX, Float32Array.from(d.X)); put(bP, Float32Array.from(d.X)); put(bV, Float32Array.from(d.V));
+    B.X = buf(12 * n, SU | CD | CS); B.P = buf(12 * n, SU | CD); B.V = buf(12 * n, SU | CD | CS);
+    B.NI = buf(16 * n, SU | CD); B.CT = buf(16 * n, SU); B.IMPS = buf(32 * n, SU | CD | CS); B.FIRST = buf(4 * n, SU | CD | CS);
+    put(B.X, Float32Array.from(d.X)); put(B.P, Float32Array.from(d.X)); put(B.V, Float32Array.from(d.V));
     const ni = new Float32Array(4 * n);
-    for (let a = 0; a < n; a++) { ni[4 * a] = d.W[a]; ni[4 * a + 1] = d.floor[a]; ni[4 * a + 2] = (d.ghost[a] ? 1 : 0) + (d.wheel[a] ? 2 : 0); ni[4 * a + 3] = d.muRoll[a]; }
-    put(bNI, ni);
-    const noFirst = new Uint32Array(n).fill(0xffffffff), zeros4 = new Float32Array(4 * n);
-    put(bFIRST, noFirst);
+    for (let a = 0; a < n; a++) {
+      ni[4 * a] = d.W[a]; ni[4 * a + 1] = d.floor[a];
+      ni[4 * a + 2] = (d.ghost[a] ? 1 : 0) + (d.wheel[a] ? 2 : 0) + 4 * (d.unitOf ? d.unitOf[a] : 0);
+      ni[4 * a + 3] = d.muRoll[a];
+    }
+    put(B.NI, ni);
+    const noFirst = new Uint32Array(n).fill(0xffffffff), zerosI = new Float32Array(8 * n);
+    put(B.FIRST, noFirst);
+    if (d.obstacle.kind === 'offset' || d.obstacle.kind === 'pole') B.NRM = buf(8 * n, SU);
+    if (multi) { B.DC = buf(16 * n, SU); B.PR = buf(32 * PAIRS * n, SU); B.D2 = buf(16 * n, SU); }
+    // the honeycomb: lanes of nodes (same lattice row and column, front to back as the CPU visits
+    // them), and its cells (crush, depth), claims and crush work
+    const H = d.honeycomb;
+    let nCells = 0, zerosW = null;
+    if (H) {
+      const lanes = new Map();
+      for (let a = 0; a < n; a++) {
+        if (d.ghost[a]) continue;
+        const key = H.ijk[3 * a + 1] * H.nz + H.ijk[3 * a + 2];
+        if (!lanes.has(key)) lanes.set(key, []);
+        lanes.get(key).push(a);
+      }
+      const L = [...lanes.values()], ln = new Uint32Array(L.length + 1 + n);
+      let q = 0;
+      L.forEach((list, i) => { ln[i] = q; for (const a of list) ln[L.length + 1 + q++] = a; });
+      ln[L.length] = q;
+      H.lanes = L.length;
+      nCells = H.nzc * H.nyc;
+      B.LN = buf(4 * ln.length, SU | CD); put(B.LN, ln);
+      const cd = new Float32Array(2 * nCells);
+      for (let i = 0; i < nCells; i++) { cd[2 * i] = H.crush[i]; cd[2 * i + 1] = H.depth[i]; }
+      B.CD = buf(8 * nCells, SU | CD | CS); put(B.CD, cd);
+      B.CLAIM = buf(4 * nCells, SU | CD); put(B.CLAIM, new Uint32Array(nCells).fill(0xffffffff));
+      B.WHC = buf(4 * nCells, SU | CD | CS);
+      zerosW = new Float32Array(nCells);
+    }
     // constraints, in colour order
     const con = new ArrayBuffer(32 * nc), cu = new Uint32Array(con), cf = new Float32Array(con);
     const restS = new Float32Array(nc);
@@ -4253,47 +4535,72 @@ const MU_LAT: f32 = ${f(d.MU_LAT)};
       cf[o + 2] = d.c0[c]; cf[o + 3] = d.comp[c]; cf[o + 4] = d.damp[c]; cf[o + 5] = d.cey[c]; cf[o + 6] = d.ck[c];
       restS[j] = d.rest[c];
     }
-    const bC = buf(32 * nc, S | CD), bRest = buf(4 * nc, S | CD | CS), bPl = buf(4 * nc, S | CD | CS), bWp = buf(4 * nc, S | CD | CS);
-    put(bC, con); put(bRest, restS);
+    B.C = buf(32 * nc, SU | CD); B.rest = buf(4 * nc, SU | CD | CS); B.plastic = buf(4 * nc, SU | CD | CS); B.wp = buf(4 * nc, SU | CD | CS);
+    put(B.C, con); put(B.rest, restS);
     const zerosC = new Float32Array(nc);
     // per-step uniforms (dynamic offsets) and per-colour ranges
-    const bStep = dev.createBuffer({ size: STEP_STRIDE * maxSteps, usage: GPUBufferUsage.UNIFORM | CD });
-    const bRange = dev.createBuffer({ size: STEP_STRIDE * C.ncol, usage: GPUBufferUsage.UNIFORM | CD });
+    B.step = dev.createBuffer({ size: STEP_STRIDE * maxSteps, usage: GPUBufferUsage.UNIFORM | CD });
+    B.range = dev.createBuffer({ size: STEP_STRIDE * C.ncol, usage: GPUBufferUsage.UNIFORM | CD });
     const rr = new Uint32Array(C.ncol * STEP_STRIDE / 4);
     C.ranges.forEach(([o, c], k) => { rr[k * STEP_STRIDE / 4] = o; rr[k * STEP_STRIDE / 4 + 1] = c; });
-    put(bRange, rr);
-    // pipelines
-    const sh = shaders(d);
-    const ubl = (dyn) => dev.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: dyn } }] });
-    const stepL = ubl(true), rangeL = ubl(true);
-    const storeL = (kinds) => dev.createBindGroupLayout({ entries: kinds.map((k, i) => ({ binding: i, visibility: GPUShaderStage.COMPUTE, buffer: { type: k === 'r' ? 'read-only-storage' : 'storage' } })) });
-    const mk = (code, layouts) => dev.createComputePipeline({ layout: dev.createPipelineLayout({ bindGroupLayouts: layouts }), compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
-    const lPred = storeL(['w', 'w', 'w']), lSolve = storeL(['w', 'r', 'r', 'r', 'w', 'w', 'w']), lNodes = storeL(['w', 'r', 'w', 'r', 'w', 'w']);
-    const pPred = mk(sh.predict, [lPred, stepL]), pSolve = mk(sh.solve, [lSolve, stepL, rangeL]), pNodes = mk(sh.nodes, [lNodes, stepL]);
-    const bg = (layout, bufs) => dev.createBindGroup({ layout, entries: bufs.map((b, i) => ({ binding: i, resource: { buffer: b } })) });
-    const gPred = bg(lPred, [bX, bP, bV]), gSolve = bg(lSolve, [bX, bP, bNI, bC, bRest, bPl, bWp]), gNodes = bg(lNodes, [bX, bP, bV, bNI, bIMP, bFIRST]);
-    const gStep = dev.createBindGroup({ layout: stepL, entries: [{ binding: 0, resource: { buffer: bStep, size: 16 } }] });
-    const gRange = dev.createBindGroup({ layout: rangeL, entries: [{ binding: 0, resource: { buffer: bRange, size: 16 } }] });
-    // read-back: X, V, rest, plastic, plastic work, impulses, first contact step
-    const parts = [[bX, 12 * n], [bV, 12 * n], [bRest, 4 * nc], [bPl, 4 * nc], [bWp, 4 * nc], [bIMP, 16 * n], [bFIRST, 4 * n]];
-    const offs = []; let total = 0;
+    put(B.range, rr);
+    // pipelines: every kernel gets its storage buffers in the order its shader declares them
+    const sh = shaders(Object.assign({}, d, { honeycomb: H }));
+    const ubl = (size) => dev.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: size } }] });
+    const stepL = ubl(STEP_SIZE), rangeL = ubl(16);
+    const gStep = dev.createBindGroup({ layout: stepL, entries: [{ binding: 0, resource: { buffer: B.step, size: STEP_SIZE } }] });
+    const gRange = dev.createBindGroup({ layout: rangeL, entries: [{ binding: 0, resource: { buffer: B.range, size: 16 } }] });
+    function kernel(name, bufs) {   // bufs: [[buffer, writable], ...] in binding order
+      const layout = dev.createBindGroupLayout({ entries: bufs.map(([, w], i) => ({ binding: i, visibility: GPUShaderStage.COMPUTE, buffer: { type: w ? 'storage' : 'read-only-storage' } })) });
+      const layouts = name === 'solve' ? [layout, stepL, rangeL] : [layout, stepL];
+      const pipeline = dev.createComputePipeline({ layout: dev.createPipelineLayout({ bindGroupLayouts: layouts }), compute: { module: dev.createShaderModule({ code: sh[name] }), entryPoint: 'main' } });
+      return { pipeline, group: dev.createBindGroup({ layout, entries: bufs.map(([b], i) => ({ binding: i, resource: { buffer: b } })) }) };
+    }
+    const ng = Math.ceil(n / WG);
+    const K = {
+      predict: kernel('predict', [[B.X, 1], [B.P, 1], [B.V, 1]]),
+      solve: kernel('solve', [[B.X, 1], [B.P], [B.NI], [B.C], [B.rest, 1], [B.plastic, 1], [B.wp, 1]]),
+      ground: kernel('ground', [[B.X, 1], [B.P], [B.NI], [B.CT, 1], [B.IMPS, 1], [B.FIRST, 1]]),
+      friction: kernel('friction', [[B.X, 1], [B.P], [B.V, 1], [B.NI], [B.CT], ...(B.NRM ? [[B.NRM]] : []), ...(multi ? [[B.DC]] : [])]),
+    };
+    if (H) K.honeycomb = kernel('honeycomb', [[B.X, 1], [B.P], [B.NI], [B.CT, 1], [B.IMPS, 1], [B.FIRST, 1], [B.LN], [B.CD, 1], [B.CLAIM, 1], [B.WHC, 1]]);
+    if (B.NRM) K.surface = kernel('surface', [[B.X, 1], [B.P], [B.NI], [B.CT, 1], [B.NRM, 1], [B.IMPS, 1], [B.FIRST, 1]]);
+    if (multi) {
+      K.cars = kernel('cars', [[B.X], [B.P], [B.NI], [B.DC, 1], [B.PR, 1], [B.IMPS, 1], [B.FIRST, 1]]);
+      K.carFriction = kernel('carFriction', [[B.X], [B.P], [B.NI], [B.DC], [B.PR], [B.D2, 1]]);
+      K.finish = kernel('finish', [[B.X, 1], [B.P], [B.V, 1], [B.D2]]);
+    }
+    // one step, in the CPU's order
+    const order = ['predict', 'solve', 'ground', ...(H ? ['honeycomb'] : []), ...(K.surface ? ['surface'] : []), ...(multi ? ['cars'] : []), 'friction', ...(multi ? ['carFriction', 'finish'] : [])];
+    // read-back: X, V, rest, plastic, plastic work, impulses, first contact step (and the honeycomb)
+    const parts = [[B.X, 12 * n], [B.V, 12 * n], [B.rest, 4 * nc], [B.plastic, 4 * nc], [B.wp, 4 * nc], [B.IMPS, 32 * n], [B.FIRST, 4 * n]];
+    if (H) parts.push([B.CD, 8 * nCells], [B.WHC, 4 * nCells]);
+    const offs = [];
+    let total = 0;
     for (const [, sz] of parts) { offs.push(total); total += Math.ceil(sz / 16) * 16; }
     const staging = dev.createBuffer({ size: total, usage: GPUBufferUsage.MAP_READ | CD });
-    const ng = Math.ceil(n / WG);
     let lost = false;
 
-    async function run(dts, roll, base) {
+    // rolls: each vehicle's forward direction in the ground plane [x, z], for its wheels
+    async function run(dts, rolls, base) {
       if (lost) throw new Error('the GPU solver was stopped');
       const k = Math.min(dts.length, maxSteps), su = new ArrayBuffer(STEP_STRIDE * k), sf = new Float32Array(su), si = new Uint32Array(su);
-      for (let s = 0; s < k; s++) { const o = s * STEP_STRIDE / 4; sf[o] = dts[s]; si[o + 1] = base + s; sf[o + 2] = roll[0]; sf[o + 3] = roll[1]; }
-      dev.queue.writeBuffer(bStep, 0, su);
+      for (let s = 0; s < k; s++) {
+        const o = s * STEP_STRIDE / 4;
+        sf[o] = dts[s]; si[o + 1] = base + s;
+        rolls.forEach((r, u) => { sf[o + 4 + 4 * u] = r[0]; sf[o + 5 + 4 * u] = r[1]; });
+      }
+      dev.queue.writeBuffer(B.step, 0, su);
       const enc = dev.createCommandEncoder(), pass = enc.beginComputePass();
       for (let s = 0; s < k; s++) {
         const so = [s * STEP_STRIDE];
-        pass.setPipeline(pPred); pass.setBindGroup(0, gPred); pass.setBindGroup(1, gStep, so); pass.dispatchWorkgroups(ng);
-        pass.setPipeline(pSolve); pass.setBindGroup(0, gSolve); pass.setBindGroup(1, gStep, so);
-        for (let c = 0; c < C.ncol; c++) { pass.setBindGroup(2, gRange, [c * STEP_STRIDE]); pass.dispatchWorkgroups(Math.ceil(C.ranges[c][1] / WG)); }
-        pass.setPipeline(pNodes); pass.setBindGroup(0, gNodes); pass.setBindGroup(1, gStep, so); pass.dispatchWorkgroups(ng);
+        for (const name of order) {
+          const q = K[name];
+          pass.setPipeline(q.pipeline); pass.setBindGroup(0, q.group); pass.setBindGroup(1, gStep, so);
+          if (name === 'solve') {
+            for (let c = 0; c < C.ncol; c++) { pass.setBindGroup(2, gRange, [c * STEP_STRIDE]); pass.dispatchWorkgroups(Math.ceil(C.ranges[c][1] / WG)); }
+          } else pass.dispatchWorkgroups(name === 'honeycomb' ? Math.ceil(H.lanes / WG) : ng);
+        }
       }
       pass.end();
       parts.forEach(([b, sz], i) => enc.copyBufferToBuffer(b, 0, staging, offs[i], Math.ceil(sz / 4) * 4));
@@ -4301,15 +4608,22 @@ const MU_LAT: f32 = ${f(d.MU_LAT)};
       await staging.mapAsync(GPUMapMode.READ);
       const all = staging.getMappedRange(), F = (i, len) => new Float32Array(all.slice(offs[i], offs[i] + 4 * len));
       const restC = F(2, nc), plC = F(3, nc), wpC = F(4, nc);
-      const out = { X: F(0, 3 * n), V: F(1, 3 * n), imp: F(5, 4 * n), first: new Uint32Array(all.slice(offs[6], offs[6] + 4 * n)),
+      const out = { X: F(0, 3 * n), V: F(1, 3 * n), imps: F(5, 8 * n), first: new Uint32Array(all.slice(offs[6], offs[6] + 4 * n)),
         rest: new Float32Array(nc), plastic: new Float32Array(nc), wp: new Float32Array(nc), steps: k };
       for (let j = 0; j < nc; j++) { const c = C.order[j]; out.rest[c] = restC[j]; out.plastic[c] = plC[j]; out.wp[c] = wpC[j]; }
+      if (H) {
+        const cd = F(7, 2 * nCells);
+        out.crush = new Float32Array(nCells);
+        for (let i = 0; i < nCells; i++) out.crush[i] = cd[2 * i];
+        out.whc = F(8, nCells);
+      }
       staging.unmap();
-      // the plastic work, impulses and first contact are per batch
-      dev.queue.writeBuffer(bWp, 0, zerosC); dev.queue.writeBuffer(bIMP, 0, zeros4); dev.queue.writeBuffer(bFIRST, 0, noFirst);
+      // the plastic work, impulses, first contact and crush work are per batch
+      dev.queue.writeBuffer(B.wp, 0, zerosC); dev.queue.writeBuffer(B.IMPS, 0, zerosI); dev.queue.writeBuffer(B.FIRST, 0, noFirst);
+      if (H) dev.queue.writeBuffer(B.WHC, 0, zerosW);
       return out;
     }
-    function destroy() { lost = true; for (const b of [bX, bP, bV, bNI, bIMP, bFIRST, bC, bRest, bPl, bWp, bStep, bRange, staging]) b.destroy(); }
+    function destroy() { lost = true; for (const b of Object.values(B)) b.destroy(); staging.destroy(); }
     return { run, destroy, colours: C.ncol, maxSteps, name: gpu.name };
   }
 
@@ -6119,7 +6433,7 @@ void main() {
   function Effects(scene) {
     const T = THREE;
     const flameTex = puffTexture('flame'), smokeTex = puffTexture('smoke');
-    const smoke = sprites(scene, 1400, false, smokeTex, 5), steamS = sprites(scene, 500, false, smokeTex, 6), flames = sprites(scene, 1600, true, flameTex, 7, 0.55), embers = sprites(scene, 300, true, flameTex, 8, 3);
+    const smoke = sprites(scene, 1400, false, smokeTex, 5), steamS = sprites(scene, 500, false, smokeTex, 6), flames = sprites(scene, 1600, true, flameTex, 7, 0.55), embers = sprites(scene, 300, true, flameTex, 8, 1);
     const light = new T.PointLight(0xff7a2e, 0, 14, 2);
     light.castShadow = false;
     scene.add(light);
@@ -6137,10 +6451,10 @@ void main() {
           // flames from the back of the engine bay (the exhaust side), across it, out of the wheel
           // arches, and from burning fluid pooling on the road under the engine
           const e = P.engine;
-          list.push({ kind: 'fire', p: add(e, 1, -0.15, 0.30, 0), w: 0.45, seed: 21 + list.length, grow: 0 });
-          list.push({ kind: 'fire', p: add(e, 1, 0.1, 0.22, -0.45), w: 0.32, seed: 31 + list.length, grow: 1.5 });
-          list.push({ kind: 'fire', p: add(e, 1, 0.1, 0.22, 0.45), w: 0.32, seed: 41 + list.length, grow: 2.2 });
-          list.push({ kind: 'fire', p: add(e, 1, -0.1, 0.0, 0), w: 0.45, seed: 51 + list.length, grow: 3.0, pool: true });
+          list.push({ kind: 'fire', p: add(e, 1, -0.15, 0.30, 0), w: 0.30, seed: 21 + list.length, grow: 0 });
+          list.push({ kind: 'fire', p: add(e, 1, 0.1, 0.22, -0.40), w: 0.20, seed: 31 + list.length, grow: 1.5 });
+          list.push({ kind: 'fire', p: add(e, 1, 0.1, 0.22, 0.40), w: 0.20, seed: 41 + list.length, grow: 2.2 });
+          list.push({ kind: 'fire', p: add(e, 1, -0.1, 0.0, 0), w: 0.28, seed: 51 + list.length, grow: 3.0, pool: true });
           list[list.length - 1].p[1] = 0.04;
         }
       }
@@ -6165,8 +6479,8 @@ void main() {
             if (age < 0 || age > life || rnd(n, em.seed) > I) continue;
             const a = age / life, r1 = rnd(n, em.seed + 1), r2 = rnd(n, em.seed + 2), r3 = rnd(n, em.seed + 3);
             const x = em.p[0] + (r1 - 0.5) * 0.5 + wind[0] * age * 0.6 + (r2 - 0.5) * age * 0.5, z = em.p[2] + (r3 - 0.5) * 0.5 + wind[2] * age * 0.6 + (r1 - 0.5) * age * 0.4;
-            const y = em.p[1] + age * (1.3 - 0.25 * age) + r2 * 0.1;
-            steamS.add(x, y, z, 0.25 + a * 1.5, r3 * 6.28 + age * 0.4, 0.93, 0.94, 0.95, 0.34 * Math.sin(Math.PI * Math.min(1, a * 1.15)) * (1 - a * 0.4));
+            const y = em.p[1] + age * (1.0 - 0.2 * age) + r2 * 0.1;
+            steamS.add(x, y, z, 0.2 + a * 0.9, r3 * 6.28 + age * 0.4, 0.93, 0.94, 0.95, 0.26 * Math.sin(Math.PI * Math.min(1, a * 1.15)) * (1 - a * 0.4));
           }
           continue;
         }
@@ -6175,9 +6489,9 @@ void main() {
         const Iflame = smooth(T_FLAME, T_FULL, tg) * (em.pool ? 0.75 : 1);
         const Ismoke = smooth(T_SMOKE, T_SMOKE + 2, tau) * (0.35 + 0.65 * smooth(T_FLAME, T_FULL, tg));
         fireLevel = Math.max(fireLevel, Iflame);
-        const w = em.w * (em.pool ? 0.6 + 1.6 * smooth(0, 14, tg) : 1);
-        // flames
-        const R = 85, life = 0.95;
+        const w = em.w * (em.pool ? 0.6 + 0.8 * smooth(0, 14, tg) : 1);
+        // flames: about a metre tall when well alight
+        const R = 85, life = 0.75;
         if (Iflame > 0.01) for (let n = Math.max(0, Math.floor((tau - life) * R)); n <= Math.floor(tau * R); n++) {
           const tb = n / R, age = tau - tb, lf = life * (0.55 + 0.45 * rnd(n, em.seed + 9));
           if (age < 0 || age > lf || rnd(n, em.seed) > smooth(T_FLAME, T_FULL, tb - em.grow) * (em.pool ? 0.75 : 1)) continue;
@@ -6185,8 +6499,8 @@ void main() {
           const ang = r1 * Math.PI * 2, rad = Math.sqrt(r2) * w;
           const sway = Math.sin(tb * 7 + r3 * 6) * 0.08 * a + Math.sin(tau * 3.1 + r4 * 4) * 0.05 * a;
           const x = em.p[0] + Math.cos(ang) * rad * (1 - 0.5 * a) + wind[0] * age * 0.5 + sway, z = em.p[2] + Math.sin(ang) * rad * (1 - 0.5 * a) + wind[2] * age * 0.5 + sway * 0.6;
-          const y = em.p[1] + age * (1.2 + 1.3 * r4) * (0.6 + 0.6 * Iflame) + 0.05;
-          const size = (0.26 + 0.46 * r3) * (0.55 + 0.6 * Iflame) * (a < 0.25 ? 0.6 + 1.6 * a : 1.0 - 0.75 * (a - 0.25));
+          const y = em.p[1] + age * (0.55 + 0.6 * r4) * (0.6 + 0.4 * Iflame) + 0.05;
+          const size = (0.16 + 0.26 * r3) * (0.6 + 0.4 * Iflame) * (a < 0.25 ? 0.6 + 1.6 * a : 1.0 - 0.75 * (a - 0.25));
           // white-yellow core -> orange -> deep red, fading
           const cr = 1.0, cg = a < 0.2 ? 0.82 - a * 1.2 : 0.58 - 0.5 * a, cb = a < 0.15 ? 0.45 - a * 2.4 : 0.08 * (1 - a);
           const alpha = (a < 0.1 ? a / 0.1 : 1 - (a - 0.1) / 0.9) * 0.55 * (0.5 + 0.5 * Iflame);
@@ -6200,12 +6514,12 @@ void main() {
           const Ib = smooth(T_SMOKE, T_SMOKE + 2, tb) * (0.35 + 0.65 * smooth(T_FLAME, T_FULL, tb - em.grow));
           if (age < 0 || age > lifeS || rnd(n, em.seed + 20) > Ib) continue;
           const a = age / lifeS, r1 = rnd(n, em.seed + 21), r2 = rnd(n, em.seed + 22), r3 = rnd(n, em.seed + 23);
-          const rise = (1.0 + 0.8 * r1) * (0.6 + 0.6 * Ib);
+          const rise = (0.7 + 0.5 * r1) * (0.6 + 0.4 * Ib);
           const x = em.p[0] + (r2 - 0.5) * w * 2 + wind[0] * age * (0.4 + 0.5 * a) + (r3 - 0.5) * age * 0.4;
           const z = em.p[2] + (r3 - 0.5) * w * 2 + wind[2] * age * (0.4 + 0.5 * a) + (r1 - 0.5) * age * 0.4;
           const y = em.p[1] + 0.5 + age * rise * (1 - 0.25 * a);
           const g = 0.09 + 0.12 * a + 0.08 * r2 * (1 - Ib);   // darker when the fire is big
-          smoke.add(x, y, z, (0.45 + 0.4 * r1) * (1 + a * 4.5) * (0.6 + 0.5 * Ib), r3 * 6.28 + age * (r2 - 0.5) * 0.6, g, g * 0.96, g * 0.93, 0.55 * Math.sin(Math.PI * Math.min(1, a * 1.1 + 0.05)) * (1 - 0.5 * a));
+          smoke.add(x, y, z, (0.3 + 0.25 * r1) * (1 + a * 3) * (0.6 + 0.4 * Ib), r3 * 6.28 + age * (r2 - 0.5) * 0.6, g, g * 0.96, g * 0.93, 0.5 * Math.sin(Math.PI * Math.min(1, a * 1.1 + 0.05)) * (1 - 0.5 * a));
         }
         // embers: sparks lifted by the flames
         const Re = 16, lifeE = 2.2;
@@ -6214,7 +6528,7 @@ void main() {
           if (age < 0 || age > lifeE || rnd(n, em.seed + 40) > smooth(T_FLAME + 1, T_FULL, tb - em.grow) * 0.8) continue;
           const a = age / lifeE, r1 = rnd(n, em.seed + 41), r2 = rnd(n, em.seed + 42), r3 = rnd(n, em.seed + 43);
           const x = em.p[0] + (r1 - 0.5) * w + wind[0] * age + Math.sin(age * 5 + r2 * 6) * 0.15, z = em.p[2] + (r2 - 0.5) * w + wind[2] * age + Math.cos(age * 4 + r3 * 6) * 0.15;
-          const y = em.p[1] + 0.3 + age * (2.2 + 1.5 * r3) - 0.4 * age * age;
+          const y = em.p[1] + 0.3 + age * (1.4 + 1.0 * r3) - 0.4 * age * age;
           embers.add(x, y, z, 0.03 + 0.02 * r1, 0, 1.0, 0.55 + 0.3 * r2, 0.15, 0.9 * (1 - a));
         }
       }
@@ -6223,7 +6537,7 @@ void main() {
       if (lw > 0) {
         light.position.set(lx / lw, ly / lw + 0.2, lz / lw);
         const flicker = 0.75 + 0.15 * Math.sin(tau * 17.3) + 0.1 * Math.sin(tau * 31.7 + 1.3);
-        light.intensity = 30 * fireLevel * flicker;
+        light.intensity = 18 * fireLevel * flicker;
       } else light.intensity = 0;
       return { fire: fireLevel, steam: steamLevel };
     }
@@ -8920,6 +9234,7 @@ const LabScene = (() => {
     if (CAR.parts) notes.push(`Damage (${result.damage}): ${lost.length ? 'came off: ' + lost.join(', ') : 'no parts came off'}; ${panes} window${panes === 1 ? '' : 's'} shattered${ws ? ', windshield cracked' : ''}; ${bursts} tyre${bursts === 1 ? '' : 's'} burst.`);
     const sv = result.solver;
     if (sv && sv.kind === 'gpu') notes.push(`Solved on the GPU (${sv.name}, WebGPU): ${sv.steps.toLocaleString()} steps, the lattice's springs in ${sv.colours} groups solved in parallel, ${(sv.ms / 1000).toFixed(1)} s on the GPU. Parts can't come off in GPU runs, and friction heat is counted with the contact and solver losses.`);
+    else if (sv && sv.fallback) notes.push(`The GPU couldn't take this set-up (${sv.fallback}), so the CPU solved it.`);
     $('#res-notes').innerHTML = '';
     for (const n of notes) { const p = document.createElement('p'); p.className = 'note'; p.textContent = n; $('#res-notes').appendChild(p); }
   }
@@ -9253,6 +9568,9 @@ const LabScene = (() => {
   let lab = null, cfg = null;
   let state = 'setup', approach = null, task = null, play = null, charts = [], events = [], evIdx = 0, toastTimer = 0;
   let cine = null, pbAuto = null;   // bullet-time, shake and structural sound of the replay (cinematic.js); a lab's own speed plan
+  // the physics solver: the CPU, or the GPU (gpu-lattice.js) for the labs that solve a car's structure
+  let solver = params.get('solver') === 'gpu' ? 'gpu' : 'cpu', gpuDevice = null;
+  const gpuFor = () => solver === 'gpu' && !lab.noStructure ? gpuDevice : null;
 
   Scene3D.init($('#view'));
   $('#loading').remove();
@@ -9310,6 +9628,9 @@ const LabScene = (() => {
     }
     if (lab.fromUrl) lab.fromUrl(params);
     $('#setup').innerHTML = `<h2>${lab.title}</h2><p class="lab-intro">${lab.intro}</p>${lab.form()}
+      <section><div class="field"><span class="field-head"><span>Physics solver</span><span class="muted">GPU: experimental</span></span>
+        <div class="seg" id="lab-solver"><button data-v="cpu" title="The JavaScript solver: everything, including parts coming off">CPU</button><button data-v="gpu" title="Experimental: the car's lattice solved on the graphics card (WebGPU). Parts don't come off, and tyres don't burst.">GPU<small>WebGPU</small></button></div>
+        <span class="hint" id="lab-solver-hint" hidden></span></div></section>
       <section class="readouts" id="lab-readouts"></section>
       <p id="setup-note" class="note" hidden></p>
       <button id="btn-run" class="primary">${lab.runLabel || 'Run the test'}</button>
@@ -9318,8 +9639,33 @@ const LabScene = (() => {
     $('#res-body').innerHTML = `<div id="res-notes"></div><div id="res-hazard"></div><div class="tabs" role="tablist" id="res-tabs"></div><div class="tab-panels" id="res-panels"></div>
       <p class="disclaimer">${lab.disclaimer || 'Teaching model, not validated against physical crash tests. Use it to compare settings and see trends, not to predict real injuries.'}</p>`;
     bindForm();
+    bindSolver();
     $('#btn-run').addEventListener('click', run);
     return true;
+  }
+
+  // The solver choice. The GPU device is asked for when the GPU is chosen; without one, back to the
+  // CPU. Labs without a structure solve (whiplash, pedestrian) say so and keep the CPU.
+  function bindSolver() {
+    const seg = $('#lab-solver');
+    if (lab.noStructure) { solver = 'cpu'; seg.querySelector('[data-v=gpu]').disabled = true; }
+    const show = () => {
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === solver));
+      const hint = lab.noStructure ? lab.noStructure : solver === 'gpu' ? (gpuDevice ? `On ${gpuDevice.name}. Parts stay on and tyres don't burst. At this lattice size the GPU is slower than the CPU; it pays off on finer lattices.` : 'Asking the browser for the GPU…') : '';
+      $('#lab-solver-hint').hidden = !hint; $('#lab-solver-hint').textContent = hint;
+    };
+    const start = () => {
+      if (gpuDevice || solver !== 'gpu') return;
+      CrashGPU.init().then((g) => { gpuDevice = g; show(); }, (err) => {
+        solver = 'cpu'; seg.querySelector('[data-v=gpu]').disabled = true; show();
+        toast(`The GPU solver isn't available here: ${err.message}.`);
+      });
+    };
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b || b.disabled || state !== 'setup') return;
+      solver = b.dataset.v; show(); start();
+    });
+    show(); start();
   }
 
   function bindForm() {
@@ -9403,9 +9749,12 @@ const LabScene = (() => {
     preview();
   }
   function finishCompute() {
-    const r = task.finish(); task = null;
-    if (!r) { toSetup(); return; }
+    const err = task.error, r = task.finish(); task = null;
+    if (!r) { if (err) toast('The GPU solver stopped: ' + err.message); toSetup(); return; }
     const pb = lab.results(r);
+    const sv = r.solver;
+    if (sv && sv.kind === 'gpu') note($('#res-notes'), `Solved on the GPU (${sv.name}, WebGPU): ${sv.steps.toLocaleString()} steps, the lattice's springs in ${sv.colours} groups solved in parallel, ${(sv.ms / 1000).toFixed(1)} s on the GPU. Parts can't come off in GPU runs, and friction heat is counted with the contact and solver losses.`);
+    else if (sv && sv.fallback) note($('#res-notes'), `The GPU couldn't take this set-up (${sv.fallback}), so the CPU solved it.`);
     // the replay's bullet-time and shake: from the crash result, from the lab, or (no crash pulse)
     // just the kicks of its events
     cine = pb.cine || (r.units && r.frames ? Cinematic.fromCrash(r, pb.events || [])
@@ -9678,6 +10027,7 @@ const LabScene = (() => {
       get done() { return sim.done; },
       progressText() { return `simulated ${(Math.max(0, sim.t - Math.max(0, sim.T0)) * 1000).toFixed(0)} ms after contact`; },
       cancel() { sim.cancel(); },
+      get error() { return sim.error; },
       finish() { const r = sim.finalize(); return r ? after(r) : null; },
     };
   }
@@ -9749,7 +10099,7 @@ const LabScene = (() => {
       compute() {
         const app = approach.app, s = app.state;
         const sim = Phys.createImpactSim({ vehicle: spec, massKg: spec.massKg, stiffness: 'standard', damage: 'realistic', barrier: 'offset', offset: def(), measure: true, structure: { footwell: true },
-          pose: app.pose(), speed: s.v, yawRate: s.yawRate });
+          pose: app.pose(), speed: s.v, yawRate: s.yawRate, gpu: gpuFor() });
         Scene3D.setPath(0, app.distance, false);
         const p = app.pose();
         freeCam({ f0: new THREE.Vector3(Math.cos(p.heading), 0, Math.sin(p.heading)), from: 'front' });
@@ -9919,7 +10269,7 @@ const LabScene = (() => {
       },
       compute() {
         const G0 = geometry();
-        const sim = Phys.createImpactSim({ barrier: 'none', measure: true, duration: 1.4, vehicles: [
+        const sim = Phys.createImpactSim({ barrier: 'none', measure: true, duration: 1.4, gpu: gpuFor(), vehicles: [
           { vehicle: G0.A, massKg: cfg.aMass, stiffness: 'standard', damage: 'realistic', pose: G0.pA, speed: G0.va },
           { vehicle: G0.B, massKg: cfg.bMass, stiffness: 'standard', damage: 'realistic', pose: G0.pB, speed: G0.vb }] });
         // the camera follows the pair's centre of mass (it moves at a steady speed through the crash)
@@ -10075,7 +10425,7 @@ const LabScene = (() => {
       },
       compute() {
         const units = [{ vehicle: spec, massKg: spec.massKg, stiffness: 'standard', damage: 'realistic', pose: carPose(0), speed: 0, structure: { steel: cfg.steel } }];
-        const c = { barrier: cfg.impactor === 'pole' ? 'pole' : 'none', measure: true, duration: 0.5, vehicles: units };
+        const c = { barrier: cfg.impactor === 'pole' ? 'pole' : 'none', measure: true, duration: 0.5, vehicles: units, gpu: gpuFor() };
         if (cfg.impactor === 'pole') { units[0].velocity = [0, -speedMph() * MPH]; c.pole = poleDef(); c.sled = true; }
         else { const M = Veh.MDB; units.push({ vehicle: M, massKg: M.massKg, stiffness: 'standard', pose: mdbPose(0), speed: speedMph() * MPH }); }
         freeCam({ frame: { pos: new THREE.Vector3(5.2, 2.6, -5.6), target: new THREE.Vector3(0, 0.8, -0.8) } });
@@ -10158,6 +10508,7 @@ const LabScene = (() => {
     function hideCars(on) { Scene3D.main.setVisible(!on); }
     return {
       title: 'Whiplash sled lab', runLabel: 'Fire the sled',
+      noStructure: 'This lab has no car structure to solve: the sled pulse drives the seat and spine model directly, so it always runs on the CPU.',
       intro: 'A seat on a sled is shoved forward, as when a stopped car is hit from behind. The torso goes with the seat; the head stays behind until the head restraint catches it. The closer and higher the restraint, the sooner that happens.',
       steps: { approach: null, impact: 'Compute' },
       defaults: { mph: 20, backset: 4, height: -3 },
@@ -10281,7 +10632,7 @@ const LabScene = (() => {
       approach() { return guidedApproach(spec, KMH, spec.massKg, 0, () => beginCompute()); },
       compute() {
         const app = approach.app, s = app.state;
-        const sim = Phys.createImpactSim({ vehicle: spec, massKg: spec.massKg, stiffness: 'standard', damage: 'realistic', barrier: 'rigid', pose: app.pose(), speed: s.v, yawRate: s.yawRate });
+        const sim = Phys.createImpactSim({ vehicle: spec, massKg: spec.massKg, stiffness: 'standard', damage: 'realistic', barrier: 'rigid', pose: app.pose(), speed: s.v, yawRate: s.yawRate, gpu: gpuFor() });
         Scene3D.setPath(0, app.distance, false);
         const o = Scene3D.cabin.o;
         freeCam({ f0: new THREE.Vector3(1, 0, 0), frame: { pos: o.clone().add(new THREE.Vector3(1.4, 1.1, -3.9)), target: o.clone().add(new THREE.Vector3(0.5, 0.15, 0)) } });
@@ -10372,6 +10723,7 @@ const LabScene = (() => {
     }
     return {
       title: 'Pedestrian & emergency braking lab', runLabel: 'Drive',
+      noStructure: "This lab has no car structure to solve: the car's motion is planned and the pedestrian model runs on its own, so it always runs on the CPU.",
       intro: 'A pedestrian steps into the road. With automatic emergency braking the car\'s radar and camera spot them, warn and brake; without it the car arrives at full speed. A softer bumper lowers the blow to the legs.',
       steps: { approach: null, impact: 'Compute' },
       defaults: { mph: 25, target: 'adult', bumper: 'foam', aeb: true },

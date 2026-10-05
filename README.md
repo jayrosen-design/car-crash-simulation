@@ -63,7 +63,7 @@ Simulator.html?preset=rigid                    56 km/h full-frontal rigid-barrie
 Simulator.html?preset=brick                    64 km/h into a brick wall, Dramatic damage
 Simulator.html?vehicle=mustang&speed=100&angle=30
 Simulator.html?lab=side&impactor=pole&steel=mild
-Simulator.html?solver=gpu                      the barrier crash computed on the GPU (WebGPU)
+Simulator.html?solver=gpu                      the crash computed on the GPU (WebGPU); also with ?lab=
 ```
 
 For development, open `index.html` instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`.
@@ -88,11 +88,11 @@ For development, open `index.html` instead. It loads the source files one by one
 | Front-structure stiffness (`stiffness`) | Soft (0.6×), Standard, Stiff (1.7×) |
 | Barrier (`barrier`, `wall`) | Rigid concrete barrier, or a brick wall with weak, standard or strong mortar |
 | Restraints | Seatbelt and airbag, each on or off |
-| Physics solver (`solver`) | CPU (default), or GPU: WebGPU, experimental, rigid barrier only, parts stay on (see [the GPU solver](#9-the-gpu-solver-optional)) |
+| Physics solver (`solver`) | CPU (default), or GPU: WebGPU, experimental, rigid barrier only in the free simulator, parts stay on (see [the GPU solver](#9-the-gpu-solver-optional)) |
 
 ### Crash labs (`Simulator.html?lab=<id>`)
 
-Each lab has its own setup panel, live readouts across the top, results and charts. Speeds are in mph, as in the test protocols they follow, with km/h alongside.
+Each lab has its own setup panel, live readouts across the top, results and charts. Speeds are in mph, as in the test protocols they follow, with km/h alongside. The overlap, two-vehicle, side-impact and restraint labs can also be solved on the GPU (*Physics solver*, or `solver=gpu`); the whiplash and pedestrian labs have no car structure to solve, so they always run on the CPU.
 
 | Lab (`id`) | Controls (URL names) | What it shows |
 |---|---|---|
@@ -403,12 +403,16 @@ Rear impacts, which cause most fuel-tank fires, aren't simulated, so there is no
 
 ### 9. The GPU solver (optional)
 
-`js/gpu-lattice.js` runs the car lattice on the graphics card with WebGPU compute shaders (WGSL). Choose **GPU** under *Physics solver* in the free simulator, or add `?solver=gpu` to the URL. It handles one car into the rigid barrier. In GPU runs parts don't come off and tyres don't burst, because detaching a part changes the lattice and that bookkeeping stays on the CPU.
+`js/gpu-lattice.js` runs the car lattice on the graphics card with WebGPU compute shaders (WGSL). Choose **GPU** under *Physics solver* in the free simulator or a lab, or add `?solver=gpu` to the URL.
 
-- **The same equations.** Each step runs predict, the XPBD springs with damping and plastic yield (same formulas and limits as section 2), ground and barrier contact with Coulomb friction, then velocities.
+**What it covers.** The rigid barrier, the offset barrier with or without its honeycomb face, the pole (with the low-friction carrier), and several vehicles crashing into each other: every crash the labs set up. The brick wall isn't covered, so the free simulator's brick-wall runs stay on the CPU. In GPU runs parts don't come off and tyres don't burst, because detaching a part changes the lattice and that bookkeeping stays on the CPU. If the GPU can't take a set-up, the CPU solves it and the results say why.
+
+- **The same equations.** Each step runs predict, the XPBD springs with damping and plastic yield (same formulas and limits as section 2), the contacts (section 3), Coulomb friction, then velocities.
 - **A different order.** The CPU projects the springs one after the other (Gauss-Seidel). On the GPU they are split by greedy colouring into groups where no two springs share a node: 27–28 groups for these cars. Each group is projected in parallel and the groups run one after the other. It is the same method in a different order.
+- **Car against car.** Each node checks every node of the other cars, tiled through the GPU's workgroup memory. Its share of each correction comes from the same positions (Jacobi), rather than the contacts being solved one after the other. The contacts are kept per node for friction.
+- **Honeycomb.** One thread per lane of nodes (one behind the other at the same height and side position) crushes the cells in the CPU's order. Cells are claimed atomically, so a cell still counts toward one node per step.
 - **32-bit floats.** The GPU uses 32-bit floats, the CPU 64-bit. The car sits near the barrier at x = 0, so positions keep sub-micrometre resolution.
-- **Batches.** The steps run in batches, one recorded frame's worth each (1 ms during the pulse, up to 10 ms later). After each batch the state is read back: positions, velocities, rest lengths, plastic strain, plastic work, barrier impulses and the step of first contact. The CPU then records the frame, telemetry and energies with the same code as for its own runs.
+- **Batches.** The steps run in batches, one recorded frame's worth each (1 ms during the pulse, up to 10 ms later). After each batch the state is read back: positions, velocities, rest lengths, plastic strain and work, contact impulses (for the barrier's load cell, each car's contact force and the events), the honeycomb's crush and crush work, and the step of first contact. The CPU then records the frame, telemetry and energies with the same code as for its own runs.
 - **Energy books.** Friction heat isn't tracked on the GPU, so it is counted in the "contact, damping & solver" share.
 
 `node tools/gpu-check.js` runs the same crashes with both solvers in headless Chrome. These are crashes in which nothing comes off on the CPU either. Results on an AMD RDNA 3 GPU:
@@ -420,6 +424,16 @@ Rear impacts, which cause most fuel-tank fires, aren't simulated, so there is no
 | Mustang, 48 km/h | 552 / 553 mm | 35.0 / 34.4 g | 55.7 / 55.8 km/h | 73.9 / 73.9% | 1.1 / 2.5 s |
 
 The peak deceleration comes out 1–2% lower on the GPU. Its telemetry is taken once per recorded frame (1 ms) rather than every 0.1 ms step, so the filtered peak is a little smoother.
+
+The labs' crashes (CPU / GPU). On the CPU some parts came off; on the GPU none can, so these aren't quite the same crash:
+
+| Lab crash | What the lab reports | CPU | GPU |
+|---|---|---|---|
+| Overlap 40%, honeycomb, 40 mph | peak, crush, honeycomb crushed | 27.6 g, 503 mm, 397 mm | 27.6 g, 520 mm, 390 mm |
+| Overlap 25%, rigid, 40 mph | peak, crush, hinge pillar | 25.3 g, 428 mm, 158 mm | 25.7 g, 438 mm, 144 mm |
+| Two cars (Mustang vs 2,400 kg Lexus), 40 mph each | Δv A / B | 79.8 / 63.4 km/h | 79.7 / 63.5 km/h |
+| Side, barrier trolley 37 mph, mild steel | B-pillar, Δv | 252 mm, 38.9 km/h | 253 mm, 38.5 km/h |
+| Side, pole 20 mph | B-pillar, Δv | 42.7 mm, 49.7 km/h | 42.6 mm, 49.3 km/h |
 
 **At this lattice size the GPU is slower.** The cars have about 1,000 nodes and 10,000 springs, and every 0.1 ms step is about 30 small compute dispatches, plus a read-back every recorded frame. The GPU pays off on finer lattices. Same check, the lab sedan's lattice refined, first 150 ms after contact:
 
@@ -1536,7 +1550,7 @@ The occupant runs in the check use the cabin's intrusion, as the app does.
 node tools/gpu-check.js                 the GPU solver against the CPU (headless Chrome with WebGPU)
 ```
 
-This runs the barrier crashes in [the table above](#9-the-gpu-solver-optional) with both solvers and fails if crush, peak deceleration, Δv or plastic energy differ beyond 6%, 12%, 3% and 8%. It then times both on the refined lattices.
+This runs the crashes in [the tables above](#9-the-gpu-solver-optional) with both solvers. It fails if a GPU run errors or falls back to the CPU. It also fails if a result differs beyond its tolerance: for the barrier crashes, 6% on crush, 12% on peak deceleration, 3% on Δv and 8% on plastic energy; the labs have their own. It then times both solvers on the refined lattices. `node tools/gpu-check.js honeycomb` runs only the scenarios whose name contains that word.
 
 The CPU solver is unchanged by the GPU option. With the GPU option off, eight crashes (the lab sedan, Lexus and Mustang, rigid barrier and brick wall, two angles) produce bit-identical frames, pulses, energies, debris and events to the version before it was added.
 
@@ -1639,7 +1653,7 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
   - The whiplash seat is generic.
   - The pedestrian is a single 2D chain, so the arms and far leg only follow it in the 3D view.
   - Emergency braking is a rule-based model of one system, not a particular product.
-- **The GPU solver covers one case.** It handles one car into the rigid barrier, without parts coming off, tyres bursting or friction heat in the energy books. At today's lattice size it is slower than the CPU.
+- **The GPU solver doesn't cover everything.** It covers every crash the labs set up, but not the brick wall. Parts don't come off and tyres don't burst, and friction heat isn't in its energy books. At today's lattice size it is slower than the CPU.
 - **Saving a video** needs WebCodecs. The first time, it loads mp4-muxer from the CDN.
 - **Performance.** The brick-wall computation takes several seconds on a laptop. The phone layout works but is cramped.
 

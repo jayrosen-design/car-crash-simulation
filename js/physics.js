@@ -2078,17 +2078,27 @@ function createImpactSim(cfg) {
   const now = (typeof performance !== 'undefined') ? () => performance.now() : () => Date.now();
 
   // ---------------------------------------------------------------- the GPU solver (opt-in)
-  // cfg.gpu: a device from CrashGPU.init() (gpu-lattice.js). For one car into the rigid barrier only,
-  // and parts don't come off nor tyres burst. The lattice steps run on the GPU in batches, one
-  // recorded frame's worth at a time; the state comes back at every frame, where the bookkeeping
-  // (telemetry, frames, energies) runs as for the CPU solver. Friction heat is not tracked there: it
-  // stays in the "contact, damping & solver" share of the energy.
-  let gpu = null, gpuRunning = false, gpuMs = 0, gpuBatches = 0, gpuSteps = 0, gpuError = null;
-  if (cfg.gpu && rigid && !multi && !wall && !staticObs) {
+  // cfg.gpu: a device from CrashGPU.init() (gpu-lattice.js). Every barrier but the brick wall, one or
+  // several vehicles; parts don't come off nor tyres burst. The lattice steps run on the GPU in
+  // batches, one recorded frame's worth at a time; the state comes back at every frame, where the
+  // bookkeeping (telemetry, frames, energies) runs as for the CPU solver. Friction heat is not
+  // tracked there: it stays in the "contact, damping & solver" share of the energy. If the GPU
+  // can't take this set-up, the CPU solves it (gpuFallback says why).
+  let gpu = null, gpuRunning = false, gpuMs = 0, gpuBatches = 0, gpuSteps = 0, gpuError = null, gpuFallback = null;
+  if (cfg.gpu && wall) gpuFallback = 'the GPU solver has no brick wall';
+  else if (cfg.gpu) {
     const floor = new Float64Array(n);
     for (let a = 0; a < n; a++) floor[a] = wheelNode[a] ? wheelFloor[a] : clear[a];
-    gpu = root.CrashGPU.lattice(cfg.gpu, { n, nc, X, V, W, floor, ghost, wheel: wheelNode, muRoll, ca, cb, rest, c0, comp, damp, cey, ck,
-      r: spec.nodeRadius, barrier: RIGID_BARRIER, G, MU_BODY, MU_WALL, MU_LAT: muLat, MIN_RATIO, MAX_RATIO });
+    const obstacle = rigid ? { kind: 'rigid', height: RIGID_BARRIER.height, halfWidth: RIGID_BARRIER.halfWidth }
+      : offset ? { kind: 'offset', side: offset.side, zEdge: offset.zEdge, width: offset.width, height: offset.height, edgeRadius: offset.edgeRadius }
+      : pole ? { kind: 'pole', x: pole.x, z: pole.z, r: pole.r, height: pole.height } : { kind: 'none' };
+    const honeycomb = hc ? { h: hc.h, nzc: hc.nzc, nyc: hc.nyc, y0: hc.y0, depth: hc.depth, crush: hc.crush, padY: 0.5 * car.sy, padZ: 0.5 * car.sz,
+      solid: HONEYCOMB.solid, mainDepth: HONEYCOMB.main.depth, bumperDepth: HONEYCOMB.bumper.depth, mainStress: HONEYCOMB.main.stress, bumperStress: HONEYCOMB.bumper.stress,
+      ijk: car.ijk, ny: spec.ny, nz: spec.nz } : null;
+    try {
+      gpu = root.CrashGPU.lattice(cfg.gpu, { n, nc, X, V, W, floor, ghost, wheel: wheelNode, muRoll, unitOf, units: NU, ca, cb, rest, c0, comp, damp, cey, ck,
+        r: spec.nodeRadius, obstacle, honeycomb, G, MU_BODY, MU_WALL, MU_LAT: muLat, MU_CAR, MIN_RATIO, MAX_RATIO, MAX_SEPARATION, NODE_SEPARATION });
+    } catch (e) { gpuFallback = e.message; }
   }
   async function gpuLoop() {
     gpuRunning = true;
@@ -2100,19 +2110,25 @@ function createImpactSim(cfg) {
           const fine = T0 < 0 ? tt < 0.6 : tt < T0 + FINE_WINDOW;
           dts.push((fine ? DT_FINE : DT_COARSE) * (cfg.dtScale || 1)); tt += dts[dts.length - 1];
         } while (tt < nextRecordT - 1e-9 && dts.length < gpu.maxSteps);
-        const fh = Math.hypot(frame.f[0], frame.f[2]) || 1, t1 = now();
-        const st = await gpu.run(dts, [frame.f[0] / fh, frame.f[2] / fh], gpuSteps);
+        const rolls = units.map(U => { const fh = Math.hypot(U.frame.f[0], U.frame.f[2]) || 1; return [U.frame.f[0] / fh, U.frame.f[2] / fh]; });
+        const t1 = now();
+        const st = await gpu.run(dts, rolls, gpuSteps);
         gpuMs += now() - t1; gpuBatches++;
         if (cancelled) break;
         X.set(st.X); V.set(st.V);
         for (let c = 0; c < nc; c++) { rest[c] = st.rest[c]; plastic[c] = st.plastic[c]; Wp += st.wp[c]; }
-        let imp = 0, ix = 0, iy = 0, iz = 0, first = 0xffffffff;
+        if (hc) { hc.crush.set(st.crush); for (let i = 0; i < st.whc.length; i++) Whc += st.whc[i]; }
+        // contact impulses: for the events (once per contact), the barrier's load cell, each vehicle
+        let imp = 0, ix = 0, iy = 0, iz = 0, bimp = 0, first = 0xffffffff;
+        for (const U of units) U.force = 0;
         for (let a = 0; a < n; a++) {
-          imp += st.imp[4 * a]; ix += st.imp[4 * a + 1]; iy += st.imp[4 * a + 2]; iz += st.imp[4 * a + 3];
+          const o = 8 * a;
+          imp += st.imps[o]; ix += st.imps[o + 1]; iy += st.imps[o + 2]; iz += st.imps[o + 3];
+          bimp += st.imps[o + 4]; units[unitOf[a]].force += st.imps[o + 5] / (tt - t);
           if (st.first[a] < first) first = st.first[a];
         }
         impAcc += imp; impX += ix; impY += iy; impZ += iz;
-        barrierForce = imp / (tt - t);   // the mean over the batch
+        barrierForce = bimp / (tt - t);   // the mean over the batch
         if (T0 < 0 && first !== 0xffffffff) {
           let tf = t;
           for (let k = 0; k < first - gpuSteps; k++) tf += dts[k];
@@ -2146,6 +2162,7 @@ function createImpactSim(cfg) {
     cancel() { cancelled = true; done = true; if (gpu && !gpuRunning) gpu.destroy(); },
     // the GPU solver, if in use: { name, colours, batches, steps, ms } so far; and why it stopped, if it failed
     get gpu() { return gpu ? { name: gpu.name, colours: gpu.colours, batches: gpuBatches, steps: gpuSteps, ms: gpuMs } : null; },
+    get gpuFallback() { return gpuFallback; },
     get error() { return gpuError; },
     // Advance for up to budgetMs of wall-clock time; returns progress 0..1. With the GPU solver the
     // steps run in the background and this only reports progress.
@@ -2299,7 +2316,7 @@ function createImpactSim(cfg) {
       offset: offset ? { zEdge: offset.zEdge, side: offset.side, width: offset.width, height: offset.height, edgeRadius: offset.edgeRadius,
         honeycomb: hc ? { cell: hc.h, nzc: hc.nzc, nyc: hc.nyc, y0: hc.y0, depth: hc.depth, frames: frames.honeycomb } : null } : null,
       pole: pole ? { x: pole.x, z: pole.z, r: pole.r } : null,
-      solver: sim.gpu ? Object.assign({ kind: 'gpu' }, sim.gpu) : { kind: 'cpu' },
+      solver: sim.gpu ? Object.assign({ kind: 'gpu' }, sim.gpu) : { kind: 'cpu', fallback: gpuFallback },
     };
   }
 

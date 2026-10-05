@@ -369,6 +369,7 @@
     if (CAR.parts) notes.push(`Damage (${result.damage}): ${lost.length ? 'came off: ' + lost.join(', ') : 'no parts came off'}; ${panes} window${panes === 1 ? '' : 's'} shattered${ws ? ', windshield cracked' : ''}; ${bursts} tyre${bursts === 1 ? '' : 's'} burst.`);
     const sv = result.solver;
     if (sv && sv.kind === 'gpu') notes.push(`Solved on the GPU (${sv.name}, WebGPU): ${sv.steps.toLocaleString()} steps, the lattice's springs in ${sv.colours} groups solved in parallel, ${(sv.ms / 1000).toFixed(1)} s on the GPU. Parts can't come off in GPU runs, and friction heat is counted with the contact and solver losses.`);
+    else if (sv && sv.fallback) notes.push(`The GPU couldn't take this set-up (${sv.fallback}), so the CPU solved it.`);
     $('#res-notes').innerHTML = '';
     for (const n of notes) { const p = document.createElement('p'); p.className = 'note'; p.textContent = n; $('#res-notes').appendChild(p); }
   }

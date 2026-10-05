@@ -147,7 +147,7 @@ void main() {
   function Effects(scene) {
     const T = THREE;
     const flameTex = puffTexture('flame'), smokeTex = puffTexture('smoke');
-    const smoke = sprites(scene, 1400, false, smokeTex, 5), steamS = sprites(scene, 500, false, smokeTex, 6), flames = sprites(scene, 1600, true, flameTex, 7, 0.55), embers = sprites(scene, 300, true, flameTex, 8, 3);
+    const smoke = sprites(scene, 1400, false, smokeTex, 5), steamS = sprites(scene, 500, false, smokeTex, 6), flames = sprites(scene, 1600, true, flameTex, 7, 0.55), embers = sprites(scene, 300, true, flameTex, 8, 1);
     const light = new T.PointLight(0xff7a2e, 0, 14, 2);
     light.castShadow = false;
     scene.add(light);
@@ -165,10 +165,10 @@ void main() {
           // flames from the back of the engine bay (the exhaust side), across it, out of the wheel
           // arches, and from burning fluid pooling on the road under the engine
           const e = P.engine;
-          list.push({ kind: 'fire', p: add(e, 1, -0.15, 0.30, 0), w: 0.45, seed: 21 + list.length, grow: 0 });
-          list.push({ kind: 'fire', p: add(e, 1, 0.1, 0.22, -0.45), w: 0.32, seed: 31 + list.length, grow: 1.5 });
-          list.push({ kind: 'fire', p: add(e, 1, 0.1, 0.22, 0.45), w: 0.32, seed: 41 + list.length, grow: 2.2 });
-          list.push({ kind: 'fire', p: add(e, 1, -0.1, 0.0, 0), w: 0.45, seed: 51 + list.length, grow: 3.0, pool: true });
+          list.push({ kind: 'fire', p: add(e, 1, -0.15, 0.30, 0), w: 0.30, seed: 21 + list.length, grow: 0 });
+          list.push({ kind: 'fire', p: add(e, 1, 0.1, 0.22, -0.40), w: 0.20, seed: 31 + list.length, grow: 1.5 });
+          list.push({ kind: 'fire', p: add(e, 1, 0.1, 0.22, 0.40), w: 0.20, seed: 41 + list.length, grow: 2.2 });
+          list.push({ kind: 'fire', p: add(e, 1, -0.1, 0.0, 0), w: 0.28, seed: 51 + list.length, grow: 3.0, pool: true });
           list[list.length - 1].p[1] = 0.04;
         }
       }
@@ -193,8 +193,8 @@ void main() {
             if (age < 0 || age > life || rnd(n, em.seed) > I) continue;
             const a = age / life, r1 = rnd(n, em.seed + 1), r2 = rnd(n, em.seed + 2), r3 = rnd(n, em.seed + 3);
             const x = em.p[0] + (r1 - 0.5) * 0.5 + wind[0] * age * 0.6 + (r2 - 0.5) * age * 0.5, z = em.p[2] + (r3 - 0.5) * 0.5 + wind[2] * age * 0.6 + (r1 - 0.5) * age * 0.4;
-            const y = em.p[1] + age * (1.3 - 0.25 * age) + r2 * 0.1;
-            steamS.add(x, y, z, 0.25 + a * 1.5, r3 * 6.28 + age * 0.4, 0.93, 0.94, 0.95, 0.34 * Math.sin(Math.PI * Math.min(1, a * 1.15)) * (1 - a * 0.4));
+            const y = em.p[1] + age * (1.0 - 0.2 * age) + r2 * 0.1;
+            steamS.add(x, y, z, 0.2 + a * 0.9, r3 * 6.28 + age * 0.4, 0.93, 0.94, 0.95, 0.26 * Math.sin(Math.PI * Math.min(1, a * 1.15)) * (1 - a * 0.4));
           }
           continue;
         }
@@ -203,9 +203,9 @@ void main() {
         const Iflame = smooth(T_FLAME, T_FULL, tg) * (em.pool ? 0.75 : 1);
         const Ismoke = smooth(T_SMOKE, T_SMOKE + 2, tau) * (0.35 + 0.65 * smooth(T_FLAME, T_FULL, tg));
         fireLevel = Math.max(fireLevel, Iflame);
-        const w = em.w * (em.pool ? 0.6 + 1.6 * smooth(0, 14, tg) : 1);
-        // flames
-        const R = 85, life = 0.95;
+        const w = em.w * (em.pool ? 0.6 + 0.8 * smooth(0, 14, tg) : 1);
+        // flames: about a metre tall when well alight
+        const R = 85, life = 0.75;
         if (Iflame > 0.01) for (let n = Math.max(0, Math.floor((tau - life) * R)); n <= Math.floor(tau * R); n++) {
           const tb = n / R, age = tau - tb, lf = life * (0.55 + 0.45 * rnd(n, em.seed + 9));
           if (age < 0 || age > lf || rnd(n, em.seed) > smooth(T_FLAME, T_FULL, tb - em.grow) * (em.pool ? 0.75 : 1)) continue;
@@ -213,8 +213,8 @@ void main() {
           const ang = r1 * Math.PI * 2, rad = Math.sqrt(r2) * w;
           const sway = Math.sin(tb * 7 + r3 * 6) * 0.08 * a + Math.sin(tau * 3.1 + r4 * 4) * 0.05 * a;
           const x = em.p[0] + Math.cos(ang) * rad * (1 - 0.5 * a) + wind[0] * age * 0.5 + sway, z = em.p[2] + Math.sin(ang) * rad * (1 - 0.5 * a) + wind[2] * age * 0.5 + sway * 0.6;
-          const y = em.p[1] + age * (1.2 + 1.3 * r4) * (0.6 + 0.6 * Iflame) + 0.05;
-          const size = (0.26 + 0.46 * r3) * (0.55 + 0.6 * Iflame) * (a < 0.25 ? 0.6 + 1.6 * a : 1.0 - 0.75 * (a - 0.25));
+          const y = em.p[1] + age * (0.55 + 0.6 * r4) * (0.6 + 0.4 * Iflame) + 0.05;
+          const size = (0.16 + 0.26 * r3) * (0.6 + 0.4 * Iflame) * (a < 0.25 ? 0.6 + 1.6 * a : 1.0 - 0.75 * (a - 0.25));
           // white-yellow core -> orange -> deep red, fading
           const cr = 1.0, cg = a < 0.2 ? 0.82 - a * 1.2 : 0.58 - 0.5 * a, cb = a < 0.15 ? 0.45 - a * 2.4 : 0.08 * (1 - a);
           const alpha = (a < 0.1 ? a / 0.1 : 1 - (a - 0.1) / 0.9) * 0.55 * (0.5 + 0.5 * Iflame);
@@ -228,12 +228,12 @@ void main() {
           const Ib = smooth(T_SMOKE, T_SMOKE + 2, tb) * (0.35 + 0.65 * smooth(T_FLAME, T_FULL, tb - em.grow));
           if (age < 0 || age > lifeS || rnd(n, em.seed + 20) > Ib) continue;
           const a = age / lifeS, r1 = rnd(n, em.seed + 21), r2 = rnd(n, em.seed + 22), r3 = rnd(n, em.seed + 23);
-          const rise = (1.0 + 0.8 * r1) * (0.6 + 0.6 * Ib);
+          const rise = (0.7 + 0.5 * r1) * (0.6 + 0.4 * Ib);
           const x = em.p[0] + (r2 - 0.5) * w * 2 + wind[0] * age * (0.4 + 0.5 * a) + (r3 - 0.5) * age * 0.4;
           const z = em.p[2] + (r3 - 0.5) * w * 2 + wind[2] * age * (0.4 + 0.5 * a) + (r1 - 0.5) * age * 0.4;
           const y = em.p[1] + 0.5 + age * rise * (1 - 0.25 * a);
           const g = 0.09 + 0.12 * a + 0.08 * r2 * (1 - Ib);   // darker when the fire is big
-          smoke.add(x, y, z, (0.45 + 0.4 * r1) * (1 + a * 4.5) * (0.6 + 0.5 * Ib), r3 * 6.28 + age * (r2 - 0.5) * 0.6, g, g * 0.96, g * 0.93, 0.55 * Math.sin(Math.PI * Math.min(1, a * 1.1 + 0.05)) * (1 - 0.5 * a));
+          smoke.add(x, y, z, (0.3 + 0.25 * r1) * (1 + a * 3) * (0.6 + 0.4 * Ib), r3 * 6.28 + age * (r2 - 0.5) * 0.6, g, g * 0.96, g * 0.93, 0.5 * Math.sin(Math.PI * Math.min(1, a * 1.1 + 0.05)) * (1 - 0.5 * a));
         }
         // embers: sparks lifted by the flames
         const Re = 16, lifeE = 2.2;
@@ -242,7 +242,7 @@ void main() {
           if (age < 0 || age > lifeE || rnd(n, em.seed + 40) > smooth(T_FLAME + 1, T_FULL, tb - em.grow) * 0.8) continue;
           const a = age / lifeE, r1 = rnd(n, em.seed + 41), r2 = rnd(n, em.seed + 42), r3 = rnd(n, em.seed + 43);
           const x = em.p[0] + (r1 - 0.5) * w + wind[0] * age + Math.sin(age * 5 + r2 * 6) * 0.15, z = em.p[2] + (r2 - 0.5) * w + wind[2] * age + Math.cos(age * 4 + r3 * 6) * 0.15;
-          const y = em.p[1] + 0.3 + age * (2.2 + 1.5 * r3) - 0.4 * age * age;
+          const y = em.p[1] + 0.3 + age * (1.4 + 1.0 * r3) - 0.4 * age * age;
           embers.add(x, y, z, 0.03 + 0.02 * r1, 0, 1.0, 0.55 + 0.3 * r2, 0.15, 0.9 * (1 - a));
         }
       }
@@ -251,7 +251,7 @@ void main() {
       if (lw > 0) {
         light.position.set(lx / lw, ly / lw + 0.2, lz / lw);
         const flicker = 0.75 + 0.15 * Math.sin(tau * 17.3) + 0.1 * Math.sin(tau * 31.7 + 1.3);
-        light.intensity = 30 * fireLevel * flicker;
+        light.intensity = 18 * fireLevel * flicker;
       } else light.intensity = 0;
       return { fire: fireLevel, steam: steamLevel };
     }

@@ -68,6 +68,9 @@
   let lab = null, cfg = null;
   let state = 'setup', approach = null, task = null, play = null, charts = [], events = [], evIdx = 0, toastTimer = 0;
   let cine = null, pbAuto = null;   // bullet-time, shake and structural sound of the replay (cinematic.js); a lab's own speed plan
+  // the physics solver: the CPU, or the GPU (gpu-lattice.js) for the labs that solve a car's structure
+  let solver = params.get('solver') === 'gpu' ? 'gpu' : 'cpu', gpuDevice = null;
+  const gpuFor = () => solver === 'gpu' && !lab.noStructure ? gpuDevice : null;
 
   Scene3D.init($('#view'));
   $('#loading').remove();
@@ -125,6 +128,9 @@
     }
     if (lab.fromUrl) lab.fromUrl(params);
     $('#setup').innerHTML = `<h2>${lab.title}</h2><p class="lab-intro">${lab.intro}</p>${lab.form()}
+      <section><div class="field"><span class="field-head"><span>Physics solver</span><span class="muted">GPU: experimental</span></span>
+        <div class="seg" id="lab-solver"><button data-v="cpu" title="The JavaScript solver: everything, including parts coming off">CPU</button><button data-v="gpu" title="Experimental: the car's lattice solved on the graphics card (WebGPU). Parts don't come off, and tyres don't burst.">GPU<small>WebGPU</small></button></div>
+        <span class="hint" id="lab-solver-hint" hidden></span></div></section>
       <section class="readouts" id="lab-readouts"></section>
       <p id="setup-note" class="note" hidden></p>
       <button id="btn-run" class="primary">${lab.runLabel || 'Run the test'}</button>
@@ -133,8 +139,33 @@
     $('#res-body').innerHTML = `<div id="res-notes"></div><div id="res-hazard"></div><div class="tabs" role="tablist" id="res-tabs"></div><div class="tab-panels" id="res-panels"></div>
       <p class="disclaimer">${lab.disclaimer || 'Teaching model, not validated against physical crash tests. Use it to compare settings and see trends, not to predict real injuries.'}</p>`;
     bindForm();
+    bindSolver();
     $('#btn-run').addEventListener('click', run);
     return true;
+  }
+
+  // The solver choice. The GPU device is asked for when the GPU is chosen; without one, back to the
+  // CPU. Labs without a structure solve (whiplash, pedestrian) say so and keep the CPU.
+  function bindSolver() {
+    const seg = $('#lab-solver');
+    if (lab.noStructure) { solver = 'cpu'; seg.querySelector('[data-v=gpu]').disabled = true; }
+    const show = () => {
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === solver));
+      const hint = lab.noStructure ? lab.noStructure : solver === 'gpu' ? (gpuDevice ? `On ${gpuDevice.name}. Parts stay on and tyres don't burst. At this lattice size the GPU is slower than the CPU; it pays off on finer lattices.` : 'Asking the browser for the GPU…') : '';
+      $('#lab-solver-hint').hidden = !hint; $('#lab-solver-hint').textContent = hint;
+    };
+    const start = () => {
+      if (gpuDevice || solver !== 'gpu') return;
+      CrashGPU.init().then((g) => { gpuDevice = g; show(); }, (err) => {
+        solver = 'cpu'; seg.querySelector('[data-v=gpu]').disabled = true; show();
+        toast(`The GPU solver isn't available here: ${err.message}.`);
+      });
+    };
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b || b.disabled || state !== 'setup') return;
+      solver = b.dataset.v; show(); start();
+    });
+    show(); start();
   }
 
   function bindForm() {
@@ -218,9 +249,12 @@
     preview();
   }
   function finishCompute() {
-    const r = task.finish(); task = null;
-    if (!r) { toSetup(); return; }
+    const err = task.error, r = task.finish(); task = null;
+    if (!r) { if (err) toast('The GPU solver stopped: ' + err.message); toSetup(); return; }
     const pb = lab.results(r);
+    const sv = r.solver;
+    if (sv && sv.kind === 'gpu') note($('#res-notes'), `Solved on the GPU (${sv.name}, WebGPU): ${sv.steps.toLocaleString()} steps, the lattice's springs in ${sv.colours} groups solved in parallel, ${(sv.ms / 1000).toFixed(1)} s on the GPU. Parts can't come off in GPU runs, and friction heat is counted with the contact and solver losses.`);
+    else if (sv && sv.fallback) note($('#res-notes'), `The GPU couldn't take this set-up (${sv.fallback}), so the CPU solved it.`);
     // the replay's bullet-time and shake: from the crash result, from the lab, or (no crash pulse)
     // just the kicks of its events
     cine = pb.cine || (r.units && r.frames ? Cinematic.fromCrash(r, pb.events || [])
@@ -493,6 +527,7 @@
       get done() { return sim.done; },
       progressText() { return `simulated ${(Math.max(0, sim.t - Math.max(0, sim.T0)) * 1000).toFixed(0)} ms after contact`; },
       cancel() { sim.cancel(); },
+      get error() { return sim.error; },
       finish() { const r = sim.finalize(); return r ? after(r) : null; },
     };
   }
@@ -564,7 +599,7 @@
       compute() {
         const app = approach.app, s = app.state;
         const sim = Phys.createImpactSim({ vehicle: spec, massKg: spec.massKg, stiffness: 'standard', damage: 'realistic', barrier: 'offset', offset: def(), measure: true, structure: { footwell: true },
-          pose: app.pose(), speed: s.v, yawRate: s.yawRate });
+          pose: app.pose(), speed: s.v, yawRate: s.yawRate, gpu: gpuFor() });
         Scene3D.setPath(0, app.distance, false);
         const p = app.pose();
         freeCam({ f0: new THREE.Vector3(Math.cos(p.heading), 0, Math.sin(p.heading)), from: 'front' });
@@ -734,7 +769,7 @@
       },
       compute() {
         const G0 = geometry();
-        const sim = Phys.createImpactSim({ barrier: 'none', measure: true, duration: 1.4, vehicles: [
+        const sim = Phys.createImpactSim({ barrier: 'none', measure: true, duration: 1.4, gpu: gpuFor(), vehicles: [
           { vehicle: G0.A, massKg: cfg.aMass, stiffness: 'standard', damage: 'realistic', pose: G0.pA, speed: G0.va },
           { vehicle: G0.B, massKg: cfg.bMass, stiffness: 'standard', damage: 'realistic', pose: G0.pB, speed: G0.vb }] });
         // the camera follows the pair's centre of mass (it moves at a steady speed through the crash)
@@ -890,7 +925,7 @@
       },
       compute() {
         const units = [{ vehicle: spec, massKg: spec.massKg, stiffness: 'standard', damage: 'realistic', pose: carPose(0), speed: 0, structure: { steel: cfg.steel } }];
-        const c = { barrier: cfg.impactor === 'pole' ? 'pole' : 'none', measure: true, duration: 0.5, vehicles: units };
+        const c = { barrier: cfg.impactor === 'pole' ? 'pole' : 'none', measure: true, duration: 0.5, vehicles: units, gpu: gpuFor() };
         if (cfg.impactor === 'pole') { units[0].velocity = [0, -speedMph() * MPH]; c.pole = poleDef(); c.sled = true; }
         else { const M = Veh.MDB; units.push({ vehicle: M, massKg: M.massKg, stiffness: 'standard', pose: mdbPose(0), speed: speedMph() * MPH }); }
         freeCam({ frame: { pos: new THREE.Vector3(5.2, 2.6, -5.6), target: new THREE.Vector3(0, 0.8, -0.8) } });
@@ -973,6 +1008,7 @@
     function hideCars(on) { Scene3D.main.setVisible(!on); }
     return {
       title: 'Whiplash sled lab', runLabel: 'Fire the sled',
+      noStructure: 'This lab has no car structure to solve: the sled pulse drives the seat and spine model directly, so it always runs on the CPU.',
       intro: 'A seat on a sled is shoved forward, as when a stopped car is hit from behind. The torso goes with the seat; the head stays behind until the head restraint catches it. The closer and higher the restraint, the sooner that happens.',
       steps: { approach: null, impact: 'Compute' },
       defaults: { mph: 20, backset: 4, height: -3 },
@@ -1096,7 +1132,7 @@
       approach() { return guidedApproach(spec, KMH, spec.massKg, 0, () => beginCompute()); },
       compute() {
         const app = approach.app, s = app.state;
-        const sim = Phys.createImpactSim({ vehicle: spec, massKg: spec.massKg, stiffness: 'standard', damage: 'realistic', barrier: 'rigid', pose: app.pose(), speed: s.v, yawRate: s.yawRate });
+        const sim = Phys.createImpactSim({ vehicle: spec, massKg: spec.massKg, stiffness: 'standard', damage: 'realistic', barrier: 'rigid', pose: app.pose(), speed: s.v, yawRate: s.yawRate, gpu: gpuFor() });
         Scene3D.setPath(0, app.distance, false);
         const o = Scene3D.cabin.o;
         freeCam({ f0: new THREE.Vector3(1, 0, 0), frame: { pos: o.clone().add(new THREE.Vector3(1.4, 1.1, -3.9)), target: o.clone().add(new THREE.Vector3(0.5, 0.15, 0)) } });
@@ -1187,6 +1223,7 @@
     }
     return {
       title: 'Pedestrian & emergency braking lab', runLabel: 'Drive',
+      noStructure: "This lab has no car structure to solve: the car's motion is planned and the pedestrian model runs on its own, so it always runs on the CPU.",
       intro: 'A pedestrian steps into the road. With automatic emergency braking the car\'s radar and camera spot them, warn and brake; without it the car arrives at full speed. A softer bumper lowers the blow to the legs.',
       steps: { approach: null, impact: 'Compute' },
       defaults: { mph: 25, target: 'adult', bumper: 'foam', aeb: true },

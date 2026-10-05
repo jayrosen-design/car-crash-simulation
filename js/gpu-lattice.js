@@ -1,21 +1,29 @@
 /* The car lattice on the GPU (WebGPU compute, WGSL): an opt-in alternative to the inner loop of
- * physics.js createImpactSim (cfg.gpu), for one car into the rigid barrier.
+ * physics.js createImpactSim (cfg.gpu). It covers the rigid barrier, the offset barrier with or
+ * without its honeycomb face, the pole, and several cars colliding with each other; not the brick
+ * wall, and parts don't come off.
  *
  * Each step runs the same equations as the CPU solver: predict; the lattice's distance constraints
- * (XPBD with damping, plastic yield and its rest-length limits); ground and barrier contact with
- * Coulomb friction (rolling along the car for the wheel nodes); velocities. The CPU solver projects
- * the constraints one after the other (Gauss-Seidel). Here they are split into colour groups, no two
- * constraints in a group sharing a node, so each group is projected in parallel and the groups one
- * after the other: the same method in a different order. Positions are 32-bit floats (the CPU uses
- * 64-bit), so results differ slightly from the CPU's.
+ * (XPBD with damping, plastic yield and its rest-length limits); contacts with the ground, the
+ * barrier or obstacle, the honeycomb and the other cars; Coulomb friction (rolling along the car for
+ * the wheel nodes); velocities. Two things differ:
+ * - the order. The CPU projects the constraints one after the other (Gauss-Seidel); here they are
+ *   split into colour groups, no two in a group sharing a node, projected in parallel group by group.
+ *   Car-against-car contacts are gathered per node from the same positions (Jacobi) instead of one
+ *   after the other. The honeycomb is crushed lane by lane (the nodes one behind the other), in the
+ *   CPU's order within a lane;
+ * - 32-bit floats (the CPU uses 64-bit).
+ * So results differ slightly from the CPU's.
  *
- * run(dts, rollDir, base) does a batch of steps (one recorded frame's worth) and resolves to the
+ * run(dts, rolls, base) does a batch of steps (one recorded frame's worth) and resolves to the
  * state read back from the GPU, for the CPU's bookkeeping (telemetry, energies, frames).
  * Browser only: needs navigator.gpu (a secure context: https, localhost or file://). */
 const CrashGPU = (() => {
   'use strict';
   const STEP_STRIDE = 256;   // uniform buffer offset alignment
+  const STEP_SIZE = 80;      // the Step struct
   const WG = 64;
+  const PAIRS = 6;           // car-to-car contacts kept per node for friction
 
   let devicePromise = null;
   // the GPU device, requested once; rejects with a readable message if there is none
@@ -24,11 +32,12 @@ const CrashGPU = (() => {
       if (typeof navigator === 'undefined' || !navigator.gpu) throw new Error('this browser has no WebGPU');
       const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (!adapter) throw new Error('no WebGPU adapter (GPU) available');
-      const device = await adapter.requestDevice();
+      const maxStorage = Math.min(16, adapter.limits.maxStorageBuffersPerShaderStage);
+      const device = await adapter.requestDevice({ requiredLimits: { maxStorageBuffersPerShaderStage: maxStorage } });
       const info = adapter.info || {};
       device.lost.then((e) => { devicePromise = null; console.warn('WebGPU device lost:', e.message); });
-      return { device, name: [info.vendor, info.architecture].filter(Boolean).join(' ') || 'GPU' };
-    })();
+      return { device, maxStorage, name: [info.vendor, info.architecture].filter(Boolean).join(' ') || 'GPU' };
+    })().catch((e) => { devicePromise = null; throw e; });
     return devicePromise;
   }
 
@@ -54,14 +63,16 @@ const CrashGPU = (() => {
     return { ncol, order, ranges: Array.from({ length: ncol }, (_, k) => [start[k], counts[k]]) };
   }
 
-  const STEP = 'struct Step { dt: f32, idx: u32, rx: f32, rz: f32 };\n@group(1) @binding(0) var<uniform> S: Step;\n';
+  const f = (v) => { const s = String(+v); return /[.e]/.test(s) ? s : s + '.0'; };
+  const STEP = 'struct Step { dt: f32, idx: u32, p0: u32, p1: u32, roll: array<vec4<f32>, 4> };\n@group(1) @binding(0) var<uniform> S: Step;\n';
+  const store = (bindings) => bindings.map(([name, type, rw], i) => `@group(0) @binding(${i}) var<storage, ${rw ? 'read_write' : 'read'}> ${name}: ${type};`).join('\n') + '\n';
+
+  // The kernels, for this simulation's set-up (obstacle, honeycomb, several cars)
   function shaders(d) {
-    const f = (v) => { const s = String(v); return /[.e]/.test(s) ? s : s + '.0'; };
-    const head = `const N: u32 = ${d.n}u;\nconst G: f32 = ${f(d.G)};\n` + STEP;
-    const predict = head + `
-@group(0) @binding(0) var<storage, read_write> X: array<f32>;
-@group(0) @binding(1) var<storage, read_write> P: array<f32>;
-@group(0) @binding(2) var<storage, read_write> V: array<f32>;
+    const head = `const N: u32 = ${d.n}u;\nconst G: f32 = ${f(d.G)};\nconst R: f32 = ${f(d.r)};\nconst MAXSEP: f32 = ${f(d.MAX_SEPARATION)};\n` + STEP;
+    const ob = d.obstacle, hc = d.honeycomb;
+    const out = {};
+    out.predict = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>', 1], ['V', 'array<f32>', 1]]) + `
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   let a = g.x;
   if (a >= N) { return; }
@@ -70,18 +81,12 @@ const CrashGPU = (() => {
   V[i + 1u] = V[i + 1u] - G * S.dt;
   X[i] = X[i] + V[i] * S.dt; X[i + 1u] = X[i + 1u] + V[i + 1u] * S.dt; X[i + 2u] = X[i + 2u] + V[i + 2u] * S.dt;
 }`;
-    const solve = STEP + `
+    out.solve = STEP + `
 const MIN_RATIO: f32 = ${f(d.MIN_RATIO)};
 const MAX_RATIO: f32 = ${f(d.MAX_RATIO)};
 struct Con { a: u32, b: u32, c0: f32, comp: f32, damp: f32, cey: f32, ck: f32, pad: f32 };
 struct Range { off: u32, cnt: u32, pad0: u32, pad1: u32 };
-@group(0) @binding(0) var<storage, read_write> X: array<f32>;
-@group(0) @binding(1) var<storage, read> P: array<f32>;
-@group(0) @binding(2) var<storage, read> NI: array<vec4<f32>>;
-@group(0) @binding(3) var<storage, read> C: array<Con>;
-@group(0) @binding(4) var<storage, read_write> rest: array<f32>;
-@group(0) @binding(5) var<storage, read_write> plastic: array<f32>;
-@group(0) @binding(6) var<storage, read_write> wp: array<f32>;
+` + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['C', 'array<Con>'], ['rest', 'array<f32>', 1], ['plastic', 'array<f32>', 1], ['wp', 'array<f32>', 1]]) + `
 @group(2) @binding(0) var<uniform> Rg: Range;
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   if (g.x >= Rg.cnt) { return; }
@@ -116,19 +121,211 @@ struct Range { off: u32, cnt: u32, pad0: u32, pad1: u32 };
     rest[c] = nr;
   }
 }`;
-    const nodes = head + `
-const R: f32 = ${f(d.r)};
-const BH: f32 = ${f(d.barrier.height)};
-const BW: f32 = ${f(d.barrier.halfWidth)};
-const MU_BODY: f32 = ${f(d.MU_BODY)};
-const MU_WALL: f32 = ${f(d.MU_WALL)};
-const MU_LAT: f32 = ${f(d.MU_LAT)};
-@group(0) @binding(0) var<storage, read_write> X: array<f32>;
-@group(0) @binding(1) var<storage, read> P: array<f32>;
-@group(0) @binding(2) var<storage, read_write> V: array<f32>;
-@group(0) @binding(3) var<storage, read> NI: array<vec4<f32>>;
-@group(0) @binding(4) var<storage, read_write> IMP: array<vec4<f32>>;
-@group(0) @binding(5) var<storage, read_write> FIRST: array<u32>;
+    // the ground (and the rigid barrier): CT = (ground, barrier or honeycomb, surface) corrections
+    const rigid = ob.kind === 'rigid' ? `
+    if (x.x + R > 0.0 && x.y < ${f(ob.height)} && abs(x.z) < ${f(ob.halfWidth)}) {
+      ct.y = x.x + R; x.x = -R;
+      let imp = ct.y / (ni.x * S.dt);
+      IMPS[2u * a] = IMPS[2u * a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
+      IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + imp;
+      FIRST[a] = min(FIRST[a], S.idx);
+    }` : '';
+    out.ground = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + `
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let a = g.x;
+  if (a >= N) { return; }
+  let ni = NI[a];
+  var ct = vec4<f32>(0.0);
+  if ((u32(ni.z) & 1u) == 0u) {
+    let i = 3u * a;
+    var x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]);
+    if (x.y < ni.y) { ct.x = ni.y - x.y; x.y = ni.y; }${rigid}
+    X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;
+  }
+  CT[a] = ct;
+}`;
+    if (hc) out.honeycomb = head + `
+const NL: u32 = ${hc.lanes}u;
+const HH: f32 = ${f(hc.h)}; const NZC: u32 = ${hc.nzc}u; const NYC: u32 = ${hc.nyc}u; const HY0: f32 = ${f(hc.y0)};
+const PADY: f32 = ${f(hc.padY)}; const PADZ: f32 = ${f(hc.padZ)}; const SIDE: f32 = ${f(ob.side)}; const ZEDGE: f32 = ${f(ob.zEdge)};
+const SOLID: f32 = ${f(hc.solid)}; const MAIN_D: f32 = ${f(hc.mainDepth)}; const BUMP_D: f32 = ${f(hc.bumperDepth)};
+const MAIN_S: f32 = ${f(hc.mainStress)}; const BUMP_S: f32 = ${f(hc.bumperStress)};
+` + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1],
+      ['LN', 'array<u32>'], ['CD', 'array<vec2<f32>>', 1], ['CLAIM', 'array<atomic<u32>>', 1], ['WHC', 'array<f32>', 1]]) + `
+fn stressOf(c: f32, dep: f32) -> f32 { if (c < BUMP_D && dep > MAIN_D + 1e-6) { return BUMP_S; } return MAIN_S; }
+fn work(c0: f32, c1: f32, dep: f32) -> f32 {   // crushing a cell from c0 to c1 (J), as physics.js crushWork
+  let b = select(0.0, BUMP_D, dep > MAIN_D + 1e-6);
+  let inB = max(0.0, min(c1, b) - c0);
+  return HH * HH * (inB * BUMP_S + ((c1 - c0) - inB) * MAIN_S);
+}
+// One thread per lane of nodes (the nodes one behind the other at the same height and side
+// position, in the CPU's order), as physics.js honeycombContact; a cell is crushed by at most one
+// node per step (CLAIM holds the step that claimed it).
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let lane = g.x;
+  if (lane >= NL) { return; }
+  for (var q = LN[lane]; q < LN[lane + 1u]; q++) {
+    let a = LN[NL + 1u + q];
+    let ni = NI[a]; let i3 = 3u * a;
+    var x = vec3<f32>(X[i3], X[i3 + 1u], X[i3 + 2u]);
+    let p = vec3<f32>(P[i3], P[i3 + 1u], P[i3 + 2u]);
+    let w = -SIDE * (x.z - ZEDGE);
+    let iz0 = max(0, i32(ceil((-w - PADZ) / HH - 0.5))); let iz1 = min(i32(NZC) - 1, i32(floor((-w + PADZ) / HH - 0.5)));
+    let iy0 = max(0, i32(ceil((x.y - PADY - HY0) / HH - 0.5))); let iy1 = min(i32(NYC) - 1, i32(floor((x.y + PADY - HY0) / HH - 0.5)));
+    if (iz0 > iz1 || iy0 > iy1) { continue; }
+    var xf = 0.0; var cnt = 0.0; var cap = 0.0; var solid = false;
+    for (var iy = iy0; iy <= iy1; iy++) {
+      for (var iz = iz0; iz <= iz1; iz++) {
+        let i = u32(iy) * NZC + u32(iz);
+        let cd = CD[i];
+        xf = xf + cd.x - cd.y; cnt = cnt + 1.0;
+        if (cd.x >= cd.y - SOLID - 1e-9) { solid = true; }
+        else if (atomicLoad(&CLAIM[i]) != S.idx) { cap = cap + stressOf(cd.x, cd.y) * HH * HH; }
+      }
+    }
+    xf = xf / cnt;
+    var pen = x.x + R - xf;
+    if (pen <= 0.0) { continue; }
+    pen = min(pen, max(0.0, x.x - p.x + MAXSEP * S.dt));
+    if (pen <= 0.0) { continue; }
+    let m = 1.0 / ni.x;
+    let crush = !solid && m * pen > cap * S.dt * S.dt;
+    var dx = pen;
+    if (crush) { dx = cap * S.dt * S.dt / m; }
+    x.x = x.x - dx;
+    if (crush) {
+      let front = x.x + R; let adv = max(0.0, x.x - p.x);
+      for (var iy = iy0; iy <= iy1; iy++) {
+        for (var iz = iz0; iz <= iz1; iz++) {
+          let i = u32(iy) * NZC + u32(iz);
+          if (atomicExchange(&CLAIM[i], S.idx) == S.idx) { continue; }
+          let cd = CD[i];
+          let c1 = min(min(cd.y - SOLID, front + cd.y), cd.x + adv);
+          if (c1 > cd.x) { WHC[i] = WHC[i] + work(cd.x, c1, cd.y); CD[i] = vec2<f32>(c1, cd.y); }
+        }
+      }
+    }
+    var ct = CT[a]; ct.y = dx; CT[a] = ct;
+    let imp = dx / (ni.x * S.dt);
+    IMPS[2u * a] = IMPS[2u * a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
+    IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + imp;
+    FIRST[a] = min(FIRST[a], S.idx);
+    X[i3] = x.x; X[i3 + 1u] = x.y; X[i3 + 2u] = x.z;
+  }
+}`;
+    // the offset barrier's block or the pole, as a signed distance (physics.js obstacleSDF)
+    if (ob.kind === 'offset' || ob.kind === 'pole') {
+      const sdf = ob.kind === 'pole' ? `
+fn sdf(x: vec3<f32>) -> vec3<f32> {
+  let dx = x.x - ${f(ob.x)}; let dz = x.z - ${f(ob.z)}; let d = max(length(vec2<f32>(dx, dz)), 1e-9);
+  if (x.y > ${f(ob.height)}) { return vec3<f32>(1e9, dx / d, dz / d); }
+  return vec3<f32>(d - ${f(ob.r)}, dx / d, dz / d);
+}` : `
+fn sdf(x: vec3<f32>) -> vec3<f32> {
+  if (x.y > ${f(ob.height)}) { return vec3<f32>(1e9, -1.0, 0.0); }
+  let s = -(${f(ob.side)}); let w = s * (x.z - ${f(ob.zEdge)}); let rho = ${f(ob.edgeRadius)};
+  var d: f32; var nx: f32; var nw: f32;
+  if (x.x < rho && w > -rho) { let ex = x.x - rho; let ew = w + rho; let l = max(length(vec2<f32>(ex, ew)), 1e-9); d = l - rho; nx = ex / l; nw = ew / l; }
+  else if (w > -rho) { d = w; nx = 0.0; nw = 1.0; }
+  else if (x.x < rho || x.x < -w) { d = -x.x; nx = -1.0; nw = 0.0; }
+  else { d = w; nx = 0.0; nw = 1.0; }
+  if (-(${f(ob.width)}) - w > d) { d = -(${f(ob.width)}) - w; nx = 0.0; nw = -1.0; }
+  return vec3<f32>(d, nx, s * nw);
+}`;
+      out.surface = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['NRM', 'array<vec2<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + sdf + `
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let a = g.x;
+  if (a >= N) { return; }
+  let ni = NI[a];
+  if ((u32(ni.z) & 1u) != 0u) { return; }
+  let i = 3u * a;
+  var x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]);
+  let p = vec3<f32>(P[i], P[i + 1u], P[i + 2u]);
+  let gq = sdf(x);
+  if (gq.x >= R) { return; }
+  // cancel this step's approach, but never push the node out faster than MAXSEP
+  let pen = min(R - gq.x, max(0.0, -((x.x - p.x) * gq.y + (x.z - p.z) * gq.z) + MAXSEP * S.dt));
+  if (pen <= 0.0) { return; }
+  x.x = x.x + pen * gq.y; x.z = x.z + pen * gq.z;
+  var ct = CT[a]; ct.z = pen; CT[a] = ct;
+  NRM[a] = vec2<f32>(gq.y, gq.z);
+  let imp = pen / (ni.x * S.dt);
+  IMPS[2u * a] = IMPS[2u * a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
+  IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + ${ob.kind === 'pole' ? 'imp' : 'imp * max(0.0, -gq.y)'};
+  FIRST[a] = min(FIRST[a], S.idx);
+  X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;
+}`;
+    }
+    const multi = d.units > 1;
+    if (multi) out.cars = head + `
+const D: f32 = 2.0 * R;
+const NODE_SEP: f32 = ${f(d.NODE_SEPARATION)};
+const K: u32 = ${PAIRS}u;
+var<workgroup> TX: array<vec4<f32>, ${WG}>;
+var<workgroup> TP: array<vec4<f32>, ${WG}>;
+` + store([['X', 'array<f32>'], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['DC', 'array<vec4<f32>>', 1], ['PR', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + `
+// Car against car: each node against every node of the other cars (tiled through workgroup
+// memory), its own share of each correction gathered from the same positions (physics.js
+// carCarContacts does them one after the other). The contacts are kept for friction.
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  let a = g.x;
+  let valid = a < N;
+  var xa = vec3<f32>(0.0); var pa = vec3<f32>(0.0); var wa = 0.0; var ua = 0u; var ghostA = true;
+  if (valid) {
+    xa = vec3<f32>(X[3u * a], X[3u * a + 1u], X[3u * a + 2u]); pa = vec3<f32>(P[3u * a], P[3u * a + 1u], P[3u * a + 2u]);
+    let ni = NI[a]; wa = ni.x; ua = u32(ni.z) >> 2u; ghostA = (u32(ni.z) & 1u) != 0u;
+  }
+  var dc = vec3<f32>(0.0); var np = 0u; var fimp = 0.0; var eimp = vec4<f32>(0.0); var first = 0xffffffffu;
+  for (var base = 0u; base < N; base = base + ${WG}u) {
+    let b = base + li;
+    if (b < N) {
+      TX[li] = vec4<f32>(X[3u * b], X[3u * b + 1u], X[3u * b + 2u], NI[b].x);
+      TP[li] = vec4<f32>(P[3u * b], P[3u * b + 1u], P[3u * b + 2u], NI[b].z);
+    } else { TP[li] = vec4<f32>(0.0, 0.0, 0.0, 1.0); }
+    workgroupBarrier();
+    if (valid && !ghostA) {
+      for (var j = 0u; j < ${WG}u; j++) {
+        let bb = base + j;
+        if (bb >= N) { break; }
+        let fl = u32(TP[j].w);
+        if ((fl & 1u) != 0u || (fl >> 2u) == ua) { continue; }
+        let xb = TX[j].xyz;
+        let dv = xa - xb; let d2 = dot(dv, dv);
+        if (d2 >= D * D || d2 < 1e-18) { continue; }
+        let dl0 = sqrt(d2); let nrm = dv / dl0;
+        let pen = min(D - dl0, max(0.0, -dot((xa - pa) - (xb - TP[j].xyz), nrm) + NODE_SEP * S.dt));
+        if (pen <= 0.0) { continue; }
+        let dl = pen / (wa + TX[j].w);
+        dc = dc + wa * dl * nrm;
+        if (np < K) { PR[2u * (a * K + np)] = vec4<f32>(bitcast<f32>(bb), dl, 0.0, 0.0); PR[2u * (a * K + np) + 1u] = vec4<f32>(nrm, 0.0); np = np + 1u; }
+        let imp = dl / S.dt;   // the contact force times the step
+        fimp = fimp + imp;
+        if (ua < (fl >> 2u)) { let mid = 0.5 * (xa + xb); eimp = eimp + vec4<f32>(imp, imp * mid); }
+        first = min(first, S.idx);
+      }
+    }
+    workgroupBarrier();
+  }
+  if (valid) {
+    DC[a] = vec4<f32>(dc, f32(np));
+    if (!ghostA) {
+      IMPS[2u * a] = IMPS[2u * a] + eimp;
+      IMPS[2u * a + 1u].y = IMPS[2u * a + 1u].y + fimp;
+      FIRST[a] = min(FIRST[a], first);
+    }
+  }
+}`;
+    // friction at the node's own contacts (physics.js frictionPass), then (one car) velocities
+    const surfFr = out.surface ? `
+    if (ct.z > 0.0) {
+      let nn = NRM[a];
+      var t = x - p;
+      let dn = t.x * nn.x + t.z * nn.y; t.x = t.x - dn * nn.x; t.z = t.z - dn * nn.y;
+      let len = length(t); let lim = ${f(d.MU_WALL)} * ct.z;
+      x = x - select(lim / len, 1.0, len <= lim) * t;
+    }` : '';
+    out.friction = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['V', 'array<f32>', 1], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>'],
+      ...(out.surface ? [['NRM', 'array<vec2<f32>>']] : []), ...(multi ? [['DC', 'array<vec4<f32>>']] : [])]) + `
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   let a = g.x;
   if (a >= N) { return; }
@@ -136,64 +333,132 @@ const MU_LAT: f32 = ${f(d.MU_LAT)};
   var x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]);
   let p = vec3<f32>(P[i], P[i + 1u], P[i + 2u]);
   let ni = NI[a];
-  let flags = u32(ni.z);
+  let flags = u32(ni.z);${multi ? '\n  x = x + DC[a].xyz;' : ''}
   if ((flags & 1u) == 0u) {
-    // contacts: the ground (or the tyre's radius), then the barrier face
-    var lg = 0.0; var lb = 0.0;
-    if (x.y < ni.y) { lg = ni.y - x.y; x.y = ni.y; }
-    if (x.x + R > 0.0 && x.y < BH && abs(x.z) < BW) {
-      lb = x.x + R; x.x = -R;
-      let imp = lb / (ni.x * S.dt);   // m d / dt, the impulse this step
-      IMP[a] = IMP[a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
-      FIRST[a] = min(FIRST[a], S.idx);
-    }
-    // friction (physics.js frictionPass): wheels roll along the car and grip sideways
-    if (lg > 0.0) {
+    let ct = CT[a];
+    if (ct.x > 0.0) {
       let dx = x.x - p.x; let dz = x.z - p.z;
-      if ((flags & 2u) != 0u) {
-        let fx = S.rx; let fz = S.rz; let lx = -fz; let lz = fx;
-        let rf = clamp(dx * fx + dz * fz, -ni.w * lg, ni.w * lg);
-        let rl = clamp(dx * lx + dz * lz, -MU_LAT * lg, MU_LAT * lg);
+      if ((flags & 2u) != 0u) {   // a wheel: rolls along its car, grips sideways
+        let r = S.roll[flags >> 2u];
+        let fx = r.x; let fz = r.y; let lx = -fz; let lz = fx;
+        let rf = clamp(dx * fx + dz * fz, -ni.w * ct.x, ni.w * ct.x);
+        let rl = clamp(dx * lx + dz * lz, -${f(d.MU_LAT)} * ct.x, ${f(d.MU_LAT)} * ct.x);
         x.x = x.x - (rf * fx + rl * lx); x.z = x.z - (rf * fz + rl * lz);
       } else {
-        let len = length(vec2<f32>(dx, dz)); let lim = MU_BODY * lg;
+        let len = length(vec2<f32>(dx, dz)); let lim = ${f(d.MU_BODY)} * ct.x;
         let s = select(lim / len, 1.0, len <= lim);
         x.x = x.x - s * dx; x.z = x.z - s * dz;
       }
     }
-    if (lb > 0.0) {
+    if (ct.y > 0.0) {
       let dy = x.y - p.y; let dz = x.z - p.z;
-      let len = length(vec2<f32>(dy, dz)); let lim = MU_WALL * lb;
+      let len = length(vec2<f32>(dy, dz)); let lim = ${f(d.MU_WALL)} * ct.y;
       let s = select(lim / len, 1.0, len <= lim);
       x.y = x.y - s * dy; x.z = x.z - s * dz;
-    }
+    }${surfFr}
   }
+  X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;${multi ? '' : `
+  let v = (x - p) / S.dt;
+  V[i] = v.x; V[i + 1u] = v.y; V[i + 2u] = v.z;`}
+}`;
+    if (multi) {
+      out.carFriction = head + `const K: u32 = ${PAIRS}u;\n` + store([['X', 'array<f32>'], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['DC', 'array<vec4<f32>>'], ['PR', 'array<vec4<f32>>'], ['D2', 'array<vec4<f32>>', 1]]) + `
+// friction at the car-against-car contacts, each node's share from the same positions
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let a = g.x;
+  if (a >= N) { return; }
+  let xa = vec3<f32>(X[3u * a], X[3u * a + 1u], X[3u * a + 2u]); let pa = vec3<f32>(P[3u * a], P[3u * a + 1u], P[3u * a + 2u]);
+  let wa = NI[a].x;
+  var d2 = vec3<f32>(0.0);
+  let np = u32(DC[a].w);
+  for (var k = 0u; k < np; k++) {
+    let e0 = PR[2u * (a * K + k)]; let nrm = PR[2u * (a * K + k) + 1u].xyz;
+    let b = bitcast<u32>(e0.x);
+    let xb = vec3<f32>(X[3u * b], X[3u * b + 1u], X[3u * b + 2u]); let pb = vec3<f32>(P[3u * b], P[3u * b + 1u], P[3u * b + 2u]);
+    var t = (xa - pa) - (xb - pb);
+    t = t - dot(t, nrm) * nrm;
+    let len = length(t);
+    if (len < 1e-12) { continue; }
+    let lt = min(len / (wa + NI[b].x), ${f(d.MU_CAR)} * e0.y);
+    d2 = d2 - wa * lt * (t / len);
+  }
+  D2[a] = vec4<f32>(d2, 0.0);
+}`;
+      out.finish = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['V', 'array<f32>', 1], ['D2', 'array<vec4<f32>>']]) + `
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+  let a = g.x;
+  if (a >= N) { return; }
+  let i = 3u * a;
+  let x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]) + D2[a].xyz;
+  let p = vec3<f32>(P[i], P[i + 1u], P[i + 2u]);
   X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;
   let v = (x - p) / S.dt;
   V[i] = v.x; V[i + 1u] = v.y; V[i + 2u] = v.z;
 }`;
-    return { predict, solve, nodes };
+    }
+    return out;
   }
 
   /* d: { n, nc, X, V, W (inverse masses), floor (ground height per node: the tyre radius for wheel
-   *      nodes), ghost, wheel (0/1 per node), muRoll, ca, cb, rest, c0, comp, damp, cey, ck,
-   *      r (node radius), barrier { height, halfWidth }, G, MU_BODY, MU_WALL, MU_LAT, MIN_RATIO,
-   *      MAX_RATIO, maxSteps } */
+   *      nodes), ghost, wheel (0/1 per node), muRoll, unitOf, units (count), ca, cb, rest, c0, comp,
+   *      damp, cey, ck, r (node radius), G, MU_BODY, MU_WALL, MU_LAT, MU_CAR, MIN_RATIO, MAX_RATIO,
+   *      MAX_SEPARATION, NODE_SEPARATION,
+   *      obstacle: { kind: 'rigid' (height, halfWidth) | 'offset' (side, zEdge, width, height,
+   *                  edgeRadius) | 'pole' (x, z, r, height) | 'none' },
+   *      honeycomb: null or { h, nzc, nyc, y0, depth, crush, padY, padZ, solid, mainDepth,
+   *                  bumperDepth, mainStress, bumperStress, ijk (the nodes' lattice indices), ny, nz },
+   *      maxSteps } */
   function lattice(gpu, d) {
-    const dev = gpu.device, n = d.n, nc = d.nc, maxSteps = d.maxSteps || 256;
+    const dev = gpu.device, n = d.n, nc = d.nc, maxSteps = d.maxSteps || 256, multi = d.units > 1;
+    if (d.units > 4) throw new Error('the GPU solver takes at most 4 vehicles');
+    if (d.honeycomb && multi) throw new Error('the GPU solver has no honeycomb with several vehicles');
+    if (d.honeycomb && gpu.maxStorage < 10) throw new Error('this GPU allows too few storage buffers for the honeycomb face');
     const C = colour(d.ca, d.cb, n);
-    const S = GPUBufferUsage.STORAGE, CD = GPUBufferUsage.COPY_DST, CS = GPUBufferUsage.COPY_SRC;
+    const SU = GPUBufferUsage.STORAGE, CD = GPUBufferUsage.COPY_DST, CS = GPUBufferUsage.COPY_SRC;
     const buf = (bytes, usage) => dev.createBuffer({ size: Math.max(16, Math.ceil(bytes / 16) * 16), usage });
     const put = (b, arr) => dev.queue.writeBuffer(b, 0, arr);
+    const B = {};
     // node state and properties
-    const bX = buf(12 * n, S | CD | CS), bP = buf(12 * n, S | CD), bV = buf(12 * n, S | CD | CS);
-    const bNI = buf(16 * n, S | CD), bIMP = buf(16 * n, S | CD | CS), bFIRST = buf(4 * n, S | CD | CS);
-    put(bX, Float32Array.from(d.X)); put(bP, Float32Array.from(d.X)); put(bV, Float32Array.from(d.V));
+    B.X = buf(12 * n, SU | CD | CS); B.P = buf(12 * n, SU | CD); B.V = buf(12 * n, SU | CD | CS);
+    B.NI = buf(16 * n, SU | CD); B.CT = buf(16 * n, SU); B.IMPS = buf(32 * n, SU | CD | CS); B.FIRST = buf(4 * n, SU | CD | CS);
+    put(B.X, Float32Array.from(d.X)); put(B.P, Float32Array.from(d.X)); put(B.V, Float32Array.from(d.V));
     const ni = new Float32Array(4 * n);
-    for (let a = 0; a < n; a++) { ni[4 * a] = d.W[a]; ni[4 * a + 1] = d.floor[a]; ni[4 * a + 2] = (d.ghost[a] ? 1 : 0) + (d.wheel[a] ? 2 : 0); ni[4 * a + 3] = d.muRoll[a]; }
-    put(bNI, ni);
-    const noFirst = new Uint32Array(n).fill(0xffffffff), zeros4 = new Float32Array(4 * n);
-    put(bFIRST, noFirst);
+    for (let a = 0; a < n; a++) {
+      ni[4 * a] = d.W[a]; ni[4 * a + 1] = d.floor[a];
+      ni[4 * a + 2] = (d.ghost[a] ? 1 : 0) + (d.wheel[a] ? 2 : 0) + 4 * (d.unitOf ? d.unitOf[a] : 0);
+      ni[4 * a + 3] = d.muRoll[a];
+    }
+    put(B.NI, ni);
+    const noFirst = new Uint32Array(n).fill(0xffffffff), zerosI = new Float32Array(8 * n);
+    put(B.FIRST, noFirst);
+    if (d.obstacle.kind === 'offset' || d.obstacle.kind === 'pole') B.NRM = buf(8 * n, SU);
+    if (multi) { B.DC = buf(16 * n, SU); B.PR = buf(32 * PAIRS * n, SU); B.D2 = buf(16 * n, SU); }
+    // the honeycomb: lanes of nodes (same lattice row and column, front to back as the CPU visits
+    // them), and its cells (crush, depth), claims and crush work
+    const H = d.honeycomb;
+    let nCells = 0, zerosW = null;
+    if (H) {
+      const lanes = new Map();
+      for (let a = 0; a < n; a++) {
+        if (d.ghost[a]) continue;
+        const key = H.ijk[3 * a + 1] * H.nz + H.ijk[3 * a + 2];
+        if (!lanes.has(key)) lanes.set(key, []);
+        lanes.get(key).push(a);
+      }
+      const L = [...lanes.values()], ln = new Uint32Array(L.length + 1 + n);
+      let q = 0;
+      L.forEach((list, i) => { ln[i] = q; for (const a of list) ln[L.length + 1 + q++] = a; });
+      ln[L.length] = q;
+      H.lanes = L.length;
+      nCells = H.nzc * H.nyc;
+      B.LN = buf(4 * ln.length, SU | CD); put(B.LN, ln);
+      const cd = new Float32Array(2 * nCells);
+      for (let i = 0; i < nCells; i++) { cd[2 * i] = H.crush[i]; cd[2 * i + 1] = H.depth[i]; }
+      B.CD = buf(8 * nCells, SU | CD | CS); put(B.CD, cd);
+      B.CLAIM = buf(4 * nCells, SU | CD); put(B.CLAIM, new Uint32Array(nCells).fill(0xffffffff));
+      B.WHC = buf(4 * nCells, SU | CD | CS);
+      zerosW = new Float32Array(nCells);
+    }
     // constraints, in colour order
     const con = new ArrayBuffer(32 * nc), cu = new Uint32Array(con), cf = new Float32Array(con);
     const restS = new Float32Array(nc);
@@ -203,47 +468,72 @@ const MU_LAT: f32 = ${f(d.MU_LAT)};
       cf[o + 2] = d.c0[c]; cf[o + 3] = d.comp[c]; cf[o + 4] = d.damp[c]; cf[o + 5] = d.cey[c]; cf[o + 6] = d.ck[c];
       restS[j] = d.rest[c];
     }
-    const bC = buf(32 * nc, S | CD), bRest = buf(4 * nc, S | CD | CS), bPl = buf(4 * nc, S | CD | CS), bWp = buf(4 * nc, S | CD | CS);
-    put(bC, con); put(bRest, restS);
+    B.C = buf(32 * nc, SU | CD); B.rest = buf(4 * nc, SU | CD | CS); B.plastic = buf(4 * nc, SU | CD | CS); B.wp = buf(4 * nc, SU | CD | CS);
+    put(B.C, con); put(B.rest, restS);
     const zerosC = new Float32Array(nc);
     // per-step uniforms (dynamic offsets) and per-colour ranges
-    const bStep = dev.createBuffer({ size: STEP_STRIDE * maxSteps, usage: GPUBufferUsage.UNIFORM | CD });
-    const bRange = dev.createBuffer({ size: STEP_STRIDE * C.ncol, usage: GPUBufferUsage.UNIFORM | CD });
+    B.step = dev.createBuffer({ size: STEP_STRIDE * maxSteps, usage: GPUBufferUsage.UNIFORM | CD });
+    B.range = dev.createBuffer({ size: STEP_STRIDE * C.ncol, usage: GPUBufferUsage.UNIFORM | CD });
     const rr = new Uint32Array(C.ncol * STEP_STRIDE / 4);
     C.ranges.forEach(([o, c], k) => { rr[k * STEP_STRIDE / 4] = o; rr[k * STEP_STRIDE / 4 + 1] = c; });
-    put(bRange, rr);
-    // pipelines
-    const sh = shaders(d);
-    const ubl = (dyn) => dev.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: dyn } }] });
-    const stepL = ubl(true), rangeL = ubl(true);
-    const storeL = (kinds) => dev.createBindGroupLayout({ entries: kinds.map((k, i) => ({ binding: i, visibility: GPUShaderStage.COMPUTE, buffer: { type: k === 'r' ? 'read-only-storage' : 'storage' } })) });
-    const mk = (code, layouts) => dev.createComputePipeline({ layout: dev.createPipelineLayout({ bindGroupLayouts: layouts }), compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
-    const lPred = storeL(['w', 'w', 'w']), lSolve = storeL(['w', 'r', 'r', 'r', 'w', 'w', 'w']), lNodes = storeL(['w', 'r', 'w', 'r', 'w', 'w']);
-    const pPred = mk(sh.predict, [lPred, stepL]), pSolve = mk(sh.solve, [lSolve, stepL, rangeL]), pNodes = mk(sh.nodes, [lNodes, stepL]);
-    const bg = (layout, bufs) => dev.createBindGroup({ layout, entries: bufs.map((b, i) => ({ binding: i, resource: { buffer: b } })) });
-    const gPred = bg(lPred, [bX, bP, bV]), gSolve = bg(lSolve, [bX, bP, bNI, bC, bRest, bPl, bWp]), gNodes = bg(lNodes, [bX, bP, bV, bNI, bIMP, bFIRST]);
-    const gStep = dev.createBindGroup({ layout: stepL, entries: [{ binding: 0, resource: { buffer: bStep, size: 16 } }] });
-    const gRange = dev.createBindGroup({ layout: rangeL, entries: [{ binding: 0, resource: { buffer: bRange, size: 16 } }] });
-    // read-back: X, V, rest, plastic, plastic work, impulses, first contact step
-    const parts = [[bX, 12 * n], [bV, 12 * n], [bRest, 4 * nc], [bPl, 4 * nc], [bWp, 4 * nc], [bIMP, 16 * n], [bFIRST, 4 * n]];
-    const offs = []; let total = 0;
+    put(B.range, rr);
+    // pipelines: every kernel gets its storage buffers in the order its shader declares them
+    const sh = shaders(Object.assign({}, d, { honeycomb: H }));
+    const ubl = (size) => dev.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: size } }] });
+    const stepL = ubl(STEP_SIZE), rangeL = ubl(16);
+    const gStep = dev.createBindGroup({ layout: stepL, entries: [{ binding: 0, resource: { buffer: B.step, size: STEP_SIZE } }] });
+    const gRange = dev.createBindGroup({ layout: rangeL, entries: [{ binding: 0, resource: { buffer: B.range, size: 16 } }] });
+    function kernel(name, bufs) {   // bufs: [[buffer, writable], ...] in binding order
+      const layout = dev.createBindGroupLayout({ entries: bufs.map(([, w], i) => ({ binding: i, visibility: GPUShaderStage.COMPUTE, buffer: { type: w ? 'storage' : 'read-only-storage' } })) });
+      const layouts = name === 'solve' ? [layout, stepL, rangeL] : [layout, stepL];
+      const pipeline = dev.createComputePipeline({ layout: dev.createPipelineLayout({ bindGroupLayouts: layouts }), compute: { module: dev.createShaderModule({ code: sh[name] }), entryPoint: 'main' } });
+      return { pipeline, group: dev.createBindGroup({ layout, entries: bufs.map(([b], i) => ({ binding: i, resource: { buffer: b } })) }) };
+    }
+    const ng = Math.ceil(n / WG);
+    const K = {
+      predict: kernel('predict', [[B.X, 1], [B.P, 1], [B.V, 1]]),
+      solve: kernel('solve', [[B.X, 1], [B.P], [B.NI], [B.C], [B.rest, 1], [B.plastic, 1], [B.wp, 1]]),
+      ground: kernel('ground', [[B.X, 1], [B.P], [B.NI], [B.CT, 1], [B.IMPS, 1], [B.FIRST, 1]]),
+      friction: kernel('friction', [[B.X, 1], [B.P], [B.V, 1], [B.NI], [B.CT], ...(B.NRM ? [[B.NRM]] : []), ...(multi ? [[B.DC]] : [])]),
+    };
+    if (H) K.honeycomb = kernel('honeycomb', [[B.X, 1], [B.P], [B.NI], [B.CT, 1], [B.IMPS, 1], [B.FIRST, 1], [B.LN], [B.CD, 1], [B.CLAIM, 1], [B.WHC, 1]]);
+    if (B.NRM) K.surface = kernel('surface', [[B.X, 1], [B.P], [B.NI], [B.CT, 1], [B.NRM, 1], [B.IMPS, 1], [B.FIRST, 1]]);
+    if (multi) {
+      K.cars = kernel('cars', [[B.X], [B.P], [B.NI], [B.DC, 1], [B.PR, 1], [B.IMPS, 1], [B.FIRST, 1]]);
+      K.carFriction = kernel('carFriction', [[B.X], [B.P], [B.NI], [B.DC], [B.PR], [B.D2, 1]]);
+      K.finish = kernel('finish', [[B.X, 1], [B.P], [B.V, 1], [B.D2]]);
+    }
+    // one step, in the CPU's order
+    const order = ['predict', 'solve', 'ground', ...(H ? ['honeycomb'] : []), ...(K.surface ? ['surface'] : []), ...(multi ? ['cars'] : []), 'friction', ...(multi ? ['carFriction', 'finish'] : [])];
+    // read-back: X, V, rest, plastic, plastic work, impulses, first contact step (and the honeycomb)
+    const parts = [[B.X, 12 * n], [B.V, 12 * n], [B.rest, 4 * nc], [B.plastic, 4 * nc], [B.wp, 4 * nc], [B.IMPS, 32 * n], [B.FIRST, 4 * n]];
+    if (H) parts.push([B.CD, 8 * nCells], [B.WHC, 4 * nCells]);
+    const offs = [];
+    let total = 0;
     for (const [, sz] of parts) { offs.push(total); total += Math.ceil(sz / 16) * 16; }
     const staging = dev.createBuffer({ size: total, usage: GPUBufferUsage.MAP_READ | CD });
-    const ng = Math.ceil(n / WG);
     let lost = false;
 
-    async function run(dts, roll, base) {
+    // rolls: each vehicle's forward direction in the ground plane [x, z], for its wheels
+    async function run(dts, rolls, base) {
       if (lost) throw new Error('the GPU solver was stopped');
       const k = Math.min(dts.length, maxSteps), su = new ArrayBuffer(STEP_STRIDE * k), sf = new Float32Array(su), si = new Uint32Array(su);
-      for (let s = 0; s < k; s++) { const o = s * STEP_STRIDE / 4; sf[o] = dts[s]; si[o + 1] = base + s; sf[o + 2] = roll[0]; sf[o + 3] = roll[1]; }
-      dev.queue.writeBuffer(bStep, 0, su);
+      for (let s = 0; s < k; s++) {
+        const o = s * STEP_STRIDE / 4;
+        sf[o] = dts[s]; si[o + 1] = base + s;
+        rolls.forEach((r, u) => { sf[o + 4 + 4 * u] = r[0]; sf[o + 5 + 4 * u] = r[1]; });
+      }
+      dev.queue.writeBuffer(B.step, 0, su);
       const enc = dev.createCommandEncoder(), pass = enc.beginComputePass();
       for (let s = 0; s < k; s++) {
         const so = [s * STEP_STRIDE];
-        pass.setPipeline(pPred); pass.setBindGroup(0, gPred); pass.setBindGroup(1, gStep, so); pass.dispatchWorkgroups(ng);
-        pass.setPipeline(pSolve); pass.setBindGroup(0, gSolve); pass.setBindGroup(1, gStep, so);
-        for (let c = 0; c < C.ncol; c++) { pass.setBindGroup(2, gRange, [c * STEP_STRIDE]); pass.dispatchWorkgroups(Math.ceil(C.ranges[c][1] / WG)); }
-        pass.setPipeline(pNodes); pass.setBindGroup(0, gNodes); pass.setBindGroup(1, gStep, so); pass.dispatchWorkgroups(ng);
+        for (const name of order) {
+          const q = K[name];
+          pass.setPipeline(q.pipeline); pass.setBindGroup(0, q.group); pass.setBindGroup(1, gStep, so);
+          if (name === 'solve') {
+            for (let c = 0; c < C.ncol; c++) { pass.setBindGroup(2, gRange, [c * STEP_STRIDE]); pass.dispatchWorkgroups(Math.ceil(C.ranges[c][1] / WG)); }
+          } else pass.dispatchWorkgroups(name === 'honeycomb' ? Math.ceil(H.lanes / WG) : ng);
+        }
       }
       pass.end();
       parts.forEach(([b, sz], i) => enc.copyBufferToBuffer(b, 0, staging, offs[i], Math.ceil(sz / 4) * 4));
@@ -251,15 +541,22 @@ const MU_LAT: f32 = ${f(d.MU_LAT)};
       await staging.mapAsync(GPUMapMode.READ);
       const all = staging.getMappedRange(), F = (i, len) => new Float32Array(all.slice(offs[i], offs[i] + 4 * len));
       const restC = F(2, nc), plC = F(3, nc), wpC = F(4, nc);
-      const out = { X: F(0, 3 * n), V: F(1, 3 * n), imp: F(5, 4 * n), first: new Uint32Array(all.slice(offs[6], offs[6] + 4 * n)),
+      const out = { X: F(0, 3 * n), V: F(1, 3 * n), imps: F(5, 8 * n), first: new Uint32Array(all.slice(offs[6], offs[6] + 4 * n)),
         rest: new Float32Array(nc), plastic: new Float32Array(nc), wp: new Float32Array(nc), steps: k };
       for (let j = 0; j < nc; j++) { const c = C.order[j]; out.rest[c] = restC[j]; out.plastic[c] = plC[j]; out.wp[c] = wpC[j]; }
+      if (H) {
+        const cd = F(7, 2 * nCells);
+        out.crush = new Float32Array(nCells);
+        for (let i = 0; i < nCells; i++) out.crush[i] = cd[2 * i];
+        out.whc = F(8, nCells);
+      }
       staging.unmap();
-      // the plastic work, impulses and first contact are per batch
-      dev.queue.writeBuffer(bWp, 0, zerosC); dev.queue.writeBuffer(bIMP, 0, zeros4); dev.queue.writeBuffer(bFIRST, 0, noFirst);
+      // the plastic work, impulses, first contact and crush work are per batch
+      dev.queue.writeBuffer(B.wp, 0, zerosC); dev.queue.writeBuffer(B.IMPS, 0, zerosI); dev.queue.writeBuffer(B.FIRST, 0, noFirst);
+      if (H) dev.queue.writeBuffer(B.WHC, 0, zerosW);
       return out;
     }
-    function destroy() { lost = true; for (const b of [bX, bP, bV, bNI, bIMP, bFIRST, bC, bRest, bPl, bWp, bStep, bRange, staging]) b.destroy(); }
+    function destroy() { lost = true; for (const b of Object.values(B)) b.destroy(); staging.destroy(); }
     return { run, destroy, colours: C.ncol, maxSteps, name: gpu.name };
   }
 
