@@ -1,19 +1,21 @@
 /* Occupant model and injury criteria. No dependencies (global CrashOccupant / Node module).
  *
- * Sled-test approach: the dummy sits in a seat that follows the cabin acceleration pulse from the
- * vehicle simulation (one-way coupling). The dummy is a 2D side-view multibody (pelvis, torso,
- * compliant sternum, neck, head) with joint springs, a 3-point belt with pretensioner and load
- * limiter, a driver airbag, and steering wheel / windshield / roof / knee-bolster contacts.
- * Lateral motion is a simple two-pendulum sway model.
+ * The frontal dummy sits in a seat that follows the cabin acceleration pulse from the vehicle
+ * simulation. It is a 3D multibody of 15 particles (pelvis, torso, compliant sternum, neck, head,
+ * legs) with joint springs, a 3-point belt with pretensioner and force limiter, a driver airbag,
+ * and contacts with the steering wheel, windshield, roof, A-pillar, door, knee bolster and toe pan.
+ * Those parts of the cabin move as the structure deforms (opts.cabin, from physics.js cabinInput),
+ * so intrusion pushes into the dummy; the dummy's forces are not fed back into the car.
  *
  * Channels are filtered per SAE J211 and scored with FMVSS 208-style criteria (HIC15, chest 3 ms
- * clip, chest deflection, Nij, neck tension/compression). Illustrative, not a validated dummy.
+ * clip, chest deflection, Nij, neck tension/compression, femur force). Illustrative, not a
+ * validated dummy.
  */
 (function (root) {
 'use strict';
 
 const G = 9.81;
-const LIMITS = { hic15: 700, chest3ms: 60, chestDefl: 63, nij: 1.0, neckTension: 4170, neckCompression: 4000 };
+const LIMITS = { hic15: 700, chest3ms: 60, chestDefl: 63, nij: 1.0, neckTension: 4170, neckCompression: 4000, femur: 10000 };
 
 // SAE J211-1 channel frequency class filter: 2-pole Butterworth run forward then backward
 // (phaseless, 4-pole). Ends are padded with an odd reflection to limit start-up transients.
@@ -65,24 +67,40 @@ function clip3ms(a, dt, i0, i1) {
   return vals.length > k ? vals[k] : (vals[vals.length - 1] || 0);
 }
 
-// ------------------------------------------------------------------ dummy definition
-// Particles: pelvis, thorax CoM, T1 (shoulders), sternum, occipital condyle, head front, head back.
-const PEL = 0, THX = 1, T1 = 2, STN = 3, OC = 4, HF = 5, HB = 6, NP = 7;
-const MASS = [28, 18, 10, 1.5, 1.2, 2.25, 2.25];
-const HEAD_MASS = MASS[HF] + MASS[HB];
-const STERNUM_A = 0.28, STERNUM_B = 0.15;   // sternum rest point along / ahead of the spine (m)
-const HEAD_R = 0.10, CHEST_R = 0.09;
+// ------------------------------------------------------------------ the frontal dummy
+// A 3D dummy of 15 particles (a 50th-percentile adult male, 75 kg) in the car's frame: x forward,
+// y up, z toward the car's right, origin at the H-point (the driver's door is on the left, -z).
+// Pelvis: both hip joints and the sacrum. Torso: thorax, T1 (the base of the neck), both shoulders
+// (with the arms' mass). The sternum sits on a compliant chest. Head: the occipital condyle (top of
+// the neck) and the front and back of the skull. Knees and ankles. Distance constraints keep the
+// segments rigid; the joints (lumbar spine at the sacrum, hips, knees, lower and upper neck) are
+// springs with damping and stops.
+const HL = 0, HR = 1, SAC = 2, THX = 3, T1 = 4, SHL = 5, SHR = 6, STN = 7, OC = 8, HF = 9, HB = 10, KL = 11, KR = 12, AL = 13, AR = 14, NP = 15;
+const MASS = [6, 6, 6, 16, 8, 4, 4, 1.5, 0.5, 2.0, 2.0, 6, 6, 3.5, 3.5];
+const HEAD_MASS = MASS[OC] + MASS[HF] + MASS[HB];
+const PELVIS = [HL, HR, SAC], TORSO = [SAC, THX, T1, SHL, SHR], HEAD = [OC, HF, HB];
+const pairs = (ids) => { const o = []; for (let a = 0; a < ids.length; a++) for (let b = a + 1; b < ids.length; b++) o.push([ids[a], ids[b]]); return o; };
+const LINKS = [...pairs(PELVIS), ...pairs(TORSO), [T1, OC], ...pairs(HEAD), [HL, KL], [HR, KR], [KL, AL], [KR, AR]];
+const FEMUR = [LINKS.findIndex(([a, b]) => a === HL && b === KL), LINKS.findIndex(([a, b]) => a === HR && b === KR)];
+const STERNUM_A = 0.21, STERNUM_B = 0.165;   // sternum rest point along / ahead of the spine from the sacrum (m)
+const HEAD_R = 0.10, CHEST_R = 0.09, KNEE_R = 0.06, FOOT_R = 0.07, FOOT_L = 0.13;
+const TOE_PAN = 60 * Math.PI / 180;           // toe pan angle up from the floor
+const BAG_K = 1.6e4, BAG_K3 = 3e5, BAG_C = 300;  // driver airbag on the head: pressure stiffness (linear, cubic), venting damping
+const BAG_TORSO = 1.5;                         // the same on each chest and shoulder point, scaled for their larger contact
+const SEAT_BACK = 22 * Math.PI / 180;        // seat back angle from vertical
 
-// Interior, in the occupant frame (origin at the H-point, x forward, y up). Matches the car body
-// in physics.js: H-point at car-local (-0.25, 0.60).
+// Interior, in the occupant frame. Matches the car body in physics.js: H-point at car-local
+// (-0.25, 0.60). The windshield, roof and door move as the cabin deforms (simulate opts.cabin).
 const INTERIOR = {
   hub: [0.40, 0.42], col: [-0.906, 0.423], rimDir: [0.423, 0.906], rimR: 0.19,
   bagOffset: 0.14, bagR: 0.24,
   wsA: [1.30, 0.40], wsB: [0.65, 0.85],
   roofY: 0.80,
-  kneeGap: 0.12,
+  kneeX: 0.60,                                    // knee bolster face (12 cm ahead of the knees)
+  floorY: -0.25, toeX: 0.95,                       // floor, and the toe pan's foot at the floor
   dRing: [-0.32, 0.64], buckle: [-0.05, -0.06], lapAnchor: [-0.10, -0.14],
-  doorRoll: -0.18,
+  dRingZ: -0.26, buckleZ: 0.22, lapAnchorZ: -0.25,   // lateral (+ toward the car's right)
+  doorZ: -0.34, consoleZ: 0.30,                    // door trim and centre console beside the seat
 };
 
 function interiorFor(over) {
@@ -92,55 +110,135 @@ function interiorFor(over) {
   return I;
 }
 
+// the seated pose before settling: [x, y, z] of each particle, one after the other
 function restPose() {
-  const x = new Float64Array(NP), y = new Float64Array(NP);
-  const th = -22 * Math.PI / 180;
-  const dx = Math.sin(th), dy = Math.cos(th), nx = Math.cos(th), ny = -Math.sin(th);
-  x[PEL] = 0; y[PEL] = 0;
-  x[T1] = 0.50 * dx; y[T1] = 0.50 * dy;
-  x[THX] = 0.28 * dx + 0.05 * nx; y[THX] = 0.28 * dy + 0.05 * ny;
-  x[STN] = STERNUM_A * dx + STERNUM_B * nx; y[STN] = STERNUM_A * dy + STERNUM_B * ny;
-  const tn = 8 * Math.PI / 180;
-  x[OC] = x[T1] + 0.13 * Math.sin(tn); y[OC] = y[T1] + 0.13 * Math.cos(tn);
-  const thh = 3 * Math.PI / 180, ux = Math.sin(thh), uy = Math.cos(thh), fx = Math.cos(thh), fy = -Math.sin(thh);
-  const cx = x[OC] + 0.02 * fx + 0.05 * ux, cy = y[OC] + 0.02 * fy + 0.05 * uy;
-  x[HF] = cx + 0.065 * fx; y[HF] = cy + 0.065 * fy;
-  x[HB] = cx - 0.065 * fx; y[HB] = cy - 0.065 * fy;
-  return { x, y };
+  const P = new Float64Array(3 * NP), set = (i, x, y, z) => { P[3 * i] = x; P[3 * i + 1] = y; P[3 * i + 2] = z; };
+  const d = [-Math.sin(SEAT_BACK), Math.cos(SEAT_BACK)], n = [Math.cos(SEAT_BACK), Math.sin(SEAT_BACK)];   // spine, and its forward normal
+  const s = [-0.04, 0.06], sp = (a, b) => [s[0] + a * d[0] + b * n[0], s[1] + a * d[1] + b * n[1]];
+  set(HL, 0, 0, -0.085); set(HR, 0, 0, 0.085); set(SAC, s[0], s[1], 0);
+  let q = sp(0.25, 0.07); set(THX, q[0], q[1], 0);
+  const t1 = sp(0.46, 0); set(T1, t1[0], t1[1], 0);
+  q = sp(0.42, 0.03); set(SHL, q[0], q[1], -0.19); set(SHR, q[0], q[1], 0.19);
+  q = sp(STERNUM_A, STERNUM_B); set(STN, q[0], q[1], 0);
+  const tn = 8 * Math.PI / 180, oc = [t1[0] + 0.13 * Math.sin(tn), t1[1] + 0.13 * Math.cos(tn)];
+  set(OC, oc[0], oc[1], 0);
+  const th = 3 * Math.PI / 180, u = [Math.sin(th), Math.cos(th)], f = [Math.cos(th), -Math.sin(th)];
+  const c = [oc[0] + 0.02 * f[0] + 0.05 * u[0], oc[1] + 0.02 * f[1] + 0.05 * u[1]];
+  set(HF, c[0] + 0.065 * f[0], c[1] + 0.065 * f[1], 0); set(HB, c[0] - 0.065 * f[0], c[1] - 0.065 * f[1], 0);
+  const tf = 12 * Math.PI / 180, kx = 0.43 * Math.cos(tf), ky = 0.43 * Math.sin(tf), ts = 50 * Math.PI / 180;
+  set(KL, kx, ky, -0.11); set(KR, kx, ky, 0.11);
+  set(AL, kx + 0.42 * Math.sin(ts), ky - 0.42 * Math.cos(ts), -0.12); set(AR, kx + 0.42 * Math.sin(ts), ky - 0.42 * Math.cos(ts), 0.12);
+  return P;
 }
 
-const LINKS = [[PEL, THX], [THX, T1], [PEL, T1], [T1, OC], [OC, HF], [OC, HB], [HF, HB]];
+// small vector helpers on [x, y, z] arrays
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const lerp3 = (a, b, s) => [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, a[2] + (b[2] - a[2]) * s];
+// rotation vector (axis x angle) of the rotation that takes the rest relative orientation R0 to R
+// (3x3 row-major: rows are the axes of one frame in the other's coordinates)
+function rotVec(R, R0) {
+  const D = new Array(9);
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) D[3 * r + c] = R[3 * r] * R0[3 * c] + R[3 * r + 1] * R0[3 * c + 1] + R[3 * r + 2] * R0[3 * c + 2];
+  const v = [0.5 * (D[7] - D[5]), 0.5 * (D[2] - D[6]), 0.5 * (D[3] - D[1])], s = Math.hypot(v[0], v[1], v[2]);
+  if (s < 1e-12) return [0, 0, 0];
+  const ang = Math.atan2(s, Math.max(-1, Math.min(1, (D[0] + D[4] + D[8] - 1) / 2)));
+  return [v[0] / s * ang, v[1] / s * ang, v[2] / s * ang];
+}
+// B's axes in A's coordinates (frames as { f, u, l })
+const relFrame = (A, B) => [dot(A.f, B.f), dot(A.f, B.u), dot(A.f, B.l), dot(A.u, B.f), dot(A.u, B.u), dot(A.u, B.l), dot(A.l, B.f), dot(A.l, B.u), dot(A.l, B.l)];
+const toWorld = (A, v) => [A.f[0] * v[0] + A.u[0] * v[1] + A.l[0] * v[2], A.f[1] * v[0] + A.u[1] * v[1] + A.l[1] * v[2], A.f[2] * v[0] + A.u[2] * v[1] + A.l[2] * v[2]];
+// rotation vector taking unit vector a to unit vector b
+function turn(a, b) {
+  const c = cross(a, b), s = Math.hypot(c[0], c[1], c[2]);
+  if (s < 1e-12) return [0, 0, 0];
+  const ang = Math.atan2(s, dot(a, b));
+  return [c[0] / s * ang, c[1] / s * ang, c[2] / s * ang];
+}
+
+// Belts: the shoulder belt runs from the D-ring on the B-pillar over the collarbone (40% of the way
+// from the neck to the outboard, left shoulder) and the sternum to the buckle; the lap belt from its
+// outboard anchor across the front of the pelvis to the buckle. Where they bear on the body is
+// [[particle, share], ...] plus an offset.
+const SHOULDER_HOLD = [[[T1, 0.6], [SHL, 0.4]], [[STN, 1]]], SHOULDER_OFF = [[0, 0.03, 0], [0, 0, 0]];
+const LAP_HOLD = [[[HL, 1]], [[HR, 1]]], LAP_OFF = [[0.08, 0.04, 0], [0.08, 0.04, 0]];
+// the belts' paths for particle positions P (H-point frame), anchor to buckle
+function beltPaths(P, I) {
+  const at = (h, off) => { const p = off.slice(); for (const [i, w] of h) for (let c = 0; c < 3; c++) p[c] += w * P[3 * i + c]; return p; };
+  const BK = [I.buckle[0], I.buckle[1], I.buckleZ];
+  return {
+    shoulder: [[I.dRing[0], I.dRing[1], I.dRingZ], at(SHOULDER_HOLD[0], SHOULDER_OFF[0]), at(SHOULDER_HOLD[1], SHOULDER_OFF[1]), BK],
+    lap: [[I.lapAnchor[0], I.lapAnchor[1], I.lapAnchorZ], at(LAP_HOLD[0], LAP_OFF[0]), at(LAP_HOLD[1], LAP_OFF[1]), BK],
+  };
+}
 
 /* pulse: { dt, n, i0, ax, ay, az, gx, gy, gz } cabin acceleration and gravity in car axes (m/s^2)
- * opts:  { belt, airbag, interior, pretensioner, loadLimiter }  interior: per-vehicle overrides of
- *        INTERIOR (wsA, wsB, roofY); pretensioner and loadLimiter default to on (a plain belt has
- *        neither) */
+ * opts:  { belt, airbag, interior, pretensioner, loadLimiter, cabin }  interior: per-vehicle
+ *        overrides of INTERIOR (wsA, wsB, roofY); pretensioner and loadLimiter default to on (a plain
+ *        belt has neither); cabin: physics.js cabinInput(), so the steering column, knee bolster, toe
+ *        pan, windshield, roof, A-pillar and door move as the cabin deforms (without it they stay
+ *        put) */
 function simulate(pulse, opts) {
   const belt = !!opts.belt, airbag = !!opts.airbag;
   const pretensioner = opts.pretensioner !== false, loadLimiter = opts.loadLimiter !== false;
-  const dt = pulse.dt, N = pulse.n, I = interiorFor(opts.interior);
-  const pose = restPose();
-  const x = pose.x, y = pose.y;
-  const vx = new Float64Array(NP), vy = new Float64Array(NP), px = new Float64Array(NP), py = new Float64Array(NP);
-  const fx = new Float64Array(NP), fy = new Float64Array(NP), ovx = new Float64Array(NP), ovy = new Float64Array(NP);
-  const linkLen = LINKS.map(([a, b]) => Math.hypot(x[b] - x[a], y[b] - y[a]));
-  const x0 = Float64Array.from(x), y0 = Float64Array.from(y);
+  const dt = pulse.dt, N = pulse.n, I = interiorFor(opts.interior), cab = opts.cabin || null;
+  const P = restPose(), V = new Float64Array(3 * NP), Pp = new Float64Array(3 * NP), OV = new Float64Array(3 * NP), Fo = new Float64Array(3 * NP);
+  const P0 = Float64Array.from(P);
+  const pt = (i) => [P[3 * i], P[3 * i + 1], P[3 * i + 2]], vel = (i) => [V[3 * i], V[3 * i + 1], V[3 * i + 2]];
+  const add = (i, f, s = 1) => { Fo[3 * i] += s * f[0]; Fo[3 * i + 1] += s * f[1]; Fo[3 * i + 2] += s * f[2]; };
+  const linkLen = LINKS.map(([a, b]) => Math.hypot(P[3 * b] - P[3 * a], P[3 * b + 1] - P[3 * a + 1], P[3 * b + 2] - P[3 * a + 2]));
+  const linkF = new Float64Array(LINKS.length);   // constraint force this step (compression +)
 
-  const ang = (a, b) => Math.atan2(x[b] - x[a], y[b] - y[a]);
-  const angVel = (a, b) => {
-    const dx = x[b] - x[a], dy = y[b] - y[a];
-    return (dy * (vx[b] - vx[a]) - dx * (vy[b] - vy[a])) / (dx * dx + dy * dy);
-  };
-  const headAng = () => ang(HB, HF) - Math.PI / 2;   // angle of the head's up axis
-  const thT0 = ang(PEL, T1), thN0 = ang(T1, OC) - thT0, thH0 = headAng() - ang(T1, OC);
-
-  // Couple of torque tau (positive = forward rotation) on segment a->b.
-  function couple(a, b, tau) {
-    const dx = x[b] - x[a], dy = y[b] - y[a], L2 = dx * dx + dy * dy;
-    const s = tau / L2;
-    fx[b] += s * dy; fy[b] -= s * dx;
-    fx[a] -= s * dy; fy[a] += s * dx;
+  // ---- segment frames
+  function pelvisFrame() {
+    const l = unit([P[3 * HR] - P[3 * HL], P[3 * HR + 1] - P[3 * HL + 1], P[3 * HR + 2] - P[3 * HL + 2]]);
+    const b = [P[3 * SAC] - 0.5 * (P[3 * HL] + P[3 * HR]), P[3 * SAC + 1] - 0.5 * (P[3 * HL + 1] + P[3 * HR + 1]), P[3 * SAC + 2] - 0.5 * (P[3 * HL + 2] + P[3 * HR + 2])];
+    const bl = dot(b, l), u = unit([b[0] - bl * l[0], b[1] - bl * l[1], b[2] - bl * l[2]]);
+    return { f: cross(u, l), u, l };
   }
+  function torsoFrame() {
+    const u = unit([P[3 * T1] - P[3 * SAC], P[3 * T1 + 1] - P[3 * SAC + 1], P[3 * T1 + 2] - P[3 * SAC + 2]]);
+    const s = [P[3 * SHR] - P[3 * SHL], P[3 * SHR + 1] - P[3 * SHL + 1], P[3 * SHR + 2] - P[3 * SHL + 2]], su = dot(s, u);
+    const l = unit([s[0] - su * u[0], s[1] - su * u[1], s[2] - su * u[2]]);
+    return { f: cross(u, l), u, l };
+  }
+  function headFrame() {
+    const f = unit([P[3 * HF] - P[3 * HB], P[3 * HF + 1] - P[3 * HB + 1], P[3 * HF + 2] - P[3 * HB + 2]]);
+    const c = [0.5 * (P[3 * HF] + P[3 * HB]) - P[3 * OC], 0.5 * (P[3 * HF + 1] + P[3 * HB + 1]) - P[3 * OC + 1], 0.5 * (P[3 * HF + 2] + P[3 * HB + 2]) - P[3 * OC + 2]];
+    const cf = dot(c, f), u = unit([c[0] - cf * f[0], c[1] - cf * f[1], c[2] - cf * f[2]]);
+    return { f, u, l: cross(f, u) };
+  }
+  function neckFrame(T) {   // along the neck, with the torso's lateral axis
+    const u = unit([P[3 * OC] - P[3 * T1], P[3 * OC + 1] - P[3 * T1 + 1], P[3 * OC + 2] - P[3 * T1 + 2]]);
+    const lu = dot(T.l, u), l = unit([T.l[0] - lu * u[0], T.l[1] - lu * u[1], T.l[2] - lu * u[2]]);
+    return { f: cross(u, l), u, l };
+  }
+  const centroid = (ids) => { let m = 0; const c = [0, 0, 0]; for (const i of ids) { m += MASS[i]; for (let d = 0; d < 3; d++) c[d] += MASS[i] * P[3 * i + d]; } return [c[0] / m, c[1] / m, c[2] / m]; };
+  // a torque on a rigid segment: forces m_i (alpha x r_i), alpha = I^-1 tau, which add up to tau
+  // about the centre of mass and to no net force
+  function bodyTorque(ids, tau) {
+    const c = centroid(ids), J = [1e-4, 0, 0, 0, 1e-4, 0, 0, 0, 1e-4];
+    for (const i of ids) {
+      const r = [P[3 * i] - c[0], P[3 * i + 1] - c[1], P[3 * i + 2] - c[2]], m = MASS[i], r2 = dot(r, r);
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) J[3 * a + b] += m * ((a === b ? r2 : 0) - r[a] * r[b]);
+    }
+    const det = J[0] * (J[4] * J[8] - J[5] * J[7]) - J[1] * (J[3] * J[8] - J[5] * J[6]) + J[2] * (J[3] * J[7] - J[4] * J[6]);
+    const al = [
+      (tau[0] * (J[4] * J[8] - J[5] * J[7]) - J[1] * (tau[1] * J[8] - J[5] * tau[2]) + J[2] * (tau[1] * J[7] - J[4] * tau[2])) / det,
+      (J[0] * (tau[1] * J[8] - J[5] * tau[2]) - tau[0] * (J[3] * J[8] - J[5] * J[6]) + J[2] * (J[3] * tau[2] - tau[1] * J[6])) / det,
+      (J[0] * (J[4] * tau[2] - tau[1] * J[7]) - J[1] * (J[3] * tau[2] - tau[1] * J[6]) + tau[0] * (J[3] * J[7] - J[4] * J[6])) / det];
+    for (const i of ids) { const r = [P[3 * i] - c[0], P[3 * i + 1] - c[1], P[3 * i + 2] - c[2]]; add(i, cross(al, r), MASS[i]); }
+  }
+  // a torque on a two-particle segment a->b (its component across the segment), as a couple
+  function linkTorque(a, b, tau) {
+    const d = [P[3 * b] - P[3 * a], P[3 * b + 1] - P[3 * a + 1], P[3 * b + 2] - P[3 * a + 2]], d2 = dot(d, d);
+    const F = cross(tau, d);
+    add(b, F, 1 / d2); add(a, F, -1 / d2);
+  }
+  // seat foam pressed in by pen (m) at speed vOut (+ coming back out): firm going in, damped, and
+  // giving back only a quarter of its force on the way out
+  const foam = (k, pen, vOut, c) => Math.max(0, (vOut > 0 ? 0.25 : 1) * k * pen - c * vOut);
   function joint(rel, rate, k, beta, c, limLo, limHi, kLim) {
     let tau = -k * rel * (1 + beta * rel * rel) - c * rate;
     if (rel > limHi) tau -= kLim * (rel - limHi);
@@ -148,38 +246,51 @@ function simulate(pulse, opts) {
     return tau;
   }
   // Elastic-plastic penalty contact: force rises with stiffness k up to `cap`, then the part yields
-  // (column collapses, rim bends, glass cracks) for up to `stroke` metres of permanent set, then
-  // stiffens. Unloading is elastic, so the yield work is absorbed rather than returned.
+  // (column collapses, rim bends, glass cracks, padding crushes) for up to `stroke` metres of
+  // permanent set, then stiffens. Unloading is elastic, so the yield work is absorbed.
   function plasticContact(st, pen, k, cap, stroke) {
     let e = pen - st.set;
     if (e > cap / k && st.set < stroke) { st.set = Math.min(stroke, pen - cap / k); e = pen - st.set; }
     return e > 0 ? k * e : 0;
   }
-  const PC = { headWheel: { set: 0 }, stnWheel: { set: 0 }, thxWheel: { set: 0 }, t1Wheel: { set: 0 }, ws: { set: 0 }, roof: { set: 0 } };
-  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-  // Steering wheel seen from the side: a one-sided plane through the hub (normal toward the
-  // driver) across the rim diameter, plus the rim tube at its top and bottom edges. One-sided so a
-  // body pressed hard into it is pushed back, never through.
-  const RIM_T = 0.02;
-  function wheelContact(st, cxp, cyp, cvx, cvy, r, k, c, cap, stroke, out) {
-    const rx = cxp - I.hub[0], ry = cyp - I.hub[1];
-    const s = rx * I.rimDir[0] + ry * I.rimDir[1];
-    const sd = rx * I.col[0] + ry * I.col[1];
-    if (sd < -(r + 0.15)) return 0;                 // already beyond the wheel (went over the top)
-    let nx, ny, pen;
-    if (Math.abs(s) <= I.rimR) { nx = I.col[0]; ny = I.col[1]; pen = r + RIM_T - sd; }
-    else {
-      const ex = I.hub[0] + Math.sign(s) * I.rimR * I.rimDir[0], ey = I.hub[1] + Math.sign(s) * I.rimR * I.rimDir[1];
-      const dx = cxp - ex, dy = cyp - ey, d = Math.hypot(dx, dy);
-      if (d < 1e-9) return 0;
-      nx = dx / d; ny = dy / d; pen = r + RIM_T - d;
-    }
-    if (pen <= 0) return 0;
-    const vn = cvx * nx + cvy * ny;
-    const F = Math.max(0, plasticContact(st, pen, k, cap, stroke) + (vn < 0 ? -c * vn : 0));
-    out.fx += F * nx; out.fy += F * ny;
-    return F;
+  const PC = { headWheel: { set: 0 }, stnWheel: { set: 0 }, thxWheel: { set: 0 }, t1Wheel: { set: 0 }, ws: { set: 0 }, roof: { set: 0 }, pillar: { set: 0 }, kneeL: { set: 0 }, kneeR: { set: 0 } };
+
+  // ---- the cabin around the dummy: rest layout, moved by the deforming structure (opts.cabin)
+  const REST = {
+    hub: [I.hub[0], I.hub[1], 0], colBase: [I.hub[0] - 0.3 * I.col[0], I.hub[1] - 0.3 * I.col[1], 0],
+    knee: [I.kneeX, 0.12, 0], toe: [I.toeX, I.floorY + 0.12, 0],
+    wsLow: [I.wsA[0], I.wsA[1], 0], wsHigh: [I.wsB[0], I.wsB[1], 0], roof: [0, I.roofY, 0],
+    aLow: [I.wsA[0], I.wsA[1], I.doorZ - 0.05], aHigh: [I.wsB[0], I.wsB[1], I.doorZ - 0.05],
+    door: [0.05, 0.30, I.doorZ], doorHead: [0.05, 0.62, I.doorZ],
+  };
+  const cabIdx = {};
+  if (cab) {
+    cab.names.forEach((nm, q) => { cabIdx[nm] = q; });
+    // the door and A-pillar's sideways position come from the car; the rest from the layout above
+    for (const nm of ['aLow', 'aHigh', 'door', 'doorHead']) if (nm in cabIdx) REST[nm][2] = cab.p[3 * cabIdx[nm] + 2];
   }
+  let cabK = 0;
+  const S = {};   // surfaces now: point -> { p, v }
+  function cabinAt(t) {
+    let s = 0, k0 = 0, k1 = 0, h = 1;
+    if (cab) {
+      const T = cab.t;
+      while (cabK < T.length - 2 && T[cabK + 1] <= t) cabK++;
+      k0 = cabK; k1 = Math.min(T.length - 1, cabK + 1); h = Math.max(1e-6, T[k1] - T[k0]);
+      s = Math.max(0, Math.min(1, (t - T[k0]) / h));
+    }
+    for (const nm in REST) {
+      const r = REST[nm];
+      if (!cab || !(nm in cabIdx)) { S[nm] = { p: r, v: [0, 0, 0] }; continue; }
+      const q = cabIdx[nm], np = cab.np, a = 3 * (k0 * np + q), b = 3 * (k1 * np + q), z = 3 * q, p = cab.p;
+      const d = [0, 1, 2].map(c => p[a + c] + (p[b + c] - p[a + c]) * s - p[z + c]);
+      S[nm] = { p: [r[0] + d[0], r[1] + d[1], r[2] + d[2]], v: [0, 1, 2].map(c => (p[b + c] - p[a + c]) / h) };
+    }
+    const col = unit([S.hub.p[0] - S.colBase.p[0], S.hub.p[1] - S.colBase.p[1], S.hub.p[2] - S.colBase.p[2]]);
+    const yu = col[1], rimUp = unit([-yu * col[0], 1 - yu * col[1], -yu * col[2]]);
+    S.col = col; S.rimUp = rimUp;
+  }
+  cabinAt(0);
 
   // Airbag and pretensioner fire when cabin delta-v reaches the threshold soon after first contact.
   let tFire = -1, dv = 0;
@@ -197,194 +308,333 @@ function simulate(pulse, opts) {
     const tv = tFire + bagDelay + bagFull + 0.08;
     return t > tv ? Math.max(0.25, 1 - (t - tv) / 0.12) : 1;
   }
-  const bagC = [I.hub[0] + I.bagOffset * I.col[0], I.hub[1] + I.bagOffset * I.col[1]];
-  let wsNx = -(I.wsB[1] - I.wsA[1]), wsNy = I.wsB[0] - I.wsA[0];
-  { const L = Math.hypot(wsNx, wsNy); wsNx /= L; wsNy /= L; if ((x[HF] - I.wsA[0]) * wsNx + (y[HF] - I.wsA[1]) * wsNy < 0) { wsNx = -wsNx; wsNy = -wsNy; } }
 
-  // belts
   const SB_K = 9e4, SB_C = 800, LAP_K = 1.0e5, LAP_C = 800, LOAD_LIMIT = 4500, PRE_FORCE = 1500;
-  function shoulderPath() {
-    const shx = x[T1] + 0.06 * Math.cos(ang(PEL, T1)), shy = y[T1] - 0.06 * Math.sin(ang(PEL, T1));
-    const d1 = Math.hypot(shx - I.dRing[0], shy - I.dRing[1]);
-    const d2 = Math.hypot(x[STN] - shx, y[STN] - shy);
-    const d3 = Math.hypot(I.buckle[0] - x[STN], I.buckle[1] - y[STN]);
-    return { shx, shy, L: d1 + d2 + d3 };
+  const holdVel = (h) => { const v = [0, 0, 0]; for (const [i, w] of h) for (let c = 0; c < 3; c++) v[c] += w * V[3 * i + c]; return v; };
+  const pathLen = (pts) => { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]); return L; };
+  const shoulderPath = () => beltPaths(P, I).shoulder, lapPath = () => beltPaths(P, I).lap;
+  // a belt's tension on what it wraps: each bearing point pulled along its two neighbouring segments
+  function beltForce(path, holds, T) {
+    for (let j = 1; j < path.length - 1; j++) {
+      const a = unit([path[j - 1][0] - path[j][0], path[j - 1][1] - path[j][1], path[j - 1][2] - path[j][2]]);
+      const b = unit([path[j + 1][0] - path[j][0], path[j + 1][1] - path[j][1], path[j + 1][2] - path[j][2]]);
+      for (const [i, w] of holds[j - 1]) add(i, [T * (a[0] + b[0]), T * (a[1] + b[1]), T * (a[2] + b[2])], w);
+    }
   }
-  const lapLen = () => 2 * Math.hypot(x[PEL] - I.lapAnchor[0], y[PEL] - I.lapAnchor[1]);
+  const pathRate = (path, holds) => {   // rate of change of the belt's length
+    let r = 0;
+    for (let j = 1; j < path.length - 1; j++) {
+      const vj = holdVel(holds[j - 1]);
+      const a = unit([path[j][0] - path[j - 1][0], path[j][1] - path[j - 1][1], path[j][2] - path[j - 1][2]]);
+      const b = unit([path[j + 1][0] - path[j][0], path[j + 1][1] - path[j][1], path[j + 1][2] - path[j][2]]);
+      r += dot(vj, a) - dot(vj, b);
+    }
+    return r;
+  };
   let sbL0 = 0, lapL0 = 0, prePulled = 0;
 
-  // lateral sway (torso roll about the hip, head roll on the neck)
-  let phT = 0, phTd = 0, phH = 0, phHd = 0;
-  const IT = 4.0, MT = 30, HT = 0.35, IH = 0.13, HH = 0.17;
-  const kT = belt ? 900 : 300;
+  // joint rest geometry, from the rest pose
+  const PF0 = pelvisFrame(), TF0 = torsoFrame(), HF0 = headFrame(), NF0 = neckFrame(TF0);
+  const lumbar0 = relFrame(PF0, TF0), upper0 = relFrame(NF0, HF0);
+  const neck0 = [dot(sub(OC, T1), TF0.f), dot(sub(OC, T1), TF0.u), dot(sub(OC, T1), TF0.l)].map(v => v / linkLen[LINKS.findIndex(([a, b]) => a === T1 && b === OC)]);
+  const femur0 = [[HL, KL], [HR, KR]].map(([h, k]) => { const d = unit(sub(k, h)); return [dot(d, PF0.f), dot(d, PF0.u), dot(d, PF0.l)]; });
+  const knee0 = [[HL, KL, AL], [HR, KR, AR]].map(([h, k, a]) => Math.acos(dot(unit(sub(k, h)), unit(sub(a, k)))));
+  function sub(b, a) { return [P[3 * b] - P[3 * a], P[3 * b + 1] - P[3 * a + 1], P[3 * b + 2] - P[3 * a + 2]]; }
+  const sb = [Math.cos(SEAT_BACK), Math.sin(SEAT_BACK), 0];   // seat back normal (forward and up)
+  const sbD0 = TORSO.map(i => dot(pt(i), sb)), hrD0 = dot(pt(HB), sb) - 0.06;   // seat back, and the head restraint 6 cm behind the head
+  const prev = {};   // joint angles last step, for the damping rates
+  const rate = (key, v) => { const r = key in prev ? (v - prev[key]) / dt : 0; prev[key] = v; return r; };
 
-  // force evaluation; sets fx/fy and returns contact info
-  const ext = { vx: 0, vy: 0, fx: 0, fy: 0 };
-  let headExtX = 0, headExtY = 0, sbT = 0, lapT = 0, defl = 0, myUpper = 0, headHit = 0, hitSurf = '', hitX = 0, hitY = 0;
-  let intF = 0;   // contact force from the airbag, wheel, windshield, roof and knee bolster (the "second collision")
-  function forces(t, acx, acy, gxl, gyl, settling) {
-    for (let i = 0; i < NP; i++) { fx[i] = MASS[i] * (gxl - acx); fy[i] = MASS[i] * (gyl - acy); }
-    headExtX = 0; headExtY = 0; headHit = 0; intF = 0;
+  // force evaluation
+  let headExt = [0, 0, 0], sbT = 0, lapT = 0, defl = 0, myUpper = 0, headHit = 0, hitSurf = '', hitP = null, intF = 0, kneeF = [0, 0];
+  function forces(t, ac, gv, settling) {
+    for (let i = 0; i < NP; i++) for (let d = 0; d < 3; d++) Fo[3 * i + d] = MASS[i] * (gv[d] - ac[d]);
+    headExt = [0, 0, 0]; headHit = 0; intF = 0; kneeF = [0, 0];
+    const PF = pelvisFrame(), TF = torsoFrame(), HFm = headFrame(), NF = neckFrame(TF);
 
-    // joints
-    const thT = ang(PEL, T1), wT = angVel(PEL, T1);
-    let tauHip = -40 * (thT - thT0) - 5 * wT;
-    if (thT < thT0 - 0.01) tauHip += -2500 * (thT - thT0 + 0.01) - 150 * wT;  // seat back
-    couple(PEL, T1, tauHip);
-    const thN = ang(T1, OC), wN = angVel(T1, OC);
-    const tauN = joint(wrap(thN - thT - thN0), wN - wT, 120, 4, 3, -0.8, 0.8, 2000);
-    couple(T1, OC, tauN); couple(PEL, T1, -tauN);
-    const thH = headAng(), wH = angVel(HB, HF);
-    const tauH = joint(wrap(thH - thN - thH0), wH - wN, 60, 6, 1.5, -0.6, 0.5, 2000);
-    couple(HB, HF, tauH); couple(T1, OC, -tauH);
-    myUpper = -tauH;   // flexion positive
-
-    // chest: sternum on a spring-damper ahead of the spine
+    // lumbar spine: the torso against the pelvis, stiffening toward its stops (forward bending is
+    // the softest; leaning back is the seat back's job)
     {
-      const tx = x[T1] - x[PEL], ty = y[T1] - y[PEL], Lt = Math.hypot(tx, ty);
-      const dxs = tx / Lt, dys = ty / Lt, nxs = dys, nys = -dxs;
-      const wA = STERNUM_A / Lt;
-      const srx = x[PEL] + STERNUM_A * dxs + STERNUM_B * nxs, sry = y[PEL] + STERNUM_A * dys + STERNUM_B * nys;
-      const svx = vx[PEL] * (1 - wA) + vx[T1] * wA, svy = vy[PEL] * (1 - wA) + vy[T1] * wA;
-      const ex = x[STN] - srx, ey = y[STN] - sry;
-      defl = -(ex * nxs + ey * nys);
-      const tang = ex * dxs + ey * dys;
-      const rvx = vx[STN] - svx, rvy = vy[STN] - svy;
-      const ddot = -(rvx * nxs + rvy * nys), tdot = rvx * dxs + rvy * dys;
+      const th = rotVec(relFrame(PF, TF), lumbar0), flex = -th[2];
+      const tl = [joint(th[0], rate('lb', th[0]), 1500, 2, 50, -0.4, 0.4, 3000), joint(th[1], rate('lt', th[1]), 600, 2, 30, -0.4, 0.4, 2000),
+        -joint(flex, rate('lf', flex), 150, 3, 8, -0.25, 0.6, 1500)];
+      const tw = toWorld(PF, tl);
+      bodyTorque(TORSO, tw); bodyTorque(PELVIS, [-tw[0], -tw[1], -tw[2]]);
+    }
+    // lower neck: the neck's direction against the torso
+    const iNeck = LINKS.findIndex(([a, b]) => a === T1 && b === OC);
+    {
+      const n0 = unit(toWorld(TF, neck0)), nd = unit(sub(OC, T1)), th = turn(n0, nd);
+      const flex = -dot(th, TF.l), side = dot(th, TF.f);
+      const tF = joint(flex, rate('nf', flex), 120, 4, 3, -0.8, 0.8, 2000), tS = joint(side, rate('ns', side), 120, 4, 3, -0.8, 0.8, 2000);
+      const tw = [-TF.l[0] * tF + TF.f[0] * tS, -TF.l[1] * tF + TF.f[1] * tS, -TF.l[2] * tF + TF.f[2] * tS];
+      linkTorque(T1, OC, tw); bodyTorque(TORSO, [-tw[0], -tw[1], -tw[2]]);
+    }
+    // upper neck: the head against the neck; its flexion torque is the upper neck moment My
+    {
+      const th = rotVec(relFrame(NF, HFm), upper0);
+      const flex = -th[2], side = th[0], twist = th[1];
+      const tF = joint(flex, rate('hf', flex), 60, 6, 1.5, -0.6, 0.5, 2000);
+      const tS = joint(side, rate('hs', side), 60, 6, 1.5, -0.5, 0.5, 2000);
+      const tT = joint(twist, rate('ht', twist), 20, 4, 0.5, -0.8, 0.8, 1000);
+      const tw = toWorld(NF, [tS, tT, -tF]);
+      bodyTorque(HEAD, tw);
+      const along = dot(tw, NF.u), across = [tw[0] - along * NF.u[0], tw[1] - along * NF.u[1], tw[2] - along * NF.u[2]];
+      linkTorque(T1, OC, [-across[0], -across[1], -across[2]]);
+      bodyTorque(TORSO, [-along * NF.u[0], -along * NF.u[1], -along * NF.u[2]]);
+      myUpper = -tF;   // flexion positive
+    }
+    // hips (weak) and knees
+    [[HL, KL, AL], [HR, KR, AR]].forEach(([h, k, a], s) => {
+      const d0 = unit(toWorld(PF, femur0[s])), d = unit(sub(k, h)), th = turn(d0, d);
+      const thr = [rate('hx' + s, th[0]), rate('hy' + s, th[1]), rate('hz' + s, th[2])];
+      const tw = [-30 * th[0] - 2 * thr[0], -30 * th[1] - 2 * thr[1], -30 * th[2] - 2 * thr[2]];
+      linkTorque(h, k, tw); bodyTorque(PELVIS, [-tw[0], -tw[1], -tw[2]]);
+      const ds = unit(sub(a, k)), ax = cross(d, ds), al = Math.hypot(ax[0], ax[1], ax[2]);
+      if (al > 1e-9) {
+        const phi = Math.acos(Math.max(-1, Math.min(1, dot(d, ds)))), rel = phi - knee0[s];
+        let tk = -30 * rel - 3 * rate('k' + s, phi);
+        if (phi < 0.15) tk += 400 * (0.15 - phi);   // the knee straightens no further
+        const tv = [ax[0] / al * tk, ax[1] / al * tk, ax[2] / al * tk];
+        linkTorque(k, a, tv); linkTorque(h, k, [-tv[0], -tv[1], -tv[2]]);
+      }
+    });
+
+    // chest: the sternum on a spring-damper ahead of the spine
+    {
+      const rest = [P[3 * SAC] + STERNUM_A * TF.u[0] + STERNUM_B * TF.f[0], P[3 * SAC + 1] + STERNUM_A * TF.u[1] + STERNUM_B * TF.f[1], P[3 * SAC + 2] + STERNUM_A * TF.u[2] + STERNUM_B * TF.f[2]];
+      const wA = STERNUM_A / Math.hypot(...sub(T1, SAC));
+      const sv = [0, 1, 2].map(c => V[3 * SAC + c] * (1 - wA) + V[3 * T1 + c] * wA);
+      const e = [P[3 * STN] - rest[0], P[3 * STN + 1] - rest[1], P[3 * STN + 2] - rest[2]];
+      defl = -dot(e, TF.f);
+      const rv = [V[3 * STN] - sv[0], V[3 * STN + 1] - sv[1], V[3 * STN + 2] - sv[2]], ddot = -dot(rv, TF.f);
       let Fn = defl > 0 ? 1.2e5 * defl + 2e7 * defl * defl * defl + 800 * ddot : 2e5 * defl + 800 * ddot;
       if (defl > 0.085) Fn += 2e6 * (defl - 0.085);
-      const Ft = -2e5 * tang - 200 * tdot;
-      const Fx = Fn * nxs + Ft * dxs, Fy = Fn * nys + Ft * dys;
-      fx[STN] += Fx; fy[STN] += Fy;
-      fx[PEL] -= Fx * (1 - wA); fy[PEL] -= Fy * (1 - wA);
-      fx[T1] -= Fx * wA; fy[T1] -= Fy * wA;
+      const eu = dot(e, TF.u), el = dot(e, TF.l), vu = dot(rv, TF.u), vl = dot(rv, TF.l);
+      const Fv = [0, 1, 2].map(c => Fn * TF.f[c] - (2e5 * eu + 200 * vu) * TF.u[c] - (2e5 * el + 200 * vl) * TF.l[c]);
+      add(STN, Fv); add(SAC, Fv, -(1 - wA)); add(T1, Fv, -wA);
     }
 
-    // seat pan, seat back, thigh hold-down, knee bolster
-    {
-      const pen = -y[PEL];
+    // seat: cushion under the pelvis and thighs (with friction), seat back behind the torso
+    for (const i of [HL, HR]) {
+      const dz = P[3 * i + 2] - P0[3 * i + 2];   // side bolsters
+      if (Math.abs(dz) > 0.03) Fo[3 * i + 2] -= 3e4 * (dz - 0.03 * Math.sign(dz)) + 300 * V[3 * i + 2];
+      const pen = -P[3 * i + 1];
       if (pen > 0) {
-        const Fy = Math.max(0, 6e4 * pen - 1500 * vy[PEL]);
-        fy[PEL] += Fy;
-        fx[PEL] -= 0.35 * Fy * Math.tanh(vx[PEL] / 0.05);
+        const Fy = foam(3e4, pen, V[3 * i + 1], 750);
+        Fo[3 * i + 1] += Fy;
+        const vh = Math.hypot(V[3 * i], V[3 * i + 2]), fr = 0.35 * Fy * Math.tanh(vh / 0.05) / (vh || 1);
+        Fo[3 * i] -= fr * V[3 * i]; Fo[3 * i + 2] -= fr * V[3 * i + 2];
       }
-      if (x[PEL] < -0.03) fx[PEL] += 1e5 * (-0.03 - x[PEL]) - 1000 * Math.min(0, vx[PEL]);
-      if (y[PEL] > 0.03) fy[PEL] -= 3e5 * (y[PEL] - 0.03) + 2000 * Math.max(0, vy[PEL]);   // thighs under the dash
-      const kp = x[PEL] - I.kneeGap;
-      if (kp > 0) { const Fk = Math.max(0, 1.5e5 * kp + 1500 * vx[PEL]); fx[PEL] -= Fk; intF += Fk; }
+    }
+    if (P[3 * SAC] < P0[3 * SAC] - 0.03) Fo[3 * SAC] += 1e5 * (P0[3 * SAC] - 0.03 - P[3 * SAC]) - 1000 * Math.min(0, V[3 * SAC]);
+    { const pen = P0[3 * SAC + 1] - P[3 * SAC + 1]; if (pen > 0) Fo[3 * SAC + 1] += foam(3e4, pen, V[3 * SAC + 1], 750); }   // buttocks on the cushion
+    for (const k of [KL, KR]) {
+      const pen = P0[3 * k + 1] - 0.005 - P[3 * k + 1];
+      if (pen > 0) Fo[3 * k + 1] += foam(5e4, pen, V[3 * k + 1], 300);
+    }
+    TORSO.forEach((i, j) => {   // seat back, with friction along it
+      const pen = sbD0[j] - dot(pt(i), sb);
+      if (pen > 0) {
+        const v = vel(i), vn = dot(v, sb), Fn = foam(4e4, pen, vn, 400);
+        add(i, sb, Fn);
+        const vt = [v[0] - vn * sb[0], v[1] - vn * sb[1], v[2] - vn * sb[2]], vtl = Math.hypot(vt[0], vt[1], vt[2]);
+        if (vtl > 1e-6) add(i, vt, -0.3 * Fn * Math.tanh(vtl / 0.05) / vtl);
+      }
+    });
+    // knees on the knee bolster (padding crushes), feet on the floor and the toe pan
+    [[KL, PC.kneeL], [KR, PC.kneeR]].forEach(([k, st], s) => {
+      const pen = P[3 * k] + KNEE_R - S.knee.p[0];
+      if (pen > 0) {
+        const vn = V[3 * k] - S.knee.v[0];
+        const F = Math.max(0, plasticContact(st, pen, 1.5e5, 6000, 0.08) + (vn > 0 ? 1500 * vn : 0));
+        Fo[3 * k] -= F; intF += F; kneeF[s] = F;
+      }
+    });
+    const tn = [-Math.sin(TOE_PAN), Math.cos(TOE_PAN), 0], tt = [Math.cos(TOE_PAN), Math.sin(TOE_PAN), 0];   // toe pan normal, and up its slope
+    for (const a of [AL, AR]) {
+      const penF = I.floorY + FOOT_R - P[3 * a + 1];
+      if (penF > 0) {
+        const Fy = Math.max(0, 8e4 * penF - 600 * V[3 * a + 1]);
+        Fo[3 * a + 1] += Fy;
+        Fo[3 * a] -= 0.5 * Fy * Math.tanh(V[3 * a] / 0.05); Fo[3 * a + 2] -= 0.5 * Fy * Math.tanh(V[3 * a + 2] / 0.05);
+      }
+      // the foot (ankle to the ball of the foot) against the toe pan, with friction along it
+      const r = [P[3 * a] - S.toe.p[0], P[3 * a + 1] - S.toe.p[1], 0], penT = FOOT_L - dot(r, tn);
+      if (penT > 0) {
+        const vr = [V[3 * a] - S.toe.v[0], V[3 * a + 1] - S.toe.v[1], 0], vn = dot(vr, tn), vt = dot(vr, tt);
+        const F = Math.max(0, 1.5e5 * penT - (vn < 0 ? 1500 * vn : 0));
+        add(a, tn, F); add(a, tt, -0.6 * F * Math.tanh(vt / 0.05)); intF += F;
+      }
+    }
+    // door and B-pillar beside the pelvis, chest and shoulder; the centre console on the other side
+    const doorAt = (y) => S.door.p[2] + (S.doorHead.p[2] - S.door.p[2]) * Math.max(0, Math.min(1, (y - 0.30) / 0.32));
+    for (const [i, half] of [[HL, 0.10], [SHL, 0.08], [THX, 0.17]]) {
+      const pen = doorAt(P[3 * i + 1]) - (P[3 * i + 2] - half);
+      if (pen > 0) { const F = Math.max(0, 1.5e5 * pen - (V[3 * i + 2] < S.door.v[2] ? 800 * (V[3 * i + 2] - S.door.v[2]) : 0)); Fo[3 * i + 2] += F; intF += F; }
+    }
+    for (const [i, half] of [[HR, 0.10], [KR, KNEE_R]]) {
+      const pen = P[3 * i + 2] + half - I.consoleZ;
+      if (pen > 0) Fo[3 * i + 2] -= Math.max(0, 5e4 * pen + (V[3 * i + 2] > 0 ? 500 * V[3 * i + 2] : 0));
     }
     if (settling) return;
 
     // belts
     sbT = 0; lapT = 0;
     if (belt) {
-      const sp = shoulderPath();
+      const sp = shoulderPath(), L = pathLen(sp);
       // pretensioner: reel in slack for 8 ms after firing
-      if (pretensioner && tFire >= 0 && t > tFire + 0.001 && t < tFire + 0.009 && prePulled < 0.08 && SB_K * (sp.L - sbL0) < PRE_FORCE) {
+      if (pretensioner && tFire >= 0 && t > tFire + 0.001 && t < tFire + 0.009 && prePulled < 0.08 && SB_K * (L - sbL0) < PRE_FORCE) {
         sbL0 -= 8 * dt; prePulled += 8 * dt;
       }
-      let ext1 = SB_K * (sp.L - sbL0);
-      if (loadLimiter && ext1 > LOAD_LIMIT) { sbL0 = sp.L - LOAD_LIMIT / SB_K; ext1 = LOAD_LIMIT; }   // load limiter pays out
-      if (ext1 > 0) {
-        const u1x = (sp.shx - I.dRing[0]), u1y = (sp.shy - I.dRing[1]), l1 = Math.hypot(u1x, u1y);
-        const u2x = (x[STN] - sp.shx), u2y = (y[STN] - sp.shy), l2 = Math.hypot(u2x, u2y);
-        const u3x = (I.buckle[0] - x[STN]), u3y = (I.buckle[1] - y[STN]), l3 = Math.hypot(u3x, u3y);
-        const Ld = (u1x * vx[T1] + u1y * vy[T1]) / l1 + (u2x * (vx[STN] - vx[T1]) + u2y * (vy[STN] - vy[T1])) / l2 - (u3x * vx[STN] + u3y * vy[STN]) / l3;
-        const T = Math.max(0, ext1 + (Ld > 0 ? SB_C * Ld : 0));
-        sbT = T;
-        fx[T1] += T * (-u1x / l1 + u2x / l2); fy[T1] += T * (-u1y / l1 + u2y / l2);
-        fx[STN] += T * (-u2x / l2 + u3x / l3); fy[STN] += T * (-u2y / l2 + u3y / l3);
+      let e1 = SB_K * (L - sbL0);
+      if (loadLimiter && e1 > LOAD_LIMIT) { sbL0 = L - LOAD_LIMIT / SB_K; e1 = LOAD_LIMIT; }   // the force limiter pays out webbing
+      if (e1 > 0) {
+        const Ld = pathRate(sp, SHOULDER_HOLD);
+        sbT = Math.max(0, e1 + (Ld > 0 ? SB_C * Ld : 0));
+        if (loadLimiter) sbT = Math.min(LOAD_LIMIT, sbT);   // the limiter caps the webbing's tension
+        beltForce(sp, SHOULDER_HOLD, sbT);
       }
-      const ll = lapLen();
+      const lp = lapPath(), ll = pathLen(lp);
       if (ll > lapL0) {
-        const dx = x[PEL] - I.lapAnchor[0], dy = y[PEL] - I.lapAnchor[1], d = Math.hypot(dx, dy);
-        const Ld = 2 * (dx * vx[PEL] + dy * vy[PEL]) / d;
-        const T = Math.max(0, LAP_K * (ll - lapL0) + (Ld > 0 ? LAP_C * Ld : 0));
-        lapT = T;
-        fx[PEL] -= 2 * T * dx / d; fy[PEL] -= 2 * T * dy / d;
+        const Ld = pathRate(lp, LAP_HOLD);
+        lapT = Math.max(0, LAP_K * (ll - lapL0) + (Ld > 0 ? LAP_C * Ld : 0));
+        beltForce(lp, LAP_HOLD, lapT);
       }
     }
 
     // head and chest contacts
-    const hcx = 0.5 * (x[HF] + x[HB]), hcy = 0.5 * (y[HF] + y[HB]);
-    const hvx = 0.5 * (vx[HF] + vx[HB]), hvy = 0.5 * (vy[HF] + vy[HB]);
+    const hc = centroid([HF, HB]), hv = [0, 1, 2].map(c => 0.5 * (V[3 * HF + c] + V[3 * HB + c]));
+    const strike = (F, surf, p) => { if (F > 1000 && F > headHit) { headHit = F; hitSurf = surf; hitP = p; } };
+    // airbag: a flattened ellipsoid growing out of the hub along the column (as drawn: half-axes
+    // 0.75 R along the column, 1.05 R up the wheel, 1.15 R across)
     const R = bagRadius(t), ks = bagStiffScale(t);
-    function bag(cxp, cyp, cvx, cvy, r) {
-      if (R <= 0) return [0, 0];
-      const dx = cxp - bagC[0], dy = cyp - bagC[1], d = Math.hypot(dx, dy), pen = R + r - d;
-      if (pen <= 0) return [0, 0];
-      const nx = dx / d, ny = dy / d, vn = cvx * nx + cvy * ny;
-      const F = Math.max(0, ks * (1.6e4 * pen + 3e5 * pen * pen * pen) + (vn < 0 ? -300 * vn : 0));
-      return [F * nx, F * ny];
+    const bagC = [S.hub.p[0] + I.bagOffset * S.col[0], S.hub.p[1] + I.bagOffset * S.col[1], S.hub.p[2] + I.bagOffset * S.col[2]];
+    const bagL = cross(S.col, S.rimUp), ax = [0.75 * R, 1.05 * R, 1.15 * R];
+    function bag(c, v, r, sc) {
+      if (R <= 0) return [0, 0, 0];
+      const d = [c[0] - bagC[0], c[1] - bagC[1], c[2] - bagC[2]], dl = Math.hypot(d[0], d[1], d[2]);
+      if (dl < 1e-9) return [0, 0, 0];
+      const q = [dot(d, S.col) / ax[0], dot(d, S.rimUp) / ax[1], dot(d, bagL) / ax[2]], rho = Math.hypot(q[0], q[1], q[2]);
+      const pen = dl / rho - dl + r;   // the ellipsoid's radius toward the point, less the distance, plus the body's
+      if (pen <= 0) return [0, 0, 0];
+      const gl = [q[0] / ax[0], q[1] / ax[1], q[2] / ax[2]], n = unit([0, 1, 2].map(k => gl[0] * S.col[k] + gl[1] * S.rimUp[k] + gl[2] * bagL[k]));
+      const vn = dot([v[0] - S.hub.v[0], v[1] - S.hub.v[1], v[2] - S.hub.v[2]], n);
+      const F = sc * Math.max(0, ks * (BAG_K * pen + BAG_K3 * pen * pen * pen) + (vn < 0 ? -BAG_C * Math.min(1, pen / 0.03) * vn : 0));   // venting grows with the contact patch
+      intF += F;
+      return [F * n[0], F * n[1], F * n[2]];
     }
-    let hf = bag(hcx, hcy, hvx, hvy, HEAD_R);
-    headExtX += hf[0]; headExtY += hf[1];
-    const cf = bag(x[STN], y[STN], vx[STN], vy[STN], CHEST_R);
-    fx[STN] += cf[0]; fy[STN] += cf[1];
-    intF += Math.hypot(hf[0], hf[1]) + Math.hypot(cf[0], cf[1]);
-    // steering wheel: rim bends for the head; column strokes for the chest and upper torso
-    ext.vx = hvx; ext.vy = hvy; ext.fx = 0; ext.fy = 0;
-    const Fh = wheelContact(PC.headWheel, hcx, hcy, hvx, hvy, HEAD_R, 1.5e5, 300, 6000, 0.06, ext);
-    intF += Fh;
-    headExtX += ext.fx; headExtY += ext.fy;
-    if (Fh > 1000 && Fh > headHit) { headHit = Fh; hitSurf = 'wheel'; hitX = hcx; hitY = hcy; }
-    for (const [p, rad, st] of [[STN, CHEST_R, PC.stnWheel], [THX, 0.13, PC.thxWheel], [T1, 0.12, PC.t1Wheel]]) {
-      ext.vx = vx[p]; ext.vy = vy[p]; ext.fx = 0; ext.fy = 0;
-      intF += wheelContact(st, x[p], y[p], vx[p], vy[p], rad, 2.5e5, 1000, 7000, 0.10, ext);
-      fx[p] += ext.fx; fy[p] += ext.fy;
+    const hb = bag(hc, hv, HEAD_R, 1); for (let c = 0; c < 3; c++) headExt[c] += hb[c];
+    for (const [i, r] of [[STN, CHEST_R], [THX, 0.12], [SHL, 0.08], [SHR, 0.08]]) add(i, bag(pt(i), vel(i), r, BAG_TORSO));   // the bag also takes the chest and shoulders
+    // steering wheel: a disc across the rim (normal toward the driver) and the rim tube round it;
+    // one-sided, so a body pressed hard into it is pushed back, never through
+    const RIM_T = 0.02;
+    function wheel(st, c, v, r, k, damp, cap, stroke) {
+      const rel = [c[0] - S.hub.p[0], c[1] - S.hub.p[1], c[2] - S.hub.p[2]], sd = dot(rel, S.col);
+      if (sd < -(r + 0.15)) return [0, 0, 0];   // already beyond the wheel (went over the top)
+      const inPlane = [rel[0] - sd * S.col[0], rel[1] - sd * S.col[1], rel[2] - sd * S.col[2]], rho = Math.hypot(inPlane[0], inPlane[1], inPlane[2]);
+      let n, pen;
+      if (rho <= I.rimR) { n = S.col; pen = r + RIM_T - sd; }
+      else {
+        const e = [S.hub.p[0] + inPlane[0] / rho * I.rimR, S.hub.p[1] + inPlane[1] / rho * I.rimR, S.hub.p[2] + inPlane[2] / rho * I.rimR];
+        const d = [c[0] - e[0], c[1] - e[1], c[2] - e[2]], dl = Math.hypot(d[0], d[1], d[2]);
+        if (dl < 1e-9) return [0, 0, 0];
+        n = [d[0] / dl, d[1] / dl, d[2] / dl]; pen = r + RIM_T - dl;
+      }
+      if (pen <= 0) return [0, 0, 0];
+      const vn = dot([v[0] - S.hub.v[0], v[1] - S.hub.v[1], v[2] - S.hub.v[2]], n);
+      const F = Math.max(0, plasticContact(st, pen, k, cap, stroke) + (vn < 0 ? -damp * vn : 0));
+      intF += F;
+      return [F * n[0], F * n[1], F * n[2]];
     }
+    const hw = wheel(PC.headWheel, hc, hv, HEAD_R, 1.5e5, 300, 6000, 0.06);
+    for (let c = 0; c < 3; c++) headExt[c] += hw[c];
+    strike(Math.hypot(...hw), 'wheel', hc);
+    for (const [i, rad, st] of [[STN, CHEST_R, PC.stnWheel], [THX, 0.13, PC.thxWheel], [T1, 0.12, PC.t1Wheel]]) add(i, wheel(st, pt(i), vel(i), rad, 2.5e5, 1000, 7000, 0.10));
     // chin on chest
     {
-      const dx = hcx - x[STN], dy = hcy - y[STN], d = Math.hypot(dx, dy), pen = HEAD_R + CHEST_R - d;
-      if (pen > 0 && d > 1e-9) {
-        const nx = dx / d, ny = dy / d, vn = (hvx - vx[STN]) * nx + (hvy - vy[STN]) * ny;
+      const d = [hc[0] - P[3 * STN], hc[1] - P[3 * STN + 1], hc[2] - P[3 * STN + 2]], dl = Math.hypot(d[0], d[1], d[2]), pen = HEAD_R + CHEST_R - dl;
+      if (pen > 0 && dl > 1e-9) {
+        const n = [d[0] / dl, d[1] / dl, d[2] / dl], vn = dot([hv[0] - V[3 * STN], hv[1] - V[3 * STN + 1], hv[2] - V[3 * STN + 2]], n);
         const F = Math.max(0, 1e5 * pen + (vn < 0 ? -300 * vn : 0));
-        headExtX += F * nx; headExtY += F * ny;
-        fx[STN] -= F * nx; fy[STN] -= F * ny;
+        for (let c = 0; c < 3; c++) headExt[c] += F * n[c];
+        add(STN, n, -F);
       }
     }
-    // windshield (glass cracks) and roof
-    const sd = (hcx - I.wsA[0]) * wsNx + (hcy - I.wsA[1]) * wsNy, pw = HEAD_R - sd;
-    if (pw > 0) {
-      const vn = hvx * wsNx + hvy * wsNy, F = Math.max(0, plasticContact(PC.ws, pw, 1.2e5, 9000, 0.08) + (vn < 0 ? -300 * vn : 0));
-      headExtX += F * wsNx; headExtY += F * wsNy;
-      intF += F;
-      if (F > 1000 && F > headHit) { headHit = F; hitSurf = 'windshield'; hitX = hcx - HEAD_R * wsNx; hitY = hcy - HEAD_R * wsNy; }
+    // windshield (the glass cracks), roof, A-pillar
+    {
+      const a = S.wsLow.p, b = S.wsHigh.p;
+      let n = unit([-(b[1] - a[1]), b[0] - a[0], 0]);
+      if (dot([P0[3 * HF] - a[0], P0[3 * HF + 1] - a[1], 0], n) < 0) n = [-n[0], -n[1], 0];
+      const sd = dot([hc[0] - a[0], hc[1] - a[1], 0], n), pw = HEAD_R - sd;
+      if (pw > 0) {
+        const vs = lerp3(S.wsLow.v, S.wsHigh.v, 0.5), vn = dot([hv[0] - vs[0], hv[1] - vs[1], 0], n);
+        const F = Math.max(0, plasticContact(PC.ws, pw, 1.2e5, 9000, 0.08) + (vn < 0 ? -300 * vn : 0));
+        for (let c = 0; c < 3; c++) headExt[c] += F * n[c];
+        intF += F;
+        strike(F, 'windshield', [hc[0] - HEAD_R * n[0], hc[1] - HEAD_R * n[1], hc[2]]);
+      }
     }
-    const pr = hcy + HEAD_R - I.roofY;
-    if (pr > 0) { const F = Math.max(0, plasticContact(PC.roof, pr, 2e5, 12000, 0.05) + 300 * Math.max(0, hvy)); headExtY -= F; intF += F; if (F > 1000 && F > headHit) { headHit = F; hitSurf = 'roof'; hitX = hcx; hitY = hcy + HEAD_R; } }
-    fx[HF] += 0.5 * headExtX; fy[HF] += 0.5 * headExtY;
-    fx[HB] += 0.5 * headExtX; fy[HB] += 0.5 * headExtY;
+    {
+      const pr = hc[1] + HEAD_R - S.roof.p[1];
+      if (pr > 0) {
+        const F = Math.max(0, plasticContact(PC.roof, pr, 2e5, 12000, 0.05) + 300 * Math.max(0, hv[1] - S.roof.v[1]));
+        headExt[1] -= F; intF += F; strike(F, 'roof', [hc[0], hc[1] + HEAD_R, hc[2]]);
+      }
+    }
+    {
+      const a = S.aLow.p, b = S.aHigh.p, ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const s = Math.max(0, Math.min(1, dot([hc[0] - a[0], hc[1] - a[1], hc[2] - a[2]], ab) / dot(ab, ab)));
+      const q = lerp3(a, b, s), d = [hc[0] - q[0], hc[1] - q[1], hc[2] - q[2]], dl = Math.hypot(d[0], d[1], d[2]), pen = HEAD_R + 0.06 - dl;
+      if (pen > 0 && dl > 1e-9) {
+        const n = [d[0] / dl, d[1] / dl, d[2] / dl], vq = lerp3(S.aLow.v, S.aHigh.v, s), vn = dot([hv[0] - vq[0], hv[1] - vq[1], hv[2] - vq[2]], n);
+        const F = Math.max(0, plasticContact(PC.pillar, pen, 2.5e5, 10000, 0.02) + (vn < 0 ? -400 * vn : 0));
+        for (let c = 0; c < 3; c++) headExt[c] += F * n[c];
+        intF += F; strike(F, 'A-pillar', q);
+      }
+    }
+    // door window beside the head; the head restraint behind it (on the rebound)
+    {
+      const pen = S.doorHead.p[2] - (hc[2] - HEAD_R);
+      if (pen > 0) { const F = Math.max(0, 1.5e5 * pen - (hv[2] < S.doorHead.v[2] ? 400 * (hv[2] - S.doorHead.v[2]) : 0)); headExt[2] += F; intF += F; strike(F, 'side window', [hc[0], hc[1], hc[2] - HEAD_R]); }
+      const ph = hrD0 - dot(pt(HB), sb);
+      if (ph > 0) { const F = Math.max(0, 5e4 * ph - 300 * dot(vel(HB), sb)); for (let c = 0; c < 3; c++) headExt[c] += F * sb[c]; }
+    }
+    // the head's external load, shared by its particles in proportion to mass
+    for (const i of HEAD) add(i, headExt, MASS[i] / HEAD_MASS);
   }
 
-  function integrate(t, acx, acy, gxl, gyl, settling, damp) {
-    forces(t, acx, acy, gxl, gyl, settling);
-    for (let i = 0; i < NP; i++) {
-      ovx[i] = vx[i]; ovy[i] = vy[i];
-      vx[i] += fx[i] / MASS[i] * dt; vy[i] += fy[i] / MASS[i] * dt;
-      if (damp) { vx[i] *= 1 - damp * dt; vy[i] *= 1 - damp * dt; }
-      px[i] = x[i]; py[i] = y[i];
-      x[i] += vx[i] * dt; y[i] += vy[i] * dt;
+  function integrate(t, ac, gv, settling, damp) {
+    forces(t, ac, gv, settling);
+    for (let i = 0; i < 3 * NP; i++) {
+      OV[i] = V[i];
+      V[i] += Fo[i] / MASS[Math.floor(i / 3)] * dt;
+      if (damp) V[i] *= 1 - damp * dt;
+      Pp[i] = P[i];
+      P[i] += V[i] * dt;
     }
-    for (let it = 0; it < 4; it++) {
+    linkF.fill(0);
+    for (let it = 0; it < 8; it++) {
       for (let l = 0; l < LINKS.length; l++) {
         const a = LINKS[l][0], b = LINKS[l][1];
-        const dx = x[b] - x[a], dy = y[b] - y[a], d = Math.hypot(dx, dy);
-        const wa = 1 / MASS[a], wb = 1 / MASS[b];
-        const s = (d - linkLen[l]) / (d * (wa + wb));
-        x[a] += wa * s * dx; y[a] += wa * s * dy;
-        x[b] -= wb * s * dx; y[b] -= wb * s * dy;
+        const dx = P[3 * b] - P[3 * a], dy = P[3 * b + 1] - P[3 * a + 1], dz = P[3 * b + 2] - P[3 * a + 2], d = Math.hypot(dx, dy, dz);
+        const wa = 1 / MASS[a], wb = 1 / MASS[b], C = d - linkLen[l], s = C / (d * (wa + wb));
+        P[3 * a] += wa * s * dx; P[3 * a + 1] += wa * s * dy; P[3 * a + 2] += wa * s * dz;
+        P[3 * b] -= wb * s * dx; P[3 * b + 1] -= wb * s * dy; P[3 * b + 2] -= wb * s * dz;
+        linkF[l] -= C / ((wa + wb) * dt * dt);
       }
     }
-    for (let i = 0; i < NP; i++) { vx[i] = (x[i] - px[i]) / dt; vy[i] = (y[i] - py[i]) / dt; }
+    for (let i = 0; i < 3 * NP; i++) V[i] = (P[i] - Pp[i]) / dt;
   }
 
   // Settle into the seat under gravity before the run.
-  for (let k = 0; k < Math.round(0.4 / dt); k++) integrate(0, 0, 0, pulse.gx[0], pulse.gy[0], true, 30);
-  for (let i = 0; i < NP; i++) { vx[i] = vy[i] = 0; }
-  sbL0 = shoulderPath().L + 0.02;
-  lapL0 = lapLen() + 0.01;
-  const seated = { x: Float64Array.from(x), y: Float64Array.from(y) };
+  const g0 = [pulse.gx[0], pulse.gy[0], pulse.gz[0]];
+  for (let k = 0; k < Math.round(0.4 / dt); k++) integrate(0, [0, 0, 0], g0, true, 30);
+  V.fill(0);
+  for (const key in prev) delete prev[key];
+  sbL0 = pathLen(shoulderPath()) + 0.02;
+  lapL0 = pathLen(lapPath()) + 0.01;
+  const seated = Float64Array.from(P);
 
   // run
   const out = {
@@ -393,56 +643,56 @@ function simulate(pulse, opts) {
     chestAx: new Float64Array(N), chestAy: new Float64Array(N), chestAz: new Float64Array(N),
     pelvisAx: new Float64Array(N), pelvisAy: new Float64Array(N), pelvisAz: new Float64Array(N),
     chestDefl: new Float64Array(N), neckFz: new Float64Array(N), neckFx: new Float64Array(N), neckMy: new Float64Array(N),
+    femurL: new Float64Array(N), femurR: new Float64Array(N), kneeL: new Float64Array(N), kneeR: new Float64Array(N),
     beltT: new Float64Array(N), lapT: new Float64Array(N), bagR: new Float64Array(N), interiorF: new Float64Array(N),
     poseEvery: 5, pose: null, events: [],
   };
-  const PSTRIDE = 2 * NP + 3;
-  const nPose = Math.ceil(N / out.poseEvery);
-  out.pose = new Float32Array(nPose * PSTRIDE);
+  // pose: the particles, the airbag radius, the steering wheel hub's move and the column direction
+  const PSTRIDE = 3 * NP + 7;
+  out.pose = new Float32Array(Math.ceil(N / out.poseEvery) * PSTRIDE);
   out.poseStride = PSTRIDE;
-  let zHeadPrev = 0, zHeadPrev2 = 0, lastHit = -1;
+  const acc = (i, ac) => [(V[3 * i] - OV[3 * i]) / dt + ac[0], (V[3 * i + 1] - OV[3 * i + 1]) / dt + ac[1], (V[3 * i + 2] - OV[3 * i + 2]) / dt + ac[2]];
+  let lastHit = -1;
   for (let k = 0; k < N; k++) {
-    const t = k * dt, acx = pulse.ax[k], acy = pulse.ay[k], acz = pulse.az[k];
-    integrate(t, acx, acy, pulse.gx[k], pulse.gy[k], false, 0);
-
-    // lateral sway: fictitious lateral load on torso and head
-    const aLat = pulse.gz[k] - acz;
-    const kTl = kT + (phT < I.doorRoll ? 8000 : 0);
-    const phTdd = (MT * HT * aLat * Math.cos(phT) + MT * G * HT * Math.sin(phT) - kTl * phT - 40 * phTd + (phT < I.doorRoll ? 8000 * I.doorRoll : 0)) / IT;
-    const phHdd = (HEAD_MASS * HH * (aLat - 0.5 * phTdd) - 60 * phH * (1 + 4 * phH * phH) - 1.5 * phHd) / IH;
-    phTd += phTdd * dt; phT += phTd * dt; phHd += phHdd * dt; phH += phHd * dt;
-    const zHead = 0.55 * Math.sin(phT) + HH * Math.sin(phT + phH);
-
-    // sensors (kinematic acceleration = relative + cabin)
-    const ahx = 0.5 * ((vx[HF] - ovx[HF]) + (vx[HB] - ovx[HB])) / dt + acx;
-    const ahy = 0.5 * ((vy[HF] - ovy[HF]) + (vy[HB] - ovy[HB])) / dt + acy;
-    const ahz = (k >= 2 ? (zHead - 2 * zHeadPrev + zHeadPrev2) / (dt * dt) : 0) + acz;
-    zHeadPrev2 = zHeadPrev; zHeadPrev = zHead;
-    out.headAx[k] = ahx; out.headAy[k] = ahy; out.headAz[k] = ahz;
-    out.chestAx[k] = (vx[THX] - ovx[THX]) / dt + acx; out.chestAy[k] = (vy[THX] - ovy[THX]) / dt + acy; out.chestAz[k] = acz + 0.3 * HT * phTdd;
-    out.pelvisAx[k] = (vx[PEL] - ovx[PEL]) / dt + acx; out.pelvisAy[k] = (vy[PEL] - ovy[PEL]) / dt + acy; out.pelvisAz[k] = acz;
+    const t = k * dt, ac = [pulse.ax[k], pulse.ay[k], pulse.az[k]], gv = [pulse.gx[k], pulse.gy[k], pulse.gz[k]];
+    cabinAt(t);
+    integrate(t, ac, gv, false, 0);
+    // sensors (kinematic acceleration = relative + cabin), at the head's and chest's centres of mass
+    const ah = [0, 1, 2].map(c => HEAD.reduce((s, i) => s + MASS[i] * ((V[3 * i + c] - OV[3 * i + c]) / dt), 0) / HEAD_MASS + ac[c]);
+    out.headAx[k] = ah[0]; out.headAy[k] = ah[1]; out.headAz[k] = ah[2];
+    const at = acc(THX, ac); out.chestAx[k] = at[0]; out.chestAy[k] = at[1]; out.chestAz[k] = at[2];
+    const ap = [0, 1, 2].map(c => PELVIS.reduce((s, i) => s + (V[3 * i + c] - OV[3 * i + c]) / dt, 0) / 3 + ac[c]);
+    out.pelvisAx[k] = ap[0]; out.pelvisAy[k] = ap[1]; out.pelvisAz[k] = ap[2];
     out.chestDefl[k] = defl;
-    // upper neck load: Newton on the head (force from neck = m a - external - gravity), in head axes
-    const Fnx = HEAD_MASS * ahx - headExtX - HEAD_MASS * pulse.gx[k];
-    const Fny = HEAD_MASS * ahy - headExtY - HEAD_MASS * pulse.gy[k];
-    const hfx = x[HF] - x[HB], hfy = y[HF] - y[HB], hl = Math.hypot(hfx, hfy);
-    const fhx = hfx / hl, fhy = hfy / hl, uhx = -fhy, uhy = fhx;
-    out.neckFz[k] = -(Fnx * uhx + Fny * uhy);   // tension positive
-    out.neckFx[k] = Fnx * fhx + Fny * fhy;
+    // upper neck load: Newton on the head (force from the neck = m a - external - gravity), in head axes
+    const Fn = [0, 1, 2].map(c => HEAD_MASS * ah[c] - headExt[c] - HEAD_MASS * gv[c]);
+    const Hd = headFrame();
+    out.neckFz[k] = -dot(Fn, Hd.u);   // tension positive
+    out.neckFx[k] = dot(Fn, Hd.f);
     out.neckMy[k] = myUpper;
+    out.femurL[k] = linkF[FEMUR[0]]; out.femurR[k] = linkF[FEMUR[1]];
+    out.kneeL[k] = kneeF[0]; out.kneeR[k] = kneeF[1];
     out.beltT[k] = sbT; out.lapT[k] = lapT; out.bagR[k] = bagRadius(t); out.interiorF[k] = intF;
-    if (headHit > 0 && (lastHit < 0 || t - lastHit > 0.03)) { out.events.push({ t, type: 'headStrike', mag: headHit, surface: hitSurf, hx: hitX, hy: hitY }); lastHit = t; }
+    if (headHit > 0 && (lastHit < 0 || t - lastHit > 0.03)) { out.events.push({ t, type: 'headStrike', mag: headHit, surface: hitSurf, hx: hitP[0], hy: hitP[1], hz: hitP[2] }); lastHit = t; }
     if (k % out.poseEvery === 0) {
       const o = (k / out.poseEvery) * PSTRIDE;
-      for (let i = 0; i < NP; i++) { out.pose[o + 2 * i] = x[i]; out.pose[o + 2 * i + 1] = y[i]; }
-      out.pose[o + 2 * NP] = phT; out.pose[o + 2 * NP + 1] = phH; out.pose[o + 2 * NP + 2] = out.bagR[k];
+      for (let i = 0; i < 3 * NP; i++) out.pose[o + i] = P[i];
+      out.pose[o + 3 * NP] = out.bagR[k];
+      for (let c = 0; c < 3; c++) { out.pose[o + 3 * NP + 1 + c] = S.hub.p[c] - REST.hub[c]; out.pose[o + 3 * NP + 4 + c] = S.col[c]; }
     }
   }
   if (airbag && tFire >= 0) out.events.push({ t: tFire + bagDelay, type: 'airbag', mag: 1 });
   out.seated = seated;
-  out.rest = { x: x0, y: y0 };
+  out.rest = P0;
   out.metrics = score(out);
   return out;
+}
+
+// the dummy's pose at time t of a run: particles, airbag radius, the steering wheel hub's move and
+// the column's direction (for the renderer: scene.js setDummy)
+function poseAt(o, t) {
+  const pi = Math.max(0, Math.min(Math.ceil(o.n / o.poseEvery) - 1, Math.round(t / (o.dt * o.poseEvery)))), b = pi * o.poseStride;
+  return { p3: o.pose.subarray(b, b + 3 * NP), bagR: o.pose[b + 3 * NP], hub: o.pose.subarray(b + 3 * NP + 1, b + 3 * NP + 4), col: o.pose.subarray(b + 3 * NP + 4, b + 3 * NP + 7), belt: o.belt };
 }
 
 function score(o) {
@@ -458,10 +708,11 @@ function score(o) {
   const pelvis = resultant(o.pelvisAx, o.pelvisAy, o.pelvisAz, 1000);
   const defl = cfc(o.chestDefl, dt, 180);
   const fz = cfc(o.neckFz, dt, 600), my = cfc(o.neckMy, dt, 600);
+  const femL = cfc(o.femurL, dt, 600), femR = cfc(o.femurR, dt, 600);
   const i0 = Math.max(0, o.i0 - Math.round(0.005 / dt)), i1 = Math.min(N - 1, o.i0 + Math.round(0.3 / dt));
   const h = hic(head.r, dt, i0, i1, 0.015);
   const nij = new Float64Array(N);
-  let nijMax = 0, nijMode = '', tens = 0, compr = 0, deflMax = 0, pelvisMax = 0, headMax = 0;
+  let nijMax = 0, nijMode = '', tens = 0, compr = 0, deflMax = 0, pelvisMax = 0, headMax = 0, femMax = 0, femSide = '';
   for (let i = i0; i <= i1; i++) {
     const F = fz[i], M = my[i];
     const v = Math.abs(F) / (F >= 0 ? 6806 : 6160) + Math.abs(M) / (M >= 0 ? 310 : 135);
@@ -472,6 +723,8 @@ function score(o) {
     if (defl[i] > deflMax) deflMax = defl[i];
     if (pelvis.r[i] > pelvisMax) pelvisMax = pelvis.r[i];
     if (head.r[i] > headMax) headMax = head.r[i];
+    if (femL[i] > femMax) { femMax = femL[i]; femSide = 'left'; }
+    if (femR[i] > femMax) { femMax = femR[i]; femSide = 'right'; }
   }
   return {
     hic15: h.value, hicT1: h.i1 * dt, hicT2: h.i2 * dt,
@@ -481,7 +734,8 @@ function score(o) {
     pelvisPeakG: pelvisMax,
     nij: nijMax, nijMode,
     neckTension: tens, neckCompression: compr,
-    series: { head, chest, pelvis, defl, fz, my, nij },
+    femur: femMax, femurSide: femSide,
+    series: { head, chest, pelvis, defl, fz, my, nij, femL, femR },
   };
 }
 
@@ -725,7 +979,7 @@ function simulateSide(input, opts) {
   return out;
 }
 
-const api = { G, LIMITS, SIDE_LIMITS, INTERIOR, interiorFor, MASS, PARTICLES: { PEL, THX, T1, STN, OC, HF, HB, NP }, SIDE_PARTICLES, cfc, hic, clip3ms, restPose, simulate, organs, simulateSide };
+const api = { G, LIMITS, SIDE_LIMITS, INTERIOR, interiorFor, MASS, PARTICLES: { HL, HR, SAC, THX, T1, SHL, SHR, STN, OC, HF, HB, KL, KR, AL, AR, NP }, SIDE_PARTICLES, cfc, hic, clip3ms, restPose, beltPaths, poseAt, simulate, organs, simulateSide };
 root.CrashOccupant = api;
 if (typeof module === 'object' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

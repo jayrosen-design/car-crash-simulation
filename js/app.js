@@ -15,13 +15,15 @@
   };
   const preset = (() => {
     const q = new URLSearchParams(location.search), s = Object.assign({}, PRESETS[q.get('preset')] || {});
-    for (const k of ['vehicle', 'barrier', 'wall', 'damage', 'mass', 'stiffness']) if (q.get(k)) s[k === 'wall' ? 'wallStrength' : k] = q.get(k);
+    for (const k of ['vehicle', 'barrier', 'wall', 'damage', 'mass', 'stiffness', 'solver']) if (q.get(k)) s[k === 'wall' ? 'wallStrength' : k] = q.get(k);
     for (const k of ['speed', 'angle']) if (q.get(k) && Number.isFinite(+q.get(k))) s[k] = +q.get(k);
     return s;
   })();
   let CAR = Veh.get(preset.vehicle && Veh.specs[preset.vehicle] ? preset.vehicle : Veh.defaultKey), AX = Phys.axles(CAR), vehicleReady = false;
-  const cfg = { vehicle: CAR.key, damage: 'realistic', speed: 56, angle: 0, mass: 'standard', stiffness: 'standard', barrier: 'rigid', wallStrength: 'standard', belt: true, airbag: true };
+  const cfg = { vehicle: CAR.key, damage: 'realistic', speed: 56, angle: 0, mass: 'standard', stiffness: 'standard', barrier: 'rigid', wallStrength: 'standard', belt: true, airbag: true, solver: 'cpu' };
+  let gpuDevice = null;   // WebGPU device for the GPU solver (gpu-lattice.js), once asked for
   let state = 'setup', approach = null, sim = null, result = null, occ = null, inj = null, play = null, braked = false, events = [];
+  let cine = null;   // bullet-time, shake and structural sound of the replay (cinematic.js)
   let liveBricks = null, toastTimer = 0, charts = [];
   const rad = (d) => d * Math.PI / 180;
 
@@ -81,7 +83,18 @@
       if (name === 'vehicle') { if (state === 'setup') chooseVehicle(b.dataset.v); return; }
       cfg[name] = b.dataset.v;
       if (name === 'barrier') $('#scenario').value = '?preset=' + cfg.barrier;   // the Simulation menu follows
+      if (name === 'solver' && cfg.solver === 'gpu') startGPU();
       previewSetup(true);
+    });
+  }
+  // The GPU solver: the device is asked for when it is chosen; without one, back to the CPU.
+  function startGPU() {
+    if (gpuDevice) return;
+    CrashGPU.init().then((g) => { gpuDevice = g; previewSetup(false); }, (err) => {
+      cfg.solver = 'cpu';
+      $$('.seg[data-name=solver] button').forEach(x => { x.classList.toggle('on', x.dataset.v === 'cpu'); if (x.dataset.v === 'gpu') x.disabled = true; });
+      toast(`The GPU solver isn't available here: ${err.message}.`);
+      previewSetup(false);
     });
   }
   $('#in-belt').addEventListener('change', (e) => { cfg.belt = e.target.checked; previewSetup(false); });
@@ -92,7 +105,7 @@
   }
   const rest = Occ.restPose();
   function seatedDummy(extra) {
-    return Object.assign({ x: rest.x, y: rest.y, phT: 0, phH: 0, bagR: 0, belt: cfg.belt, injury: null, x0: rest.x[0], y0: rest.y[0] }, extra || {});
+    return Object.assign({ p3: rest, bagR: 0, belt: cfg.belt, injury: null }, extra || {});
   }
   function previewSetup(reframe) {
     const m = MASS[cfg.mass], v = cfg.speed / 3.6;
@@ -105,6 +118,9 @@
     if (cfg.barrier === 'brick') notes.push('Brick wall is a breakable demo mode: injury numbers are not comparable to rigid-barrier tests.');
     $('#setup-note').hidden = !notes.length;
     $('#setup-note').textContent = notes.join(' ');
+    const hint = cfg.solver === 'gpu' ? (cfg.barrier !== 'rigid' ? 'The GPU solver handles the rigid barrier only: this run will use the CPU.'
+      : gpuDevice ? `On ${gpuDevice.name}. Parts stay on and tyres don't burst. At this lattice size it is slower than the CPU; it pays off on finer lattices.` : 'Asking the browser for the GPU…') : '';
+    $('#solver-hint').hidden = !hint; $('#solver-hint').textContent = hint;
     if (state !== 'setup') return;
     const a = approachFor(), pose = a.pose();
     Scene3D.setBarrier(cfg.barrier);
@@ -164,6 +180,7 @@
     $$('#tg-strain, #tg-injury, #tg-xray').forEach(t => { t.checked = false; });
     Scene3D.setStrainMode(false); Scene3D.setXray(false);
     setHazards(null);
+    Scene3D.setShake(0); FX.structureUpdate(0); FX.setTimeScale(1);
     setState('setup');
     previewSetup(true);
   }
@@ -215,7 +232,8 @@
   function beginImpact() {
     FX.engineStop();
     const s = approach.state;
-    sim = Phys.createImpactSim({ vehicle: CAR, damage: cfg.damage, massKg: MASS[cfg.mass], stiffness: cfg.stiffness, barrier: cfg.barrier, wallStrength: cfg.wallStrength, pose: approach.pose(), speed: s.v, yawRate: s.yawRate });
+    const gpu = cfg.solver === 'gpu' && cfg.barrier === 'rigid' ? gpuDevice : null;
+    sim = Phys.createImpactSim({ vehicle: CAR, damage: cfg.damage, massKg: MASS[cfg.mass], stiffness: cfg.stiffness, barrier: cfg.barrier, wallStrength: cfg.wallStrength, pose: approach.pose(), speed: s.v, yawRate: s.yawRate, gpu });
     liveBricks = sim.nb ? new Float32Array(7 * sim.nb) : null;
     const p = approach.pose();
     Scene3D.setPath(rad(cfg.angle), approach.distance, false);
@@ -242,14 +260,15 @@
   }
 
   function finishImpact() {
+    const err = sim.error;
     result = sim.finalize(); sim = null;
-    if (!result) { toSetup(); return; }
+    if (!result) { if (err) toast('The GPU solver stopped: ' + err.message); toSetup(); return; }
     $('#pb-belt').checked = cfg.belt; $('#pb-bag').checked = cfg.airbag;
     Scene3D.setDestruction(result);
     runOccupant(cfg.belt, cfg.airbag);
     const t0 = result.contact ? result.T0 : 0;
     const tStart = Math.max(result.frames.t[0], t0 - 0.02);
-    play = { t: tStart, tStart, playing: true, speed: +$('#tl-speed').value, t0, tEnd: result.tEnd, after: 0 };
+    play = Object.assign({ t: tStart, tStart, playing: true, t0, tEnd: result.tEnd, after: 0 }, speedSetting());
     setHazards(result);
     resetEventCursor();
     setState('playback');
@@ -258,12 +277,14 @@
 
   // ---------------------------------------------------------------- occupant + results
   function runOccupant(belt, airbag) {
-    occ = Occ.simulate(result.pulse, { belt, airbag, interior: CAR.interior });
+    if (!result.cabin) result.cabin = Phys.cabinInput(result, 0);   // the cabin around the driver, as it deforms
+    occ = Occ.simulate(result.pulse, { belt, airbag, interior: CAR.interior, cabin: result.cabin });
     // windshield hits crack the glass where the head struck (occupant frame -> car-local)
     const H = CAR.hPoint;
-    Scene3D.setHeadStrikes(occ.events.filter(e => e.type === 'headStrike' && e.surface === 'windshield').map(e => ({ t: e.t, mag: e.mag, p: [H[0] + e.hx, H[1] + e.hy, H[2]] })));
+    Scene3D.setHeadStrikes(occ.events.filter(e => e.type === 'headStrike' && e.surface === 'windshield').map(e => ({ t: e.t, mag: e.mag, p: [H[0] + e.hx, H[1] + e.hy, H[2] + e.hz] })));
     inj = injurySeries(occ);
     events = result.events.concat(occ.events).sort((a, b) => a.t - b.t);
+    cine = Cinematic.fromCrash(result, events);
     buildResults();
     buildCharts();
     if (play) resetEventCursor();
@@ -323,6 +344,7 @@
     metricRow(oc, 'Neck injury criterion (Nij)', q.nij, '', L.nij, 2);
     metricRow(oc, 'Neck tension', q.neckTension / 1000, ' kN', L.neckTension / 1000, 2);
     metricRow(oc, 'Neck compression', q.neckCompression / 1000, ' kN', L.neckCompression / 1000, 2);
+    metricRow(oc, `Femur force (${q.femurSide || 'either'} leg)`, q.femur / 1000, ' kN', L.femur / 1000, 2);
     const vc = $('#res-vehicle'); vc.innerHTML = '';
     metricRow(vc, 'Impact speed', m.impactSpeed * 3.6, ' km/h', null, 1);
     metricRow(vc, 'Speed change (Δv)', m.deltaV * 3.6, ' km/h', null, 1);
@@ -345,6 +367,8 @@
     const panes = (result.glass || []).filter(g => g.t >= 0 && !g.lamp && !g.laminated).length, ws = (result.glass || []).some(g => g.t >= 0 && g.laminated);
     const bursts = (result.bursts || []).filter(b => b.t >= 0).length;
     if (CAR.parts) notes.push(`Damage (${result.damage}): ${lost.length ? 'came off: ' + lost.join(', ') : 'no parts came off'}; ${panes} window${panes === 1 ? '' : 's'} shattered${ws ? ', windshield cracked' : ''}; ${bursts} tyre${bursts === 1 ? '' : 's'} burst.`);
+    const sv = result.solver;
+    if (sv && sv.kind === 'gpu') notes.push(`Solved on the GPU (${sv.name}, WebGPU): ${sv.steps.toLocaleString()} steps, the lattice's springs in ${sv.colours} groups solved in parallel, ${(sv.ms / 1000).toFixed(1)} s on the GPU. Parts can't come off in GPU runs, and friction heat is counted with the contact and solver losses.`);
     $('#res-notes').innerHTML = '';
     for (const n of notes) { const p = document.createElement('p'); p.className = 'note'; p.textContent = n; $('#res-notes').appendChild(p); }
   }
@@ -374,6 +398,8 @@
       series: [{ x: tms, y: Float64Array.from(S.fz, v => v / 1000), color: C.deep, label: 'tension +', width: 2 }] }));
     charts.push(new Charts.LineChart(P1, { title: 'Restraint loads, kN', value: o.tFire >= 0 && o.airbag ? `airbag fired ${((o.tFire - t0) * 1000).toFixed(0)} ms` : '', xRange: xr, xLabel: 'ms', onScrub: scrub,
       series: [{ x: tms, y: Float64Array.from(o.beltT, v => v / 1000), color: C.blue, label: 'shoulder belt' }, { x: tms, y: Float64Array.from(o.lapT, v => v / 1000), color: C.green, label: 'lap belt' }] }));
+    charts.push(new Charts.LineChart(P1, { title: 'Femur axial force, kN (CFC 600)', value: `${(q.femur / 1000).toFixed(2)} kN`, xRange: xr, xLabel: 'ms', onScrub: scrub,
+      limits: [{ y: L.femur / 1000, label: '10 kN' }], series: [{ x: tms, y: Float64Array.from(S.femL, v => v / 1000), color: C.orange, label: 'left', width: 2 }, { x: tms, y: Float64Array.from(S.femR, v => v / 1000), color: C.blue, label: 'right' }] }));
 
     const pu = result.pulse, pn = pu.n, ptms = new Float64Array(pn);
     for (let i = 0; i < pn; i++) ptms[i] = (i * pu.dt - t0) * 1000;
@@ -432,7 +458,9 @@
     if (!play.playing && play.t >= play.tEnd - 1e-6) { play.t = play.tStart; resetEventCursor(); Scene3D.particles.clear(); }
     play.playing = !play.playing;
   }
-  $('#tl-speed').addEventListener('change', (e) => { if (play) play.speed = +e.target.value; });
+  // the speed setting: a fixed playback speed, or bullet-time (the speed follows the crash pulse)
+  function speedSetting() { const v = $('#tl-speed').value; return v === 'auto' ? { speed: Cinematic.FAST, auto: (t) => cine.speed(t) } : { speed: +v, auto: null }; }
+  $('#tl-speed').addEventListener('change', () => { if (play) Object.assign(play, speedSetting()); });
   $('#tl-scrub').addEventListener('input', (e) => {
     if (!play) return;
     scrubTo(play.tStart + (+e.target.value / 1000) * (play.tEnd - play.tStart));
@@ -445,15 +473,26 @@
     Scene3D.particles.clear();
   }
   window.addEventListener('keydown', (e) => {
-    if (state !== 'playback' || e.target.matches('input[type=number], select')) return;
+    if (state !== 'playback' || VideoExport.busy || e.target.matches('input[type=number], select')) return;
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
     if (e.code === 'ArrowRight') scrubTo(play.t + (e.shiftKey ? 0.01 : 0.001));
     if (e.code === 'ArrowLeft') scrubTo(play.t - (e.shiftKey ? 0.01 : 0.001));
   });
   function setCamera(mode) { Scene3D.setCameraMode(mode); }
+  $('#btn-video').addEventListener('click', async () => {
+    if (!play || VideoExport.busy) return;
+    const kmh = cfg.speed, what = result.barrier === 'brick' ? 'brick wall' : 'rigid barrier';
+    document.body.classList.add('exporting');
+    await VideoExport.saveReplay({ play, step: updatePlayback, resetEvents: resetEventCursor, toast,
+      title: `${CAR.short || CAR.title} · ${kmh} km/h${cfg.angle ? ' · ' + cfg.angle + '°' : ''} · ${what}`,
+      fileName: `car-crash-${CAR.key}-${kmh}kmh-${result.barrier === 'brick' ? 'brick-wall' : 'barrier'}.mp4` });
+    document.body.classList.remove('exporting');
+  });
   $('#tg-strain').addEventListener('change', (e) => { Scene3D.setStrainMode(e.target.checked); updateLegend(); });
   $('#tg-injury').addEventListener('change', updateLegend);
   $('#tg-xray').addEventListener('change', (e) => Scene3D.setXray(e.target.checked));
+  $('#tg-shake').checked = Scene3D.shakeEnabled;
+  $('#tg-shake').addEventListener('change', (e) => { Scene3D.shakeEnabled = e.target.checked; });
   function updateLegend() {
     const lg = $('#legend'), parts = [];
     if (state === 'playback' && $('#tg-strain').checked) parts.push(['Car: plastic strain', 'linear-gradient(90deg,#c9ced6,#f0e442 25%,#e69f00 55%,#a8380a)', 'none', 'heavy']);
@@ -480,27 +519,27 @@
     while (evIdx < events.length && events[evIdx].t <= tB) {
       const e = events[evIdx++];
       if (e.t < tA) continue;
-      const pan = e.x !== undefined ? Scene3D.screenPan([e.x, e.y, e.z]) : 0;
-      if (e.type === 'first') { FX.crunch(1, pan); parts.spawn(e.x, e.y, e.z, 30, 'spark', [-1, 0.3, 0]); parts.spawn(e.x, e.y, e.z, 14, 'dust'); }
+      const o = Scene3D.cabin.o, pos = e.x !== undefined ? [e.x, e.y, e.z] : null, inCar = [o.x, o.y, o.z];
+      if (e.type === 'first') { FX.crunch(1, pos); parts.spawn(e.x, e.y, e.z, 30, 'spark', [-1, 0.3, 0]); parts.spawn(e.x, e.y, e.z, 14, 'dust'); }
       else if (e.type === 'contact') {
         // e.mag is this frame's contact impulse; compare with 1/30 of the car's momentum
-        if (e.t - lastCrunch > 0.03) { FX.crunch(Math.min(1, e.mag / (result.car.massKg * result.metrics.impactSpeed / 30)), pan); lastCrunch = e.t; }
+        if (e.t - lastCrunch > 0.03) { FX.crunch(Math.min(1, e.mag / (result.car.massKg * result.metrics.impactSpeed / 30)), pos); lastCrunch = e.t; }
         if (Math.random() < 0.5) parts.spawn(e.x, e.y, e.z, 3, 'spark', [-1, 0.2, 0]);
         if (Math.random() < 0.3) parts.spawn(e.x, Math.max(0.2, e.y), e.z, 2, 'dust');
       } else if (e.type === 'break') {
-        FX.breakSound(e.mass, e.count, pan);
+        FX.breakSound(e.mass, e.count, pos);
         parts.spawn(e.x, e.y, e.z, Math.min(8, 2 + e.count), 'dust');
         parts.spawn(e.x, e.y, e.z, Math.min(6, 1 + e.count), 'chip', [1, 0.2, 0]);
-      } else if (e.type === 'debris') { FX.thud(e.mass, pan); parts.spawn(e.x, 0.05, e.z, 6, 'dust'); }
-      else if (e.type === 'airbag') FX.pop(0);
-      else if (e.type === 'headStrike') { FX.hit(e.mag, 0); if (e.surface === 'windshield') FX.crack(0.6, 0); }
+      } else if (e.type === 'debris') { FX.thud(e.mass, pos); parts.spawn(e.x, 0.05, e.z, 6, 'dust'); }
+      else if (e.type === 'airbag') FX.pop(inCar);
+      else if (e.type === 'headStrike') { FX.hit(e.mag, inCar); if (e.surface === 'windshield') FX.crack(0.6, inCar); }
       else if (e.type === 'detach') {
-        FX.clank(e.mass, pan);
+        FX.tear(e.mass, pos); FX.clank(e.mass, pos);
         parts.spawn(e.x, e.y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]);
         parts.spawn(e.x, Math.max(0.2, e.y), e.z, 4, 'dust');
-      } else if (e.type === 'glass') { FX.glass(e.mass, pan); parts.spawn(e.x, e.y, e.z, 10, 'glass'); }
-      else if (e.type === 'crack') FX.crack(0.8, pan);
-      else if (e.type === 'burst') { FX.pop(pan); parts.spawn(e.x, 0.15, e.z, 10, 'dust'); }
+      } else if (e.type === 'glass') { FX.glass(e.mass, pos); parts.spawn(e.x, e.y, e.z, 10, 'glass'); }
+      else if (e.type === 'crack') FX.crack(0.8, pos);
+      else if (e.type === 'burst') { FX.blowout(pos); parts.spawn(e.x, 0.15, e.z, 10, 'dust'); }
     }
   }
 
@@ -519,13 +558,8 @@
     Scene3D.updateDestruction(t, k, k2, s);
     Scene3D.setCarDeformed(F.pos[k], F.pos[k2], s, F.strain[k]);
     if (result.barrier === 'brick') Scene3D.setBricks(F.bricks[k], F.bricks[k2], s);
-    const pi = Math.max(0, Math.min(Math.ceil(occ.n / occ.poseEvery) - 1, Math.round(t / (occ.dt * occ.poseEvery))));
-    const o = pi * occ.poseStride, NP = Occ.PARTICLES.NP, xs = new Array(NP), ys = new Array(NP);
-    for (let i = 0; i < NP; i++) { xs[i] = occ.pose[o + 2 * i]; ys[i] = occ.pose[o + 2 * i + 1]; }
     const si = Math.max(0, Math.min(occ.n - 1, Math.round(t / occ.dt)));
-    Scene3D.setDummy({ x: xs, y: ys, phT: occ.pose[o + 2 * NP], phH: occ.pose[o + 2 * NP + 1], bagR: occ.pose[o + 2 * NP + 2], belt: occ.belt,
-      x0: occ.seated.x[0], y0: occ.seated.y[0],
-      injury: $('#tg-injury').checked ? { head: inj.head[si], neck: inj.neck[si], chest: inj.chest[si], pelvis: null } : null });
+    Scene3D.setDummy(Object.assign(Occ.poseAt(occ, t), { injury: $('#tg-injury').checked ? { head: inj.head[si], neck: inj.neck[si], chest: inj.chest[si], pelvis: null } : null }));
     const lv = fireFx.update(hazards.length && play.after > 0 ? play.after : -1);
     FX.fireUpdate(lv.fire, lv.steam);
     const rel = (t - play.t0) * 1000;
@@ -540,15 +574,22 @@
   }
   function updatePlayback(dt) {
     if (play.playing) {
-      const t1 = Math.min(play.tEnd, play.t + dt * play.speed);
+      const sp = play.auto ? play.auto(play.t) : play.speed;
+      FX.setTimeScale(sp);
+      const t1 = Math.min(play.tEnd, play.t + dt * sp);
       fireEvents(play.t, t1);
       Scene3D.particles.update(t1 - play.t);
       play.t = t1;
       if (play.t >= play.tEnd) play.playing = false;
     }
+    if (!play.playing) FX.setTimeScale(1);
     // after the replay: steam and fire carry on in real time
     play.after = hazards.length && play.t >= play.tEnd - 1e-9 ? play.after + dt : 0;
     applyFrame(play.t);
+    // while it plays: the camera shakes and the structure groans with the crash
+    const o = Scene3D.cabin.o;
+    Scene3D.setShake(play.playing ? cine.shake(play.t) : 0, play.t, cine.dir);
+    FX.structureUpdate(play.playing ? cine.power(play.t) : 0, [o.x, o.y, o.z]);
   }
 
   // ---------------------------------------------------------------- loop
@@ -559,6 +600,7 @@
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (VideoExport.busy) { requestAnimationFrame(frame); return; }   // the exporter steps and draws
     try {
       if (state === 'approach' && approach) updateApproach(dt);
       else if (state === 'impact' && sim) updateImpact();
@@ -572,7 +614,7 @@
     requestAnimationFrame(frame);
   }
   // URL settings (after everything the setup preview needs exists)
-  for (const k of ['barrier', 'wallStrength', 'damage', 'mass', 'stiffness']) {
+  for (const k of ['barrier', 'wallStrength', 'damage', 'mass', 'stiffness', 'solver']) {
     const seg = $(`.seg[data-name=${k}]`);
     if (!preset[k] || !seg || !seg.querySelector(`button[data-v="${preset[k]}"]`)) continue;
     seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === preset[k]));
@@ -580,6 +622,7 @@
   }
   if (preset.speed !== undefined) setSpeed(preset.speed, null);
   if (preset.angle !== undefined) setAngle(preset.angle, null);
+  if (cfg.solver === 'gpu') startGPU();
   setState('setup');
   previewSetup(true);
   chooseVehicle(cfg.vehicle);

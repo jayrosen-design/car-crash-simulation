@@ -135,6 +135,16 @@
         </div>
       </div>
     </section>
+    <section>
+      <div class="field">
+        <span class="field-head"><span>Physics solver</span><span class="muted">GPU: rigid barrier only</span></span>
+        <div class="seg" data-name="solver">
+          <button data-v="cpu" class="on" title="The JavaScript solver: everything, including parts coming off">CPU</button>
+          <button data-v="gpu" title="Experimental: the car's lattice solved on the graphics card (WebGPU). Parts don't come off, and tyres don't burst.">GPU<small>WebGPU, experimental</small></button>
+        </div>
+        <span class="hint" id="solver-hint" hidden></span>
+      </div>
+    </section>
     <section class="readouts">
       <div><span class="k">Kinetic energy</span><span class="v" id="ro-energy">–</span></div>
       <div><span class="k">Same as a drop from</span><span class="v" id="ro-drop">–</span></div>
@@ -210,8 +220,9 @@
     <input id="tl-scrub" type="range" min="0" max="1000" step="1" value="0" aria-label="Playback time">
     <label class="sel">Speed
       <select id="tl-speed">
+        <option value="auto" selected title="Slows to 1/40× around the peak deceleration, then speeds up to real time for the aftermath">Bullet-time</option>
         <option value="0.025">1/40×</option>
-        <option value="0.05" selected>1/20×</option>
+        <option value="0.05">1/20×</option>
         <option value="0.1">1/10×</option>
         <option value="0.25">1/4×</option>
         <option value="1">1×</option>
@@ -228,7 +239,9 @@
       <label class="switch"><input type="checkbox" id="tg-strain"><span>Strain map</span></label>
       <label class="switch"><input type="checkbox" id="tg-injury"><span>Injury map</span></label>
       <label class="switch"><input type="checkbox" id="tg-xray"><span>X-ray</span></label>
+      <label class="switch" title="The camera shakes with the impact"><input type="checkbox" id="tg-shake" checked><span>Shake</span></label>
     </div>
+    <button id="btn-video" class="small" title="Save the replay as an MP4 video (1080p, with sound), at the playback speed chosen">Save video</button>
   </div>
 
   <div id="pip-label" hidden>Onboard high-speed camera</div>
@@ -244,6 +257,7 @@
 <script src="js/occupant.js"></script>
 <script src="js/vehicles.js"></script>
 <script src="js/physics.js"></script>
+<script src="js/gpu-lattice.js"></script>
 <script src="js/guidance.js"></script>
 <script src="js/whiplash.js"></script>
 <script src="js/pedestrian.js"></script>
@@ -252,7 +266,7 @@
   // works when opened straight from disk (file://), where local module imports are blocked.
   // The standalone build (tools/build-standalone.js) embeds them as text/x-inline blocks.
   // With ?lab=<id> the crash labs (labs.js) run instead of the free simulator (app.js).
-  const APP_SCRIPTS = ['js/charts.js', 'js/fx.js', 'js/fire.js', 'js/carmodel.js', 'js/scene.js', 'js/labscene.js', 'js/app.js', 'js/labs.js'];
+  const APP_SCRIPTS = ['js/charts.js', 'js/fx.js', 'js/cinematic.js', 'js/export.js', 'js/fire.js', 'js/carmodel.js', 'js/scene.js', 'js/labscene.js', 'js/app.js', 'js/labs.js'];
   const skip = new URLSearchParams(location.search).get('lab') ? 'js/app.js' : 'js/labs.js';
   try {
     const THREE = await import('three');

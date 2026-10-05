@@ -95,6 +95,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .hud-grid { display: grid; gap: 4px; }
 .bar { height: 8px; background: #0e1217; border-radius: 99px; overflow: hidden; border: 1px solid var(--line); }
 #comp-bar { height: 100%; width: 0; background: var(--accent); }
+/* saving a video (export.js): progress, and the controls under it switched off */
+.export-box { z-index: 30; }
+.export-box h3 { margin: 0 0 8px; font-size: 15px; }
+.export-box .bar > div { height: 100%; width: 0; background: var(--accent); }
+.export-box button { margin-top: 10px; }
+body.exporting #timeline, body.exporting #results, body.exporting #setup, body.exporting header { pointer-events: none; opacity: 0.55; }
 .comp-text { font-family: var(--mono); margin: 6px 0; }
 
 /* results */

@@ -1,10 +1,12 @@
 # Car Crash Simulation
 
-A browser-based car crash simulator. A car drives itself into a barrier, a brick wall, another car or a pole. The crash is computed with a deformable-structure physics model at 0.1 ms steps and replayed in slow motion. You see:
+A browser-based car crash simulator. A car drives itself into a barrier, a brick wall, another car or a pole. The crash is computed with a deformable-structure physics model at 0.1 ms steps and replayed in bullet-time slow motion. You see:
 
 - **the body crumpling:** glass shatters, panels and wheels tear off;
-- **a crash-test dummy:** it moves inside the car, and its injury criteria are scored the way crash-test programs score them;
+- **a crash-test dummy:** a 3D dummy moves inside the deforming car, and its injury criteria are scored the way crash-test programs score them;
 - **the aftermath:** steam, or an engine-bay fire if the crash would start one.
+
+The replay slows to 1/40× around the peak deceleration, the camera shakes with the impact, the sounds are placed in 3D and follow the energy the crash absorbs, and the replay can be saved as an MP4 video. An optional, experimental GPU solver (WebGPU) can compute the barrier crash.
 
 It runs in any modern browser from plain files: no install, no server, no build step needed to use it.
 
@@ -50,7 +52,8 @@ There are eight simulations: the two **barrier tests** (a free simulator with fu
 
 Requirements:
 - **WebGL 2.** Any desktop or laptop GPU from the last decade works; phones work but the layout is cramped.
-- **An internet connection.** three.js and its Draco decoder load from the jsDelivr CDN; everything else is in the files.
+- **An internet connection.** three.js and its Draco decoder load from the jsDelivr CDN; everything else is in the files. Saving a video also loads mp4-muxer from the CDN the first time.
+- **Optional:** WebCodecs to save videos (recent Chrome, Edge, Safari or Firefox), and WebGPU for the GPU solver.
 - **Node.js 22 or later**, only for the developer tools (physics check, single-file build, media recording).
 
 Pick a simulation from the home page, or switch between all eight with the **Simulation** menu at the top of the simulator. Settings can also be passed in the URL:
@@ -60,6 +63,7 @@ Simulator.html?preset=rigid                    56 km/h full-frontal rigid-barrie
 Simulator.html?preset=brick                    64 km/h into a brick wall, Dramatic damage
 Simulator.html?vehicle=mustang&speed=100&angle=30
 Simulator.html?lab=side&impactor=pole&steel=mild
+Simulator.html?solver=gpu                      the barrier crash computed on the GPU (WebGPU)
 ```
 
 For development, open `index.html` instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`.
@@ -84,6 +88,7 @@ For development, open `index.html` instead. It loads the source files one by one
 | Front-structure stiffness (`stiffness`) | Soft (0.6×), Standard, Stiff (1.7×) |
 | Barrier (`barrier`, `wall`) | Rigid concrete barrier, or a brick wall with weak, standard or strong mortar |
 | Restraints | Seatbelt and airbag, each on or off |
+| Physics solver (`solver`) | CPU (default), or GPU: WebGPU, experimental, rigid barrier only, parts stay on (see [the GPU solver](#9-the-gpu-solver-optional)) |
 
 ### Crash labs (`Simulator.html?lab=<id>`)
 
@@ -107,7 +112,9 @@ Every simulation runs through the same four stages, shown in the top bar.
 1. **Setup.** Choose the settings. Readouts show the kinetic energy, the equivalent drop height and the momentum.
 2. **Approach.** The car drives itself onto the approach line: a PID speed controller and pure-pursuit steering. It starts slightly off-line so you can watch the controllers correct. **Emergency stop** cuts the drive and brakes hard; if the car stops short, the test is aborted.
 3. **Impact.** The crash is computed in 0.1 ms steps, with the live state on screen: 1–2 s for a rigid barrier, a few seconds for the brick wall or two cars. Emergency stop cancels the computation.
-4. **Playback.** A slow-motion replay with a scrubber and speeds from 1/40× to 1×. Space plays or pauses; the arrow keys step 1 ms (10 ms with Shift).
+4. **Playback.** A slow-motion replay with a scrubber. Space plays or pauses; the arrow keys step 1 ms (10 ms with Shift).
+   - **Bullet-time** (the default speed) follows the crash pulse. It runs at 1/4× into the crash, slows smoothly to 1/40× around the peak deceleration, and speeds up to real time for the rebound and falling debris. A 2 s barrier crash replays in about 7 s.
+   - **Fixed speeds** from 1/40× to 1× are in the same menu.
 
 In playback:
 - **Cameras.**
@@ -115,7 +122,9 @@ In playback:
   - *Side*, *Front ¾* and *Top* track the car.
   - *Onboard* is fixed to the car.
   - An onboard inset shows the dummy without the car body.
-- **Toggles:** strain map on the car, injury map on the dummy, X-ray body.
+- **Toggles:** strain map on the car, injury map on the dummy, X-ray body, camera shake. Shake starts off when the system asks for reduced motion.
+- **Sound.** Sounds come from where they happen and follow the camera (3D, with headphones best). In slow motion they are pitched down and drawn out. A structural groan follows the power the crash is absorbing.
+- **Save video.** Saves the replay as an MP4 file: 1080p at 30 frames per second, with its sound, at the speed chosen (bullet-time included), plus a second after the end. The title and the replay clock are drawn on the picture. Every frame is rendered, however slow the computer, so none are dropped. It needs WebCodecs (recent Chrome, Edge, Safari or Firefox).
 - **Results panel.** It shows:
   - injury criteria against their limits;
   - vehicle metrics;
@@ -134,6 +143,7 @@ In playback:
 - **Physics without the DOM.** The physics, occupant, guidance and fire-rule modules have no dependencies and run identically in the browser and in Node. The headless check runs the same code as the page.
 - **Plain classic scripts.** Every module is a classic script that sets one global (e.g. `CrashPhysics`) and also exports itself for Node. Classic scripts load from `file://`, where browsers block ES-module imports, so the app works opened straight from disk. Only three.js is an ES module, loaded from a CDN through an import map.
 - **Single-file builds.** `tools/build-standalone.js` inlines every script, and for the home page every picture and the video, into one HTML file each.
+- **Optional extras stay optional.** The GPU solver (WebGPU) and video saving (WebCodecs) are used only when chosen and only where the browser has them. Everything else needs nothing beyond WebGL 2.
 
 ### Modules
 
@@ -146,11 +156,20 @@ flowchart TB
   subgraph Core["Simulation core (no DOM, runs in Node)"]
     VEH["vehicles.js<br/>CrashVehicles: lattice and zone specs"]
     PH["physics.js<br/>CrashPhysics: XPBD lattice, barriers,<br/>contacts, destruction, recording"]
-    OCC["occupant.js<br/>CrashOccupant: frontal and side dummies,<br/>organs, SAE J211 filters, criteria"]
+    OCC["occupant.js<br/>CrashOccupant: 3D frontal dummy, side dummy,<br/>organs, SAE J211 filters, criteria"]
     GUI["guidance.js<br/>CrashGuidance: PID + pure pursuit"]
     WL["whiplash.js<br/>CrashWhiplash: sled + 24-vertebra spine"]
     PED["pedestrian.js<br/>CrashPedestrian: AEB + pedestrian chain"]
     FIRE["fire.js<br/>CrashFire: steam/fire rule + effects"]
+    CIN["cinematic.js<br/>Cinematic: bullet-time, shake,<br/>crash power"]
+    OCC ~~~ WL
+    GUI ~~~ PED
+    FIRE ~~~ CIN
+  end
+  subgraph GPUs["Browser only, optional"]
+    direction TB
+    GPU["gpu-lattice.js<br/>CrashGPU: WebGPU lattice solver"]
+    EXP["export.js<br/>VideoExport: WebCodecs MP4"]
   end
   subgraph View["Presentation (three.js)"]
     CM["carmodel.js<br/>CarModels: GPU skinning, crumple,<br/>debris, shards, cracks"]
@@ -169,6 +188,9 @@ flowchart TB
   OCC & GUI --> APP & LABS
   WL & PED --> LABS
   FIRE --> APP & LABS
+  CIN --> APP & LABS
+  GPU -. "cfg.gpu" .-> PH
+  EXP --> APP & LABS
   CM --> SC --> APP & LABS
   LS --> LABS
   FX & CH --> APP & LABS
@@ -198,15 +220,17 @@ sequenceDiagram
   end
   UI->>P: finalize()
   P-->>UI: result: frames, crash pulse, metrics, debris, glass, events
-  UI->>O: simulate(crash pulse, restraints)
+  UI->>P: cabinInput(result): interior points as the cabin deforms
+  UI->>O: simulate(crash pulse, cabin, restraints)
   UI->>F: assess(result) for each car
   loop Playback
     UI->>S: frame k, k+1, blend s: positions, strain, cabin frame, debris, dummy pose
+    UI->>S: bullet-time speed, camera shake, 3D sound from the crash pulse
     UI->>S: fire effects after the replay ends
   end
 ```
 
-The impact computation is time-sliced. `sim.advance(budgetMs)` runs substeps until its wall-clock budget is spent, then returns, so the page keeps drawing and stays responsive. Emergency stop can cancel it.
+The impact computation is time-sliced. `sim.advance(budgetMs)` runs substeps until its wall-clock budget is spent, then returns, so the page keeps drawing and stays responsive. Emergency stop can cancel it. With the GPU solver the steps run in the background, and `advance` only reports progress.
 
 ### The crash result
 
@@ -220,6 +244,7 @@ The impact computation is time-sliced. `sim.advance(budgetMs)` runs substeps unt
 | `units` | Per vehicle (two in the two-vehicle and side labs): its own pulse, metrics, crush, cabin frames and intrusion measurements. |
 | `debris`, `glass`, `bursts` | Parts and wheels that came off (with the lattice state at that moment), panes and lamps that broke (time, origin, velocity), tyres that burst. |
 | `events` | First contact, contact impulses, parts detaching, glass breaking: these drive sounds and particles. |
+| `solver` | Which solver computed it: `cpu`, or `gpu` with the device, colour groups, steps and GPU time. |
 
 Playback finds the two frames around the playback time and blends between them (positions linearly, rotations by slerp), so any playback speed looks smooth.
 
@@ -376,27 +401,72 @@ With the Lexus into the rigid barrier:
 
 Rear impacts, which cause most fuel-tank fires, aren't simulated, so there is no fuel-tank rule.
 
+### 9. The GPU solver (optional)
+
+`js/gpu-lattice.js` runs the car lattice on the graphics card with WebGPU compute shaders (WGSL). Choose **GPU** under *Physics solver* in the free simulator, or add `?solver=gpu` to the URL. It handles one car into the rigid barrier. In GPU runs parts don't come off and tyres don't burst, because detaching a part changes the lattice and that bookkeeping stays on the CPU.
+
+- **The same equations.** Each step runs predict, the XPBD springs with damping and plastic yield (same formulas and limits as section 2), ground and barrier contact with Coulomb friction, then velocities.
+- **A different order.** The CPU projects the springs one after the other (Gauss-Seidel). On the GPU they are split by greedy colouring into groups where no two springs share a node: 27–28 groups for these cars. Each group is projected in parallel and the groups run one after the other. It is the same method in a different order.
+- **32-bit floats.** The GPU uses 32-bit floats, the CPU 64-bit. The car sits near the barrier at x = 0, so positions keep sub-micrometre resolution.
+- **Batches.** The steps run in batches, one recorded frame's worth each (1 ms during the pulse, up to 10 ms later). After each batch the state is read back: positions, velocities, rest lengths, plastic strain, plastic work, barrier impulses and the step of first contact. The CPU then records the frame, telemetry and energies with the same code as for its own runs.
+- **Energy books.** Friction heat isn't tracked on the GPU, so it is counted in the "contact, damping & solver" share.
+
+`node tools/gpu-check.js` runs the same crashes with both solvers in headless Chrome. These are crashes in which nothing comes off on the CPU either. Results on an AMD RDNA 3 GPU:
+
+| Crash | Crush | Peak (CFC 60) | Δv | Plastic energy | Time: CPU / GPU |
+|---|---|---|---|---|---|
+| Lab sedan, 56 km/h | 543 / 543 mm | 57.5 / 56.8 g | 66.1 / 66.1 km/h | 61.4 / 61.5% | 0.6 / 4.0 s |
+| Lexus, 56 km/h | 583 / 582 mm | 69.1 / 68.0 g | 66.0 / 66.0 km/h | 63.1 / 63.1% | 1.4 / 2.6 s |
+| Mustang, 48 km/h | 552 / 553 mm | 35.0 / 34.4 g | 55.7 / 55.8 km/h | 73.9 / 73.9% | 1.1 / 2.5 s |
+
+The peak deceleration comes out 1–2% lower on the GPU. Its telemetry is taken once per recorded frame (1 ms) rather than every 0.1 ms step, so the filtered peak is a little smoother.
+
+**At this lattice size the GPU is slower.** The cars have about 1,000 nodes and 10,000 springs, and every 0.1 ms step is about 30 small compute dispatches, plus a read-back every recorded frame. The GPU pays off on finer lattices. Same check, the lab sedan's lattice refined, first 150 ms after contact:
+
+| Lattice | Nodes | Springs | CPU | GPU | GPU speed-up |
+|---|---|---|---|---|---|
+| As used (1×) | 672 | 6,506 | 0.25 s | 0.65 s | 0.4× |
+| 2× finer | 4,230 | 46,905 | 1.6 s | 0.9 s | 1.8× |
+| 3× finer | 13,002 | 151,419 | 5.2 s | 1.5 s | 3.5× |
+
+The crush agrees within 2 mm at every resolution.
+
 ---
 
 ## Occupant and injury models
 
-The dummies are **driven by the crash** (one-way coupling, like a sled test). The vehicle simulation produces the cabin's motion, and the dummy reacts to it inside the cabin frame. This keeps the dummy cheap enough to re-run instantly with other restraints on the same crash.
+The dummies are **driven by the crash**, like a sled test. The vehicle simulation produces the cabin's motion, and the dummy reacts to it inside the cabin frame. The frontal dummy also feels the cabin **deforming around it**: the parts of the interior it can touch move with the crushed structure. Its own forces aren't fed back into the car; at 75 kg against a 1,500–2,000 kg car they would barely change it. So the dummy stays cheap enough to re-run instantly with other restraints on the same crash.
 
 ### Frontal dummy (`occupant.js`)
 
-- **Body.** A 2D side-view multibody of seven particles: pelvis, thorax, upper spine (T1), a compliant sternum, the top of the neck, and the front and back of the head. They are joined by stiff links and joint springs, plus a simple two-pendulum model for lateral sway.
-- **Three-point belt.** Shoulder and lap belts with elastic webbing. A **pretensioner** takes out up to 8 cm of slack in the first milliseconds, and a **load limiter** pays out webbing at 4.5 kN.
-- **Driver airbag.** It fires when the cabin's speed change reaches 2 m/s within 45 ms of contact, inflates, then vents.
-- **Contacts.** Steering wheel with a collapsing column, windshield and roof (placed per car from its glass and roof lines), knee bolster, chin to chest. A head strike on the windshield cracks it where the head hit.
-- **Injury criteria.** Channels are filtered per SAE J211 (CFC 1000 head, CFC 180 chest, CFC 600 neck) and scored against FMVSS 208-style limits:
+- **Body.** A 3D multibody of 15 particles, 75 kg in all:
+  - **pelvis:** both hip joints and the sacrum;
+  - **torso:** thorax, T1 (the base of the neck) and both shoulders, which carry the arms' mass;
+  - **sternum:** on a compliant chest;
+  - **head:** the top of the neck (occipital condyle) and the front and back of the skull;
+  - **legs:** knees and ankles.
+
+  Distance constraints keep each segment rigid. The joints are springs with damping and end stops: the lumbar spine at the sacrum, the hips, the knees, and the lower and upper neck. Torques act on each segment through its inertia (*α = I⁻¹τ*), so they turn it without pushing it.
+- **Three-point belt, in 3D.** The shoulder belt runs from the D-ring on the B-pillar over the collarbone (between the neck and the outboard shoulder) and the sternum to the buckle beside the inboard hip. So the torso can twist out of it, as real ones do. The lap belt runs across the front of the pelvis. A **pretensioner** takes out up to 8 cm of slack in the first milliseconds, and a **force limiter** caps the webbing tension at 4.5 kN.
+- **Driver airbag.** A flattened ellipsoid (the same shape that's drawn) growing out of the steering wheel along the column. It fires when the cabin's speed change reaches 2 m/s within 45 ms of contact, then vents. It catches the head, chest and shoulders; its damping grows as the contact patch does.
+- **Seat.** The cushion and seat back behave like foam: firm going in, giving back about a quarter of the force on the way out. The seat back has friction, and side bolsters hold the pelvis. There is also a head restraint.
+- **Contacts:**
+  - the steering wheel's rim and hub, with a collapsing column;
+  - the windshield (it cracks where the head hits) and the roof, placed per car from its glass and roof lines;
+  - the A-pillar, the door beside the pelvis, chest and shoulder, and the side window beside the head;
+  - the knee bolster (its padding crushes), the floor and the toe pan (with friction), and the centre console;
+  - chin to chest.
+- **The cabin deforming around it.** `physics.js cabinInput()` embeds interior points in the lattice: the wheel hub and a point down the column, the knee bolster, the toe pan, the windshield's edges, the roof, the A-pillar's foot and top, and the door at chest and window height. It reports where they are at every recorded frame, in the cabin frame the crash pulse is measured in. The contact surfaces move with them, so a column driven back carries the wheel and airbag (drawn moving too), and a toe pan pushed in pushes the feet. In the 25% small-overlap test the toe pan comes back about 10 cm, and the driver's left foot ends up about 10 cm further back than with a fixed cabin.
+- **Injury criteria.** Channels are filtered per SAE J211 (CFC 1000 head, CFC 180 chest, CFC 600 neck and femur) and scored against FMVSS 208-style limits. The upper neck's axial force comes from Newton's law on the head; its flexion moment, for Nij, is the upper neck joint's torque at the occipital condyle.
 
   | Criterion | Limit |
   |---|---|
   | HIC15 (head injury criterion, 15 ms window) | 700 |
   | Chest acceleration, 3 ms clip | 60 g |
   | Chest deflection | 63 mm |
-  | Nij (neck injury criterion) | 1.0 |
+  | Nij (neck injury criterion: axial force and flexion/extension moment) | 1.0 |
   | Neck tension / compression | 4.17 / 4.0 kN |
+  | Femur axial force | 10 kN |
 
 ### Side-impact dummy
 
@@ -519,7 +589,7 @@ flowchart TB
 
   subgraph DUMMY["6 · Occupant"]
     direction TB
-    D1["7-particle side-view dummy<br/>driven by the crash pulse"]
+    D1["15-particle 3D dummy: crash pulse<br/>+ the cabin deforming around it"]
     D2["Belt: pretensioner up to 8 cm · 4.5 kN load limiter<br/>Airbag: fires at Δv 2 m/s within 45 ms"]
     D3["Contacts: wheel and column · windshield · roof<br/>knee bolster · chin to chest"]
     D4["SAE J211 filters → HIC15 · chest 3 ms<br/>deflection · Nij · neck tension and compression"]
@@ -1223,9 +1293,9 @@ flowchart LR
   classDef mid fill:#fef3c7,stroke:#d97706,color:#0f172a
   classDef good fill:#dcfce7,stroke:#16a34a,color:#0f172a
   P["Crash pulse:<br/>the cabin stops in about 63 ms"]
-  P --> U["Unbelted: the body keeps going at 35 mph<br/>until the wheel, windshield and dash stop it<br/>HIC15 about 2,184"]
-  P --> B["Plain belt: stops the torso, but with slack<br/>and no force limit, loading the chest hard<br/>HIC15 about 1,022"]
-  P --> F["Full system: pretensioner removes slack,<br/>limiter pays out at 4.5 kN, airbag catches the head<br/>HIC15 about 357"]
+  P --> U["Unbelted: the body keeps going at 35 mph<br/>until the wheel, windshield and dash stop it<br/>HIC15 about 4,250"]
+  P --> B["Plain belt: stops the torso, but with slack<br/>and no force limit, loading the chest hard<br/>HIC15 about 1,500"]
+  P --> F["Full system: pretensioner removes slack,<br/>limiter caps the belt at 4.5 kN, airbag catches head and chest<br/>HIC15 about 560"]
   class U bad
   class B mid
   class F good
@@ -1399,7 +1469,22 @@ This is visual only: intrusion and every number come from the lattice.
 - **Burst tyres** flatten against the ground in the vertex shader.
 - **The curtain airbag** is shaped from the car's driver-side window panes: a quilted cushion with sewn chambers that unrolls from the roof rail just inside the glass. Its points ride on the lattice, so the crushed door pushes it in.
 - **Fire and steam** are camera-facing instanced sprites: flames (additive), sooty smoke, embers and steam, plus a flickering point light. Each particle's state is a pure function of its index and the time since the crash, so the fire looks the same on every replay.
-- **Sound** is synthesised live with Web Audio: structural crunch, metal clank, glass, windshield crackle, tyre pop, airbag, the AEB chime, fire roar and crackle, steam hiss. Point particles show sparks, dust and glass.
+- **Bloom.** Flames, embers and hot sparks glow. Their glow twins (a separate render layer) are drawn into a half-size buffer over the solid scene drawn in black, so the car and barrier hide what's behind them. The imported cars' black copy is skinned like the body, so the crushed engine bay doesn't hide its own fire behind the undeformed shape. The buffer is blurred down a chain of smaller buffers and back up, then added onto the frame. Everything else keeps its look, and the pass runs only while something glows. Sparks cool as they fly, so their glow fades faster than their colour.
+- **Sound** is synthesised live with Web Audio:
+  - structural crunch, metal clank and tearing, glass, windshield crackle, a tyre blowout (bang, casing thump, rubber flap, escaping air), airbag, the AEB chime, fire roar and crackle, steam hiss;
+  - each sound plays from where it happens, through an HRTF panner, and the listener follows the camera;
+  - a continuous structural groan follows the power the crash is absorbing (plastic work, fracture and contact losses per millisecond, from the energy books): about 0.5 at 1 MW, 0.85 at 5 MW and 1.2 at 25 MW. It grows louder, more resonant and more distorted with power, over a deeper rumble;
+  - in slow motion the sounds are pitched down (down to 0.4× at 1/40×) and drawn out;
+  - a limiter in front of the speakers keeps the loudest moments from clipping.
+
+  Point particles show sparks, dust and glass.
+- **Bullet-time and shake** (`cinematic.js`) are worked out once per replay from the crash pulse, in 1 ms bins:
+  - **Speed.** The deceleration relative to its peak is widened and smoothed, so the slow-down starts a little before the peak and eases in and out. It is mapped between 1/4× and 1/40×. Once 97% of the pulse's impulse has gone by, the speed rises to real time over 250 ms.
+  - **Shake** grows with the deceleration (1 at 50 g), with kicks for first contact, parts tearing off, tyre bursts and head strikes. It goes mostly along the deceleration's direction and scales with the camera's distance. It wobbles with replay time, so it slows down in slow motion.
+- **Saving a video** (`export.js`) renders the replay frame by frame at 1920×1080 and 30 frames per second, whatever the computer's speed. Its sounds are rendered offline on the same clock (an `OfflineAudioContext`).
+  - Encoding: H.264 through WebCodecs (VP9 if there is no H.264 encoder), with AAC or Opus sound.
+  - Container: an MP4 written by mp4-muxer.
+  - Overlay: the title, the replay clock and the speed are drawn on each frame.
 
 ---
 
@@ -1429,7 +1514,7 @@ The check runs the real modules in Node.
 - destruction changes the peak deceleration or HIC by 3% or more.
 
 **Each crash lab is checked for the claim it makes:**
-- **Overlap:** the 25% small overlap intrudes more at the hinge pillar than the 40% moderate overlap, and the honeycomb crushes within its depth.
+- **Overlap:** the 25% small overlap intrudes more at the hinge pillar than the 40% moderate overlap, and the honeycomb crushes within its depth. In the small overlap, the intruding toe pan must push the dummy's left foot more than 5 cm further back than a fixed cabin would.
 - **Two vehicles:** equal cars get equal Δv. A car of half the mass gets about twice the Δv (1.6–2.4×), while momentum holds over the first 30 ms.
 - **Side impact:** the mild-steel B-pillar intrudes more than 15 cm and the hot-stamped one less, and the curtain airbag lowers HIC in the pole test.
 - **Whiplash:** a well-placed head restraint passes both criteria, a 10 cm backset doesn't, and T1 acceleration rises with speed.
@@ -1441,9 +1526,19 @@ The check runs the real modules in Node.
 
 | Car | Crush | Peak (CFC 60) | HIC15 |
 |---|---|---|---|
-| Lab sedan | about 540 mm | 57 g | about 310 |
-| Lexus RX 350 | about 580 mm | 69 g | about 360 |
-| Ford Mustang GT500 | about 670 mm (long front overhang) | 36 g | about 210 |
+| Lab sedan | about 540 mm | 57 g | about 530 |
+| Lexus RX 350 | about 580 mm | 69 g | about 560 |
+| Ford Mustang GT500 | about 670 mm (long front overhang) | 36 g | about 310 |
+
+The occupant runs in the check use the cabin's intrusion, as the app does.
+
+```
+node tools/gpu-check.js                 the GPU solver against the CPU (headless Chrome with WebGPU)
+```
+
+This runs the barrier crashes in [the table above](#9-the-gpu-solver-optional) with both solvers and fails if crush, peak deceleration, Δv or plastic energy differ beyond 6%, 12%, 3% and 8%. It then times both on the refined lattices.
+
+The CPU solver is unchanged by the GPU option. With the GPU option off, eight crashes (the lab sedan, Lexus and Mustang, rigid barrier and brick wall, two angles) produce bit-identical frames, pulses, energies, debris and events to the version before it was added.
 
 ---
 
@@ -1473,7 +1568,7 @@ How it works:
 - **Virtual clock.** The page runs on a virtual clock that advances exactly 1/30 s per captured frame, so the video is smooth however long each frame takes to render.
 - **Encoding.** Blender's built-in FFmpeg encodes the frames (`tools/encode-video.py`), so no separate ffmpeg install is needed. Use `--chrome <path>` and `--blender <path>` if they aren't in their default folders.
 - **Order.** Rebuild before recording, then again afterwards to embed the new media in the home page.
-- **No sound.** The app's sounds are synthesised live and aren't captured.
+- **No sound.** The app's sounds are synthesised live and aren't captured. (The in-app **Save video** button does include sound: it renders the sounds offline.)
 
 ### Rebuilding the car models
 
@@ -1496,8 +1591,13 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
 
 ## Design decisions
 
-- **Not real time during the impact.** 60 FPS applies to the approach and playback. The impact is integrated at 0.1 ms, because 30–120 Hz can't resolve a ~100 ms crash pulse or give a valid HIC.
-- **Single-threaded plain JavaScript physics.** No WebAssembly, WebGPU compute or SharedArrayBuffer. The impact runs in time-sliced chunks on the main thread, so the page also works from a plain file. Rendering is WebGL (three.js), and the body skinning runs on the GPU.
+- **Not real time during the impact.** 60 FPS applies to the approach and playback. The impact is integrated at 0.1 ms, because 30–120 Hz can't resolve a ~100 ms crash pulse or give a valid HIC. A 2 s barrier crash takes about 1–2 s to compute, so the GPU or threads wouldn't make the wait noticeably shorter at this lattice size.
+- **0.1 ms, not 1 ms.** The SAE J211 filters pre-warp with tan(2π·2.0775·CFC·Δt/2). That only works while the argument stays below π/2, which needs Δt under about 0.24 ms for the head channel (CFC 1000) and 0.4 ms for the neck (CFC 600). At 1 ms the stiff lattice also gains energy.
+- **Plain JavaScript physics, with an optional GPU solver.** The CPU solver is single-threaded, time-sliced on the main thread, and in 64-bit floats, so runs are bit-for-bit repeatable and the page works from a plain file. There is no WebAssembly or SharedArrayBuffer:
+  - shared memory needs cross-origin isolation headers, which a file opened from disk can't have;
+  - threads would make the summation order, and so the results, vary from run to run.
+- **WebGPU through plain WGSL, not three.js TSL.** TSL compute needs three.js's `WebGPURenderer`, which would mean loading a second copy of three.js next to the WebGL renderer the app draws with. Plain WebGPU compute keeps rendering on WebGL.
+- **The GPU solver is opt-in.** It is checked against the CPU solver rather than replacing it. It's slower at today's lattice size and faster on finer ones (see [the GPU solver](#9-the-gpu-solver-optional)).
 - **No external physics library.** Destruction follows the node-and-beam approach of BeamNG and Rigs of Rods, built on the same solver:
   - ammo.js soft bodies have no plasticity;
   - a second engine such as Rapier would split the solver and the energy books.
@@ -1505,7 +1605,7 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
 - **Two barrier modes.** A rigid barrier, for injury numbers comparable with standard tests, and a breakable brick wall as a demonstration. A breaking wall absorbs energy and lengthens the crash, which lowers every injury number.
 - **Mass and stiffness are separate controls.** Changing them together can cancel out.
 - **Speed range 10–150 km/h.**
-- **Sled-style occupant.** The dummy is driven by the cabin pulse (one-way coupling), not a 3D multibody inside the deforming car. That makes re-running it with other restraints instant.
+- **The occupant is coupled one way.** The 3D dummy is driven by the cabin pulse and pushed by the deforming interior, but its own forces don't act back on the car. That makes re-running it with other restraints instant (a few hundred milliseconds), and at 75 kg against 1.5–2 t the feedback would be small.
 - **Part-level fracture.** Panels and wheels come off whole; the body structure itself doesn't tear. Bricks break at mortar joints only.
 - **Every run is computed.** There are no pre-baked destruction caches.
 - **Kill switch per stage.** It brakes during the approach and cancels during the computation. It isn't available during the ~100 ms impact itself.
@@ -1534,10 +1634,13 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
 - **The imported interiors are removed.** The app's own seat, wheel, airbag and dash are used, because the occupant model is built around them. The Lexus model has no engine, so a plain block stands in.
 - **Lab-only structure.** The overlap lab's weaker cabin corners and the side lab's door-ring steel and hollow cabin are used in those labs only. The barrier tests' cars keep their uniform safety cell.
 - **Simplified dummies and braking.**
-  - The side-impact dummy works in one plane and leaves out the legs.
+  - The 3D frontal dummy is a particle model with tuned joint springs, not a validated Hybrid III. Its arms are drawn holding the wheel but aren't simulated, and the lower legs give no tibia index. With the force limiter working properly it scores harsher than the earlier 2D dummy did (HIC about 560 against 360 for the Lexus at 56 km/h). The 2D dummy's limiter let the belt reach about 8 kN.
+  - The side-impact dummy works in one plane and leaves out the legs; in the side-impact lab it moves the 3D dummy segment by segment.
   - The whiplash seat is generic.
   - The pedestrian is a single 2D chain, so the arms and far leg only follow it in the 3D view.
   - Emergency braking is a rule-based model of one system, not a particular product.
+- **The GPU solver covers one case.** It handles one car into the rigid barrier, without parts coming off, tyres bursting or friction heat in the energy books. At today's lattice size it is slower than the CPU.
+- **Saving a video** needs WebCodecs. The first time, it loads mp4-muxer from the CDN.
 - **Performance.** The brick-wall computation takes several seconds on a laptop. The phone layout works but is cramped.
 
 ---
@@ -1553,8 +1656,10 @@ css/style.css               layout and theme
 js/
   vehicles.js     vehicle specs: lattice grid, zones, interior lines; the side-impact trolley
   physics.js      XPBD lattice, barriers (rigid, brick wall, offset + honeycomb, pole), several
-                  vehicles, contacts, destruction, recording, crash pulse, intrusion measurement
-  occupant.js     frontal and side-impact dummies, organ model, J211 filters, injury criteria
+                  vehicles, contacts, destruction, recording, crash pulse, intrusion measurement,
+                  the cabin around the driver for the dummy (cabinInput)
+  gpu-lattice.js  the optional WebGPU solver for the lattice (WGSL compute)
+  occupant.js     3D frontal dummy, side-impact dummy, organ model, J211 filters, injury criteria
   guidance.js     PID speed control and pure-pursuit steering for the approach
   whiplash.js     rear-impact sled and the 24-vertebra dummy
   pedestrian.js   emergency braking and the pedestrian impact
@@ -1564,13 +1669,17 @@ js/
   labscene.js     lab props: offset barrier and honeycomb, pole, barrier trolley, sled and spine,
                   pedestrian, sensor cone, momentum arrows, head trail
   charts.js       canvas line and stacked-area charts with scrub cursors
-  fx.js           Web Audio sounds and point particles
+  fx.js           Web Audio sounds (3D, slow-motion pitch, structural groan, offline capture) and
+                  point particles
+  cinematic.js    bullet-time speed, camera shake and the crash's power, from the crash pulse
+  export.js       saving a replay as an MP4 video (WebCodecs, mp4-muxer)
   app.js          controller for the barrier tests
   labs.js         controller for the six crash labs (runs instead of app.js with ?lab=)
 models/           generated car models (Draco GLB as base64) and physics data
 media/            the home page's video, poster and pictures of the eight simulations
 tools/
   headless-check.js     physics and lab checks in Node
+  gpu-check.js          the GPU solver against the CPU solver, in headless Chrome
   build-standalone.js   builds the two single-file pages
   record-video.js       records the home page's media in headless Chrome
   encode-video.py       encodes the video with Blender's FFmpeg
@@ -1589,6 +1698,7 @@ Both models are split into parts, re-oriented, scaled and simplified for this ap
 
 **Libraries:**
 - [three.js](https://threejs.org/) (MIT), loaded from jsDelivr;
+- [mp4-muxer](https://github.com/Vanilagy/mp4-muxer) (MIT), loaded from jsDelivr when a video is first saved;
 - the Draco decoder (Apache 2.0);
 - the simplex noise in the crumple shader, after Ashima Arts and Stefan Gustavson (MIT).
 

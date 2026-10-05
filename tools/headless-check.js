@@ -107,7 +107,7 @@ for (const sc of scenarios) {
     console.log(`wall: ${moved}/${res.wall.nb} bricks displaced > 5 cm, ${breaks} bonds broken`);
   }
   for (const [label, opts] of [['belt+bag', { belt: true, airbag: true }], ['belt only', { belt: true, airbag: false }], ['unbelted+bag', { belt: false, airbag: true }], ['none', { belt: false, airbag: false }]]) {
-    const o = Occ.simulate(res.pulse, opts), q = o.metrics;
+    const o = Occ.simulate(res.pulse, Object.assign({ cabin: res.cabin || (res.cabin = Phys.cabinInput(res, 0)) }, opts)), q = o.metrics;
     if (hasNaN(o.headAx) || !Number.isFinite(q.hic15)) problems.push('NaN in occupant ' + label);
     console.log(`  ${label.padEnd(13)} HIC15 ${q.hic15.toFixed(0).padStart(5)}  head ${q.headPeakG.toFixed(0).padStart(4)} g  chest3ms ${q.chest3ms.toFixed(1).padStart(5)} g  defl ${q.chestDeflMm.toFixed(1).padStart(5)} mm  Nij ${q.nij.toFixed(2)} (${q.nijMode})  tension ${(q.neckTension / 1000).toFixed(2)} kN  pelvis ${q.pelvisPeakG.toFixed(0)} g  fire ${o.tFire >= 0 ? ((o.tFire - res.T0) * 1000).toFixed(1) + ' ms' : 'no'}`);
   }
@@ -161,7 +161,7 @@ for (const key of Veh.keys.filter(k => k !== 'lab')) {
     if (sc.expect === 'heavy' && (!parts.length || !bursts.some(b => b.key[0] === 'F'))) problems.push('no panel off or no front tyre burst at 150 km/h');
     if (sc.expect === 'dramatic' && (res.debris.length < 3 || !panes.length)) problems.push('fewer than 3 parts off or no pane broken (Dramatic, 100 km/h)');
     if (sc.plausible && (m.maxCrush < 0.3 || m.maxCrush > 0.8 || m.peakDecelG < 25 || m.peakDecelG > 80)) problems.push('crush or peak deceleration outside 300-800 mm / 25-80 g');
-    const o = Occ.simulate(res.pulse, { belt: true, airbag: true, interior: V.interior }), q = o.metrics;
+    const o = Occ.simulate(res.pulse, { belt: true, airbag: true, interior: V.interior, cabin: Phys.cabinInput(res, 0) }), q = o.metrics;
     if (hasNaN(o.headAx) || !Number.isFinite(q.hic15)) problems.push('NaN in occupant');
     const e0 = m.energyInitial, eEnd = res.frames.energy[res.frames.energy.length - 1], pct = (v) => (100 * v / e0).toFixed(1) + '%';
     console.log(`\n=== ${name}  (${sc.kmh} km/h, ${sc.angle || 0} deg, ${V.massKg} kg, ${sc.barrier || 'rigid'}, ${sc.damage})`);
@@ -273,6 +273,17 @@ if (Veh.specs.lexus && (!filter || 'lab-overlap'.includes(filter))) {
   const hm = maxMeasure(mod, 0, 'hinge', 0, -1), hs = maxMeasure(small, 0, 'hinge', 0, -1);
   labCheck('overlap', !pm.length && crush > 0.05 && crush <= 0.54 && hs > hm,
     `40% honeycomb: peak ${mod.metrics.peakDecelG.toFixed(1)} g, honeycomb crushed ${(crush * 100).toFixed(0)} cm, hinge pillar ${(hm * 100).toFixed(1)} cm; 25% rigid: peak ${small.metrics.peakDecelG.toFixed(1)} g, hinge pillar ${(hs * 100).toFixed(1)} cm (must be more)${pm.length ? '; ' + pm.join('; ') : ''}`);
+  // the 3D dummy in the small overlap: the toe pan comes back (the cabin moving, from cabinInput)
+  // and must push the driver's left foot back, which a fixed cabin doesn't
+  const cab = Phys.cabinInput(small, 0), q = cab.names.indexOf('toe');
+  let toe = 0;
+  for (let k = 0; k < cab.t.length; k++) toe = Math.max(toe, Math.hypot(...[0, 1, 2].map(c => cab.p[3 * (k * cab.np + q) + c] - cab.p[3 * q + c])));
+  const occ = (cabin) => Occ.simulate(small.pulse, { belt: true, airbag: true, interior: V.interior, cabin });
+  const fixed = occ(null), moving = occ(cab), i = 3 * Occ.PARTICLES.AL, end = Math.round((small.T0 + 0.15) / (fixed.dt * fixed.poseEvery));
+  let pushed = 0;   // how much further back the left foot is with the cabin moving, at the same moment, in the 150 ms after contact
+  for (let p = 0; p <= end && p * fixed.poseStride < fixed.pose.length; p++) pushed = Math.max(pushed, fixed.pose[p * fixed.poseStride + i] - moving.pose[p * moving.poseStride + i]);
+  labCheck('overlap-occupant', Number.isFinite(moving.metrics.hic15) && toe > 0.08 && pushed > 0.05,
+    `25% rigid: toe pan back ${(toe * 100).toFixed(1)} cm, left foot ${(pushed * 100).toFixed(1)} cm further back than with a fixed cabin (must be over 5 cm); femur ${(moving.metrics.femur / 1000).toFixed(2)} vs ${(fixed.metrics.femur / 1000).toFixed(2)} kN, HIC15 ${moving.metrics.hic15.toFixed(0)} vs ${fixed.metrics.hic15.toFixed(0)}`);
 }
 if (Veh.specs.lexus && (!filter || 'lab-multi'.includes(filter))) {
   const lab = Veh.get('lab'), lex = Veh.get('lexus');
@@ -318,7 +329,7 @@ if (!filter || 'lab-whiplash'.includes(filter)) {
 }
 if (Veh.specs.lexus && (!filter || 'lab-restraint'.includes(filter))) {
   const V = Veh.get('lexus'), res = crash(V, { kmh: 56, damage: 'realistic' });
-  const q = (o) => Occ.simulate(res.pulse, Object.assign({ interior: V.interior }, o));
+  const cabin = Phys.cabinInput(res, 0), q = (o) => Occ.simulate(res.pulse, Object.assign({ interior: V.interior, cabin }, o));
   const none = q({ belt: false, airbag: false }), belt = q({ belt: true, airbag: false, pretensioner: false, loadLimiter: false }), full = q({ belt: true, airbag: true });
   const org = Occ.organs(full, res.pulse), ph = org.phases;
   const ok = none.metrics.hic15 > belt.metrics.hic15 && belt.metrics.hic15 > full.metrics.hic15 && Number.isFinite(org.brainMaxMm) && ph[0].t0 < ph[1].t0 && ph[1].t0 >= 0;

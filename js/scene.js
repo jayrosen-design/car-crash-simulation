@@ -37,8 +37,10 @@ const Scene3D = (() => {
     scene.background = new T.Color(0xb7c2cd);
     scene.fog = new T.Fog(0xb7c2cd, 90, 380);
     camera = new T.PerspectiveCamera(45, 1, 0.1, 2000);
-    camera.layers.enable(1);
-    pipCam = new T.PerspectiveCamera(52, 4 / 3, 0.02, 400);   // layer 0 only: no car body
+    camera.layers.enable(1); camera.layers.enable(2);
+    // layers: 0 the world, 1 car bodies, 2 effects (particles, fire), 3 the glow layer (bloom)
+    pipCam = new T.PerspectiveCamera(52, 4 / 3, 0.02, 400);   // no car body (layer 1)
+    pipCam.layers.enable(2);
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.maxPolarAngle = Math.PI * 0.495;
@@ -69,8 +71,16 @@ const Scene3D = (() => {
     window.addEventListener('resize', resize);
   }
 
+  // the size drawn: the page's, or a fixed size while a video is being saved (setFixedSize)
+  let fixedSize = null;
+  const viewSize = () => fixedSize || { w: container.clientWidth, h: container.clientHeight };
+  function setFixedSize(w, h) {
+    fixedSize = w ? { w, h } : null;
+    renderer.setPixelRatio(fixedSize ? 1 : Math.min(2, window.devicePixelRatio || 1));
+    resize();
+  }
   function resize() {
-    const w = container.clientWidth, h = container.clientHeight;
+    const { w, h } = viewSize();
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.fov = camera.aspect < 1 ? 65 : 45;   // portrait screens need a wider vertical view
@@ -297,7 +307,7 @@ const Scene3D = (() => {
     let imported = null;                 // CarModels instance of the current imported car, or null
     const importedCache = {};            // key -> promise of a CarModels instance
     const wheels = [];
-    let interior, bag, steering, curtain = null;
+    let interior, bag, steering, column, curtain = null;
     const dummy = {}, straps = {};
     let lastStrain = null, visible = true, onboardSide = -1;   // onboard camera outside the driver's door (-1) or the far one (+1)
     const crumpleU = { uStrainMode: { value: 0 }, uCrumple: { value: CarModels.CRUMPLE_DEPTH } };   // the lab car's crumple shading
@@ -518,7 +528,7 @@ const Scene3D = (() => {
       hubM.quaternion.setFromUnitVectors(YAXIS, colN);
       steering.add(rim, hubM);
       steering.position.copy(local(I.hub[0], I.hub[1]));
-      const column = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.42, 12), std(0x22262b, 0.7));
+      column = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.42, 12), std(0x22262b, 0.7));
       placeSeg(column, local(I.hub[0], I.hub[1]), local(I.hub[0] - 0.42 * I.col[0], I.hub[1] - 0.42 * I.col[1]), 0.42);
       bag = new T.Mesh(new T.SphereGeometry(1, 24, 16), new T.MeshStandardMaterial({ color: 0xece8de, roughness: 0.85, transparent: true, opacity: 0.93 }));
       bag.position.copy(local(I.hub[0] + I.bagOffset * I.col[0], I.hub[1] + I.bagOffset * I.col[1]));
@@ -551,60 +561,79 @@ const Scene3D = (() => {
         dummy['foot' + s] = mk(new T.BoxGeometry(0.24, 0.08, 0.1), joint);
       }
     }
-    /* pose: { x[7], y[7], phT, phH, bagR, belt, injury: { head, neck, chest } ratios or null,
-     *         lat: lateral offsets per particle (m, + toward the car's right) instead of phT/phH } */
+    /* pose: { p3: [x, y, z] of the dummy's 15 particles in the H-point frame (occupant.js), bagR,
+     *         hub: [dx, dy, dz] the steering wheel hub's move and col: the column's direction (both
+     *         optional: column intrusion), belt, curtain, injury: { head, neck, chest } ratios or null } */
+    const restQ = (() => {   // each segment's rest orientation, to turn its mesh from
+      const R = OC.restPose(), f = segFrames(R);
+      return { pelvis: f.pelvis.clone().invert(), torso: f.torso.clone().invert() };
+    })();
+    function segFrames(P) {
+      const p = (i) => V(P[3 * i], P[3 * i + 1], P[3 * i + 2]);
+      const basis = (f, u, l) => new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(f, u, l));
+      // pelvis: across the hips, and up toward the sacrum
+      let l = p(PT.HR).sub(p(PT.HL)).normalize(), u = p(PT.SAC).sub(p(PT.HL).add(p(PT.HR)).multiplyScalar(0.5));
+      u.addScaledVector(l, -u.dot(l)).normalize();
+      const pelvis = basis(V().crossVectors(u, l), u, l);
+      // torso: up the spine, across the shoulders
+      u = p(PT.T1).sub(p(PT.SAC)).normalize(); l = p(PT.SHR).sub(p(PT.SHL)); l.addScaledVector(u, -l.dot(u)).normalize();
+      const torso = basis(V().crossVectors(u, l), u, l);
+      return { pelvis, torso };
+    }
     function setDummy(p) {
-      const x = p.x, y = p.y, lat = p.lat ? (i) => p.lat[i] : (i) => {
-        const h = y[i] - y[PT.PEL], hT = y[PT.T1] - y[PT.PEL];
-        if (i === PT.OC || i === PT.HF || i === PT.HB) return hT * Math.sin(p.phT) + (h - hT) * Math.sin(p.phT + p.phH);
-        return h * Math.sin(p.phT);
-      };
-      const L = (i, dz = 0) => local(x[i], y[i], lat(i) + dz);
-      const pel = L(PT.PEL), t1 = L(PT.T1);
-      const tdx = x[PT.T1] - x[PT.PEL], tdy = y[PT.T1] - y[PT.PEL], tl = Math.hypot(tdx, tdy);
-      const nrm = [tdy / tl, -tdx / tl];
-      dummy.pelvis.position.copy(pel).add(V(-0.03, 0.02, 0));
-      dummy.pelvis.rotation.set(0, 0, 0);
-      placeSeg(dummy.torso, pel.clone().add(V(-0.02, 0.1, 0)), t1.clone().add(V(0, -0.05, 0)), 0.4);
-      dummy.torso.scale.x = 1.0; dummy.torso.scale.z = 1.55;
+      const P = p.p3, L = (i, dz = 0) => local(P[3 * i], P[3 * i + 1], P[3 * i + 2] + dz);
+      const f = segFrames(P), qP = f.pelvis.clone().multiply(restQ.pelvis), qT = f.torso.clone().multiply(restQ.torso);
+      const hl = L(PT.HL), hr = L(PT.HR), sac = L(PT.SAC), t1 = L(PT.T1);
+      dummy.pelvis.position.copy(hl).add(hr).multiplyScalar(0.5).add(V(-0.03, 0.02, 0).applyQuaternion(qP));
+      dummy.pelvis.quaternion.copy(qP);
+      // torso: a wide capsule up the spine, turned with the chest
+      const tUp = V(0, 1, 0).applyQuaternion(f.torso);
+      const ta = sac.clone().addScaledVector(tUp, 0.06), tb = t1.clone().addScaledVector(tUp, -0.05);
+      dummy.torso.position.copy(ta).add(tb).multiplyScalar(0.5);
+      dummy.torso.quaternion.copy(f.torso);
+      dummy.torso.scale.set(1.0, ta.distanceTo(tb) / 0.4, 1.55);
       const oc = L(PT.OC);
       placeSeg(dummy.neck, t1, oc, 0.1);
       const hf = L(PT.HF), hb = L(PT.HB), hc = hf.clone().add(hb).multiplyScalar(0.5);
-      const fwd = V().subVectors(hf, hb).normalize(), upv = V(-fwd.y, fwd.x, 0).normalize();
+      const fwd = V().subVectors(hf, hb).normalize(), upv = V().subVectors(hc, oc);
+      upv.addScaledVector(fwd, -upv.dot(fwd)).normalize();
       const side = V().crossVectors(fwd, upv).normalize();
       const hq = new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(fwd, upv, side));
-      const roll = p.lat ? Math.atan2(p.lat[PT.HF] - p.lat[PT.OC], 0.1) : p.phT + p.phH;
-      hq.multiply(new T.Quaternion().setFromAxisAngle(V(1, 0, 0), roll));
       dummy.head.position.copy(hc);
       // sphere UVs put u = 0.25 / 0.75 (the target decals) on local +z / -z, i.e. the head's sides
       dummy.head.quaternion.copy(hq);
       dummy.face.position.copy(hc).addScaledVector(fwd, 0.095).addScaledVector(upv, -0.01);
       dummy.face.quaternion.copy(hq);
+      // the steering column, moved by intrusion, with the wheel and airbag on it
+      const col0 = V(I.col[0], I.col[1], 0).normalize(), col = p.col ? V(p.col[0], p.col[1], p.col[2]).normalize() : col0;
+      const hub = local(I.hub[0] + (p.hub ? p.hub[0] : 0), I.hub[1] + (p.hub ? p.hub[1] : 0), p.hub ? p.hub[2] : 0);
+      steering.position.copy(hub);
+      steering.quaternion.setFromUnitVectors(col0, col);
+      placeSeg(column, hub, hub.clone().addScaledVector(col, -0.42), 0.42);
+      bag.position.copy(hub).addScaledVector(col, I.bagOffset);
+      bag.quaternion.setFromUnitVectors(V(1, 0, 0), col);
       // arms reach for the rim
-      const hub = local(I.hub[0], I.hub[1]);
+      const rimUp = V(0, 1, 0).addScaledVector(col, -col.y).normalize(), across = V().crossVectors(col, rimUp).normalize();
       for (const [s, sz] of [['L', -1], ['R', 1]]) {
-        const sh = t1.clone().add(V(nrm[0] * 0.02, -0.04, sz * 0.2));
-        const target = hub.clone().add(V(I.rimDir[0] * 0.11 + I.col[0] * 0.04, I.rimDir[1] * 0.11 + I.col[1] * 0.04, sz * 0.16));
+        const sh = L(sz < 0 ? PT.SHL : PT.SHR);
+        const target = hub.clone().addScaledVector(rimUp, 0.11).addScaledVector(col, 0.04).addScaledVector(across, sz * 0.16);
         const { elbow, hand } = twoBone(sh, target, 0.29, 0.29, V(0, -1, sz * 0.8));
         placeSeg(dummy['upper' + s], sh, elbow, 0.24); placeSeg(dummy['fore' + s], elbow, hand, 0.24);
         dummy['hand' + s].position.copy(hand);
-        // legs: knees follow the pelvis partly; feet stay on the floor
-        const dxp = x[PT.PEL] - p.x0, dyp = y[PT.PEL] - p.y0;
-        const hip = pel.clone().add(V(0.02, -0.02, sz * 0.1));
-        const knee = local(0.44 + 0.6 * dxp, 0.08 + 0.5 * dyp, sz * 0.12 + (p.lat ? 0.6 * p.lat[PT.PEL] : 0));
-        const ankle = local(0.8, -0.24, sz * 0.13);
+        // legs, from the dummy's hips, knees and ankles
+        const hip = L(sz < 0 ? PT.HL : PT.HR), knee = L(sz < 0 ? PT.KL : PT.KR), ankle = L(sz < 0 ? PT.AL : PT.AR);
         placeSeg(dummy['thigh' + s], hip, knee, 0.36); placeSeg(dummy['shin' + s], knee, ankle, 0.36);
         dummy['foot' + s].position.copy(ankle).add(V(0.08, -0.03, 0));
       }
-      // restraints
+      // restraints, along the same paths as the occupant model's belts
       const beltOn = !!p.belt;
       for (const k in straps) straps[k].visible = beltOn;
       if (beltOn) {
-        const D = local(I.dRing[0], I.dRing[1], -0.26), SH = t1.clone().add(V(nrm[0] * 0.08, nrm[1] * 0.08 + 0.02, -0.13));
-        const ST = L(PT.STN, 0.02).add(V(0.02, 0, 0)), B = local(I.buckle[0], I.buckle[1], 0.22);
-        placeSeg(straps.s1, D, SH, 1); placeSeg(straps.s2, SH, ST, 1); placeSeg(straps.s3, ST, B, 1);
-        const LA = local(I.lapAnchor[0], I.lapAnchor[1], -0.25), p1 = pel.clone().add(V(0.13, 0.03, -0.15)), p2 = pel.clone().add(V(0.13, 0.03, 0.15));
-        placeSeg(straps.l1, LA, p1, 1); placeSeg(straps.l2, p1, p2, 1); placeSeg(straps.l3, p2, B, 1);
+        const bp = OC.beltPaths(P, I), Lp = (q) => local(q[0], q[1], q[2]);
+        const sp = bp.shoulder.map(Lp), lp = bp.lap.map(Lp);
+        sp[1].addScaledVector(V(0, 1, 0).applyQuaternion(f.torso), 0.03);   // over the top of the collarbone
+        placeSeg(straps.s1, sp[0], sp[1], 1); placeSeg(straps.s2, sp[1], sp[2], 1); placeSeg(straps.s3, sp[2], sp[3], 1);
+        placeSeg(straps.l1, lp[0], lp[1], 1); placeSeg(straps.l2, lp[1], lp[2], 1); placeSeg(straps.l3, lp[2], lp[3], 1);
       }
       bag.visible = p.bagR > 0.005;
       if (bag.visible) bag.scale.set(p.bagR * 0.75, p.bagR * 1.05, p.bagR * 1.15);
@@ -797,7 +826,7 @@ const Scene3D = (() => {
     controls.enabled = mode === 'setup' || mode === 'free';
     camera.up.set(0, 1, 0);
     if (opts.f0) { ctx.f0.copy(opts.f0); ctx.l0.set(-opts.f0.z, 0, opts.f0.x); }
-    camera.layers.set(0);
+    camera.layers.set(0); camera.layers.enable(2);
     if (mode !== 'onboard') camera.layers.enable(1);
     if (mode === 'free') {
       followAt = followPoint().clone();
@@ -851,8 +880,98 @@ const Scene3D = (() => {
     camera.position.copy(camSmoothed.pos);
     camera.lookAt(camSmoothed.look);
   }
+  // Camera shake, set by the replay every frame (cinematic.js): an amount (1 is strong), the replay
+  // time, which drives the wobble so it slows down in slow motion, and the world direction of the
+  // deceleration, along which most of it goes. Off when the viewer prefers reduced motion.
+  const shk = { on: !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches), amp: 0, target: 0, t: 0, dir: V(1, 0, 0), off: V(), roll: 0 };
+  function setShake(amount, t, dir) {
+    shk.target = shk.on ? Math.max(0, amount) : 0; shk.t = t || 0;
+    if (dir) shk.dir.set(dir[0], 0, dir[2]).normalize();
+  }
+  // a smooth wobble in -1..1 (three incommensurate sines), at replay time t
+  const wob = (t, ph) => (Math.sin(2 * Math.PI * 23 * t + ph) + 0.6 * Math.sin(2 * Math.PI * 37 * t + 2.1 * ph) + 0.35 * Math.sin(2 * Math.PI * 61 * t + 3.7 * ph)) / 1.95;
+  function applyShake(dt) {
+    shk.amp += (shk.target - shk.amp) * (1 - Math.exp(-dt * 10));
+    if (shk.amp < 0.002 || camMode === 'onboard') return false;
+    const look = camMode === 'free' || camMode === 'setup' ? controls.target : (camSmoothed ? camSmoothed.look : main.ctx.o);
+    const a = shk.amp * 0.010 * camera.position.distanceTo(look), side = V().crossVectors(shk.dir, UP);
+    shk.off.copy(shk.dir).multiplyScalar(a * wob(shk.t, 0)).addScaledVector(side, 0.45 * a * wob(shk.t, 1.3)).addScaledVector(UP, 0.35 * a * wob(shk.t, 2.9));
+    shk.roll = 0.014 * shk.amp * wob(shk.t, 4.4);
+    camera.position.add(shk.off); camera.rotateZ(shk.roll);
+    return true;
+  }
+  // Bloom: a glow around fire, embers and hot sparks. Their glow twins (layer 3) are drawn into a
+  // half-size buffer over the solid scene drawn in black, so the car and barrier hide what is behind
+  // them; that is blurred down a chain of ever smaller buffers and back up (dual-filter blur) and
+  // added on top of the frame. Runs only while something glows.
+  let bloom = null;
+  function buildBloom() {
+    const VS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+    const mat = (fs, additive) => new T.ShaderMaterial({ vertexShader: VS, fragmentShader: fs, depthTest: false, depthWrite: false,
+      uniforms: { src: { value: null }, texel: { value: new T.Vector2() }, strength: { value: 1 } }, blending: additive ? T.AdditiveBlending : T.NoBlending, transparent: !!additive });
+    const DOWN = `uniform sampler2D src; uniform vec2 texel; varying vec2 vUv;
+      void main() { gl_FragColor = (4.0 * texture2D(src, vUv) + texture2D(src, vUv - texel) + texture2D(src, vUv + texel)
+        + texture2D(src, vUv + vec2(texel.x, -texel.y)) + texture2D(src, vUv - vec2(texel.x, -texel.y))) / 8.0; }`;
+    const UP = `uniform sampler2D src; uniform vec2 texel; uniform float strength; varying vec2 vUv;
+      void main() { vec2 t = texel;
+        vec4 s = texture2D(src, vUv + vec2(-2.0 * t.x, 0.0)) + texture2D(src, vUv + vec2(2.0 * t.x, 0.0)) + texture2D(src, vUv + vec2(0.0, 2.0 * t.y)) + texture2D(src, vUv + vec2(0.0, -2.0 * t.y))
+          + 2.0 * (texture2D(src, vUv + vec2(-t.x, t.y)) + texture2D(src, vUv + t) + texture2D(src, vUv + vec2(t.x, -t.y)) + texture2D(src, vUv - t));
+        gl_FragColor = vec4(s.rgb / 12.0 * strength, 1.0); }`;
+    const quad = new T.Mesh(new T.PlaneGeometry(2, 2));
+    quad.frustumCulled = false;
+    return { quad, cam: new T.OrthographicCamera(-1, 1, 1, -1, 0, 1), down: mat(DOWN), up: mat(UP, true), black: new T.MeshBasicMaterial({ color: 0x000000 }),
+      glow: null, levels: [], w: 0, h: 0, swap: [] };
+  }
+  function bloomPass(B, m, src, dst) {
+    m.uniforms.src.value = src.texture; m.uniforms.texel.value.set(1 / src.width, 1 / src.height);
+    B.quad.material = m;
+    renderer.setRenderTarget(dst);
+    renderer.render(B.quad, B.cam);
+  }
+  function renderBloom(w, h) {
+    if (!scene.children.some(o => o.visible && o.layers.mask === 8)) return;
+    const B = bloom || (bloom = buildBloom()), pr = renderer.getPixelRatio();
+    const W = Math.max(8, Math.round(w * pr / 2)), H = Math.max(8, Math.round(h * pr / 2));
+    if (W !== B.w || H !== B.h) {
+      if (B.glow) { B.glow.dispose(); B.levels.forEach(L => L.dispose()); }
+      B.glow = new T.WebGLRenderTarget(W, H, { type: T.HalfFloatType });
+      B.levels = [];
+      for (let lw = W >> 1, lh = H >> 1; lw >= 8 && lh >= 8 && B.levels.length < 5; lw >>= 1, lh >>= 1) B.levels.push(new T.WebGLRenderTarget(lw, lh, { type: T.HalfFloatType, depthBuffer: false }));
+      B.w = W; B.h = H;
+    }
+    const autoClear = renderer.autoClear, shadows = renderer.shadowMap.autoUpdate, mask = camera.layers.mask, bg = scene.background, fog = scene.fog;
+    const clear = renderer.getClearColor(new T.Color()), clearA = renderer.getClearAlpha();
+    renderer.autoClear = false; renderer.shadowMap.autoUpdate = false;
+    renderer.setRenderTarget(B.glow); renderer.setClearColor(0x000000, 1); renderer.clear();
+    // the solid scene in black (car bodies in a black that deforms with them; overlays left out)
+    scene.background = null; scene.fog = null;
+    camera.layers.set(0); camera.layers.enable(1);
+    const sw = B.swap; sw.length = 0;
+    scene.traverseVisible(o => {
+      if (!o.isMesh && !o.isLine) return;
+      if (o.material.transparent && !o.material.depthWrite) { sw.push(o, null); o.visible = false; return; }
+      sw.push(o, o.material); o.material = o.userData.blackMat || B.black;
+    });
+    renderer.render(scene, camera);
+    for (let i = 0; i < sw.length; i += 2) { if (sw[i + 1]) sw[i].material = sw[i + 1]; else sw[i].visible = true; }
+    // what glows, hidden where the scene is in front of it
+    camera.layers.set(3);
+    renderer.render(scene, camera);
+    camera.layers.mask = mask; scene.background = bg; scene.fog = fog;
+    // blur down, then back up adding each level, then add onto the frame
+    let src = B.glow;
+    for (const L of B.levels) { bloomPass(B, B.down, src, L); src = L; }
+    B.up.uniforms.strength.value = 1;
+    for (let i = B.levels.length - 1; i > 0; i--) bloomPass(B, B.up, B.levels[i], B.levels[i - 1]);
+    B.up.uniforms.strength.value = 1.1;
+    renderer.setViewport(0, 0, w, h);
+    bloomPass(B, B.up, B.levels[0], null);
+    renderer.setClearColor(clear, clearA); renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = shadows;
+  }
   function render(dt, showPip, bottomInset) {
     updateCamera(dt);
+    const shaking = applyShake(dt);
+    FX.listen(camera.position, camera.getWorldDirection(V()), camera.up);
     const ctx = main.ctx;
     // Keep the shadow frustum on the action, snapped to whole shadow-map texels in the light's
     // own frame; sliding it by fractions of a texel every frame makes shadows shimmer.
@@ -861,11 +980,13 @@ const Scene3D = (() => {
     const snap = (v) => Math.round(v / texel) * texel;
     const c = V().addScaledVector(right, snap(ctx.o.dot(right))).addScaledVector(up2, snap(ctx.o.dot(up2))).addScaledVector(L, ctx.o.dot(L));
     sun.target.position.copy(c); sun.position.copy(c).add(SUN_OFFSET);
-    const w = container.clientWidth, h = container.clientHeight, pr = renderer.getPixelRatio();
+    const { w, h } = viewSize(), pr = renderer.getPixelRatio();
     particles.setScale(pr * h / (2 * Math.tan(camera.fov * Math.PI / 360)));
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);
     renderer.render(scene, camera);
+    renderBloom(w, h);
+    if (shaking) { camera.rotateZ(-shk.roll); camera.position.sub(shk.off); }
     pipRect = null;
     if (showPip && camMode !== 'onboard') {
       const pw = Math.round(Math.min(360, w * 0.28)), ph = Math.round(pw * 0.75), px = 12, py = (bottomInset || 0) + 12;
@@ -880,11 +1001,12 @@ const Scene3D = (() => {
   }
 
   return {
-    init, resize, render, setPath, setBarrier, setBricks, resetBricks,
+    init, resize, setFixedSize, render, setPath, setBarrier, setBricks, resetBricks,
     setCarRigid: (...a) => main.setCarRigid(...a), setCarDeformed: (...a) => main.setCarDeformed(...a), setCabinFrame: (...a) => main.setCabinFrame(...a),
     setVehicle: (key) => main.setVehicle(key),
     setDestruction: (r) => main.setDestruction(r), updateDestruction: (...a) => main.updateDestruction(...a), setHeadStrikes: (l) => main.setHeadStrikes(l),
-    setDummy: (p) => main.setDummy(p), setStrainMode, setXray, setCameraMode, setFollow, createSlot,
+    setDummy: (p) => main.setDummy(p), setStrainMode, setXray, setCameraMode, setFollow, createSlot, setShake,
+    get shakeEnabled() { return shk.on; }, set shakeEnabled(on) { shk.on = on; if (!on) shk.target = 0; },
     get main() { return main; }, get slots() { return slots; },
     get particles() { return particles; }, get pipRect() { return pipRect; }, get cabin() { return main.ctx; },
     get vehicleModel() { return main.vehicleModel; }, get renderer() { return renderer; }, get scene() { return scene; },
@@ -892,7 +1014,6 @@ const Scene3D = (() => {
     get hPoint() { return main.hPoint; },
     get wallLayout() { return wallLayout; },
     onAngleDrag(fn) { onAngleDrag = fn; },
-    screenPan(v) { const p = V(v[0], v[1], v[2]).project(camera); return Math.max(-1, Math.min(1, p.x)); },
     canvasTexture,
   };
 })();

@@ -67,6 +67,7 @@
   const LABS = {};
   let lab = null, cfg = null;
   let state = 'setup', approach = null, task = null, play = null, charts = [], events = [], evIdx = 0, toastTimer = 0;
+  let cine = null, pbAuto = null;   // bullet-time, shake and structural sound of the replay (cinematic.js); a lab's own speed plan
 
   Scene3D.init($('#view'));
   $('#loading').remove();
@@ -212,6 +213,7 @@
     if (lab.reset) lab.reset();
     Scene3D.setFollow(null);
     setHazards(null);
+    Scene3D.setShake(0); FX.structureUpdate(0); FX.setTimeScale(1);
     setState('setup');
     preview();
   }
@@ -219,7 +221,12 @@
     const r = task.finish(); task = null;
     if (!r) { toSetup(); return; }
     const pb = lab.results(r);
-    play = { t: pb.tStart, tStart: pb.tStart, tEnd: pb.tEnd, t0: pb.t0, playing: true, speed: +$('#tl-speed').value, auto: pb.auto || null, after: 0 };
+    // the replay's bullet-time and shake: from the crash result, from the lab, or (no crash pulse)
+    // just the kicks of its events
+    cine = pb.cine || (r.units && r.frames ? Cinematic.fromCrash(r, pb.events || [])
+      : Cinematic.track({ t0: 0, g: new Float64Array(Math.ceil(pb.tEnd / Cinematic.BIN) + 2) }, { events: pb.events || [] }));
+    pbAuto = pb.auto || null;
+    play = Object.assign({ t: pb.tStart, tStart: pb.tStart, tEnd: pb.tEnd, t0: pb.t0, playing: true, after: 0 }, speedSetting());
     setHazards(r);
     events = (pb.events || []).slice().sort((a, b) => a.t - b.t);
     if (pb.camera) { setCamera(pb.camera); $$('.seg[data-name=camera] button').forEach(b => b.classList.toggle('on', b.dataset.v === pb.camera)); }
@@ -276,7 +283,10 @@
     if (!play.playing && play.t >= play.tEnd - 1e-6) { play.t = play.tStart; resetEventCursor(); Scene3D.particles.clear(); }
     play.playing = !play.playing;
   }
-  $('#tl-speed').addEventListener('change', (e) => { if (play) { play.speed = +e.target.value; play.auto = null; } });
+  // the speed setting: a fixed playback speed, or bullet-time (the lab's own plan, or the speed
+  // following the crash pulse)
+  function speedSetting() { const v = $('#tl-speed').value; return v === 'auto' ? { speed: Cinematic.FAST, auto: pbAuto || ((t) => cine.speed(t)) } : { speed: +v, auto: null }; }
+  $('#tl-speed').addEventListener('change', () => { if (play) Object.assign(play, speedSetting()); });
   $('#tl-scrub').addEventListener('input', (e) => { if (play) scrubTo(play.tStart + (+e.target.value / 1000) * (play.tEnd - play.tStart)); });
   function scrubTo(t) {
     if (!play) return;
@@ -284,12 +294,20 @@
     resetEventCursor(); Scene3D.particles.clear();
   }
   window.addEventListener('keydown', (e) => {
-    if (state !== 'playback' || e.target.matches('input[type=number], select')) return;
+    if (state !== 'playback' || VideoExport.busy || e.target.matches('input[type=number], select')) return;
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
     if (e.code === 'ArrowRight') scrubTo(play.t + (e.shiftKey ? 0.01 : 0.001));
     if (e.code === 'ArrowLeft') scrubTo(play.t - (e.shiftKey ? 0.01 : 0.001));
   });
   function setCamera(mode) { if (lab.camera && lab.camera(mode)) return; Scene3D.setCameraMode(mode); }
+  const hasPip = () => lab !== LABS.whiplash && lab !== LABS.pedestrian;   // the onboard camera's inset
+  $('#btn-video').addEventListener('click', async () => {
+    if (!play || VideoExport.busy) return;
+    document.body.classList.add('exporting');
+    await VideoExport.saveReplay({ play, step: updatePlayback, resetEvents: resetEventCursor, toast: (m) => toast(m, 7000), pip: hasPip(),
+      title: lab.title.replace(/ lab$/, ''), fileName: `car-crash-${LAB_ID}.mp4` });
+    document.body.classList.remove('exporting');
+  });
   // the default view: the free camera (orbit and zoom with the mouse), following the car, from a
   // starting view chosen for the lab
   function freeCam(opts) {
@@ -304,6 +322,8 @@
   $('#tg-strain').addEventListener('change', (e) => { Scene3D.setStrainMode(e.target.checked); updateLegend(); });
   $('#tg-injury').addEventListener('change', updateLegend);
   $('#tg-xray').addEventListener('change', (e) => Scene3D.setXray(e.target.checked));
+  $('#tg-shake').checked = Scene3D.shakeEnabled;
+  $('#tg-shake').addEventListener('change', (e) => { Scene3D.shakeEnabled = e.target.checked; });
   function updateLegend() {
     const lg = $('#legend'), parts = [];
     if (state === 'playback' && $('#tg-strain').checked) parts.push(['Car: plastic strain', 'linear-gradient(90deg,#c9ced6,#f0e442 25%,#e69f00 55%,#a8380a)', 'none', 'heavy']);
@@ -329,22 +349,22 @@
     while (evIdx < events.length && events[evIdx].t <= tB) {
       const e = events[evIdx++];
       if (e.t < tA) continue;
-      const pan = e.x !== undefined ? Scene3D.screenPan([e.x, e.y, e.z]) : 0;
-      if (e.type === 'first') { FX.crunch(1, pan); if (e.x !== undefined) { parts.spawn(e.x, e.y, e.z, 30, 'spark', [-1, 0.3, 0]); parts.spawn(e.x, e.y, e.z, 14, 'dust'); } }
+      const o = Scene3D.cabin.o, pos = e.x !== undefined ? [e.x, e.y, e.z] : null, inCar = [o.x, o.y, o.z];
+      if (e.type === 'first') { FX.crunch(1, pos); if (e.x !== undefined) { parts.spawn(e.x, e.y, e.z, 30, 'spark', [-1, 0.3, 0]); parts.spawn(e.x, e.y, e.z, 14, 'dust'); } }
       else if (e.type === 'contact') {
-        if (e.t - lastCrunch > 0.03) { FX.crunch(Math.min(1, e.mag / (e.ref || 1)), pan); lastCrunch = e.t; }
+        if (e.t - lastCrunch > 0.03) { FX.crunch(Math.min(1, e.mag / (e.ref || 1)), pos); lastCrunch = e.t; }
         if (Math.random() < 0.5) parts.spawn(e.x, e.y, e.z, 3, 'spark', [-1, 0.2, 0]);
         if (Math.random() < 0.3) parts.spawn(e.x, Math.max(0.2, e.y), e.z, 2, 'dust');
-      } else if (e.type === 'detach') { FX.clank(e.mass, pan); parts.spawn(e.x, e.y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); parts.spawn(e.x, Math.max(0.2, e.y), e.z, 4, 'dust'); }
-      else if (e.type === 'glass') { FX.glass(e.mass, pan); parts.spawn(e.x, e.y, e.z, 10, 'glass'); }
-      else if (e.type === 'crack') FX.crack(0.8, pan);
-      else if (e.type === 'burst') { FX.pop(pan); parts.spawn(e.x, 0.15, e.z, 10, 'dust'); }
-      else if (e.type === 'airbag' || e.type === 'curtain') FX.pop(0);
-      else if (e.type === 'headStrike') FX.hit(e.mag, 0);
-      else if (e.type === 'sideGlass') FX.glass(0.4, 0);
+      } else if (e.type === 'detach') { FX.tear(e.mass, pos); FX.clank(e.mass, pos); parts.spawn(e.x, e.y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); parts.spawn(e.x, Math.max(0.2, e.y), e.z, 4, 'dust'); }
+      else if (e.type === 'glass') { FX.glass(e.mass, pos); parts.spawn(e.x, e.y, e.z, 10, 'glass'); }
+      else if (e.type === 'crack') FX.crack(0.8, pos);
+      else if (e.type === 'burst') { FX.blowout(pos); parts.spawn(e.x, 0.15, e.z, 10, 'dust'); }
+      else if (e.type === 'airbag' || e.type === 'curtain') FX.pop(inCar);
+      else if (e.type === 'headStrike') FX.hit(e.mag, inCar);
+      else if (e.type === 'sideGlass') FX.glass(0.4, inCar);
       else if (e.type === 'warn') FX.beep(1760);
       else if (e.type === 'brake') FX.beep(1320);
-      else if (e.type === 'thud') FX.thud(e.mass || 30, pan);
+      else if (e.type === 'thud') FX.thud(e.mass || 30, pos || inCar);
     }
   }
   function frameIndex(T, t) {
@@ -369,15 +389,21 @@
   function updatePlayback(dt) {
     if (play.playing) {
       const sp = play.auto ? play.auto(play.t) : play.speed;
+      FX.setTimeScale(sp);
       const t1 = Math.min(play.tEnd, play.t + dt * sp);
       fireEvents(play.t, t1);
       Scene3D.particles.update(t1 - play.t);
       play.t = t1;
       if (play.t >= play.tEnd) play.playing = false;
     }
+    if (!play.playing) FX.setTimeScale(1);
     // after the replay: steam and fire carry on in real time
     play.after = hazards.length && play.t >= play.tEnd - 1e-9 ? play.after + dt : 0;
     applyFrame(play.t);
+    // while it plays: the camera shakes and the structure groans with the crash
+    const o = Scene3D.cabin.o;
+    Scene3D.setShake(play.playing ? cine.shake(play.t) : 0, play.t, cine.dir);
+    FX.structureUpdate(play.playing ? cine.power(play.t) : 0, [o.x, o.y, o.z]);
   }
 
   // ---------------------------------------------------------------- shared crash helpers
@@ -407,15 +433,9 @@
     return [k, k2, s];
   }
   // frontal dummy pose at time t from an occupant run
-  function frontalDummy(occ, t, injury) {
-    const pi = clamp(Math.round(t / (occ.dt * occ.poseEvery)), 0, Math.ceil(occ.n / occ.poseEvery) - 1);
-    const o = pi * occ.poseStride, NP = Occ.PARTICLES.NP, xs = new Array(NP), ys = new Array(NP);
-    for (let i = 0; i < NP; i++) { xs[i] = occ.pose[o + 2 * i]; ys[i] = occ.pose[o + 2 * i + 1]; }
-    return { x: xs, y: ys, phT: occ.pose[o + 2 * NP], phH: occ.pose[o + 2 * NP + 1], bagR: occ.pose[o + 2 * NP + 2], belt: occ.belt,
-      x0: occ.seated.x[0], y0: occ.seated.y[0], injury: injury || null };
-  }
+  function frontalDummy(occ, t, injury) { return Object.assign(Occ.poseAt(occ, t), { injury: injury || null }); }
   const restPose = Occ.restPose();
-  function seatedDummy(extra) { return Object.assign({ x: restPose.x, y: restPose.y, phT: 0, phH: 0, bagR: 0, belt: true, injury: null, x0: restPose.x[0], y0: restPose.y[0] }, extra || {}); }
+  function seatedDummy(extra) { return Object.assign({ p3: restPose, bagR: 0, belt: true, injury: null }, extra || {}); }
   // Running injury ratios for the injury map (value so far / limit), as in the free simulator.
   function injurySeries(o) {
     const S = o.metrics.series, n = o.n, dt = o.dt, W = Math.round(0.015 / dt);
@@ -553,7 +573,7 @@
       results(r) {
         res = r;
         Scene3D.setDestruction(res);
-        occ = Occ.simulate(res.pulse, { belt: true, airbag: true, interior: spec.interior });
+        occ = Occ.simulate(res.pulse, { belt: true, airbag: true, interior: spec.interior, cabin: Phys.cabinInput(res, 0) });
         inj = injurySeries(occ);
         const t0 = res.contact ? res.T0 : 0, m = res.metrics, U = res.units[0], M = U.measure;
         clearResults();
@@ -573,6 +593,7 @@
         metricRow(oc, 'Chest acceleration, 3 ms', qm.chest3ms, ' g', L.chest3ms, 1);
         metricRow(oc, 'Chest deflection', qm.chestDeflMm, ' mm', L.chestDefl, 1);
         metricRow(oc, 'Neck injury criterion (Nij)', qm.nij, '', L.nij, 2);
+        metricRow(oc, `Femur force (${qm.femurSide || 'either'} leg)`, qm.femur / 1000, ' kN', L.femur / 1000, 2);
         const vc = section('Vehicle', 'vehicle');
         metricRow(vc, 'Impact speed', m.impactSpeed / MPH, ' mph', null, 1);
         metricRow(vc, 'Speed change (Δv)', U.metrics.deltaVVector / MPH, ' mph', null, 1);
@@ -600,7 +621,7 @@
         lineChart(tab('occupant'), { title: 'Head acceleration, g (CFC 1000)', value: `HIC15 ${fmt(qm.hic15)}`, xRange: xr, shade: [(qm.hicT1 - t0) * 1000, (qm.hicT2 - t0) * 1000], series: [{ x: tms, y: S.head.r, color: COL.orange, label: 'resultant', width: 2 }] });
         lineChart(tab('occupant'), { title: 'Chest deflection, mm', value: `${fmt(qm.chestDeflMm, 1)} mm`, xRange: xr, limits: [{ y: L.chestDefl, label: '63 mm' }], series: [{ x: tms, y: Float64Array.from(S.defl, v => v * 1000), color: COL.blue, label: 'sternum to spine', width: 2 }] });
         energyChart(tab('energy'), res, t0);
-        Scene3D.setHeadStrikes(occ.events.filter(e => e.type === 'headStrike' && e.surface === 'windshield').map(e => ({ t: e.t, mag: e.mag, p: [spec.hPoint[0] + e.hx, spec.hPoint[1] + e.hy, spec.hPoint[2]] })));
+        Scene3D.setHeadStrikes(occ.events.filter(e => e.type === 'headStrike' && e.surface === 'windshield').map(e => ({ t: e.t, mag: e.mag, p: [spec.hPoint[0] + e.hx, spec.hPoint[1] + e.hy, spec.hPoint[2] + e.hz] })));
         this.series = series; this.t0 = t0;
         return { tStart: Math.max(res.frames.t[0], t0 - 0.02), tEnd: res.tEnd, t0, events: crashEvents(res, occ.events) };
       },
@@ -726,7 +747,7 @@
       results(r) {
         res = r;
         Scene3D.main.setDestruction(unitView(res, 0)); slotB.setDestruction(unitView(res, 1));
-        occs = res.units.map(U => Occ.simulate(U.pulse, { belt: true, airbag: true, interior: U.spec.interior }));
+        occs = res.units.map((U, u) => Occ.simulate(U.pulse, { belt: true, airbag: true, interior: U.spec.interior, cabin: Phys.cabinInput(res, u) }));
         const t0 = res.contact ? res.T0 : 0;
         clearResults();
         const [A, B] = res.units, mA = A.massKg, mB = B.massKg;
@@ -815,13 +836,15 @@
       if (cfg.impactor === 'pole') pole = LabScene.pole(poleDef());
       else trolley = LabScene.trolley(Veh.MDB);
     }
+    // the side dummy's sideways movement applied to the seated frontal dummy, segment by segment
     function sideDummyPose(o, t) {
-      const pi = clamp(Math.round(t / (o.dt * o.poseEvery)), 0, Math.ceil(o.n / o.poseEvery) - 1), b = pi * o.poseStride, P = Occ.SIDE_PARTICLES;
-      const s = (i) => o.pose[b + 2 * i], s0 = (i) => o.pose[2 * i];   // first pose = seated
-      const lat = new Array(7).fill(0), FP = Occ.PARTICLES;
-      lat[FP.PEL] = -(s(P.PEL) - s0(P.PEL)); lat[FP.THX] = -(s(P.THX) - s0(P.THX)); lat[FP.STN] = lat[FP.THX]; lat[FP.T1] = -(s(P.T1) - s0(P.T1));
-      lat[FP.OC] = -(s(P.OC) - s0(P.OC)); lat[FP.HF] = lat[FP.HB] = -(s(P.HD) - s0(P.HD));
-      return seatedDummy({ lat, curtain: o.pose[b + 2 * P.NP] });
+      const pi = clamp(Math.round(t / (o.dt * o.poseEvery)), 0, Math.ceil(o.n / o.poseEvery) - 1), b = pi * o.poseStride, P = Occ.SIDE_PARTICLES, FP = Occ.PARTICLES;
+      const d = (i) => -(o.pose[b + 2 * i] - o.pose[2 * i]);   // + toward the car's right; the first pose is the seated one
+      const p3 = Float64Array.from(restPose), move = (ids, dz) => { for (const i of ids) p3[3 * i + 2] += dz; };
+      move([FP.HL, FP.HR, FP.SAC], d(P.PEL)); move([FP.KL, FP.KR], 0.6 * d(P.PEL));
+      move([FP.THX, FP.STN], d(P.THX)); move([FP.T1, FP.SHL, FP.SHR], d(P.T1));
+      move([FP.OC], d(P.OC)); move([FP.HF, FP.HB], d(P.HD));
+      return seatedDummy({ p3, curtain: o.pose[b + 2 * P.NP] });
     }
     function runDummy() {
       side = Occ.simulateSide(input, { curtain: cfg.curtain });
@@ -1002,7 +1025,11 @@
         lineChart(tab('neck'), { title: 'Neck injury criterion NIC, m²/s²', value: `${fmt(m.nic, 1)}`, xRange: xr, limits: [{ y: L.nic, label: '15' }], series: [{ x: tms, y: nic, color: COL.yellow, label: 'NIC', width: 2 }] });
         const evs = [{ t: t0, type: 'thud', mass: 60 }];
         if (m.contactMs >= 0) evs.push({ t: t0 + m.contactMs / 1000, type: 'headStrike', mag: 3000 });
-        return { tStart: 0, tEnd: 0.3, t0, events: evs, camera: 'free' };
+        // bullet-time and shake follow the sled's acceleration
+        const per = Math.max(1, Math.round(Cinematic.BIN / out.dt)), gs = new Float64Array(Math.ceil(out.n / per));
+        for (let k = 0; k < out.n; k++) gs[Math.floor(k / per)] = Math.max(gs[Math.floor(k / per)], Math.abs(S.sled[k]));
+        const cine = Cinematic.track({ t0: 0, g: gs, dir: [1, 0, 0] }, { tContact: t0, events: evs });
+        return { tStart: 0, tEnd: 0.3, t0, events: evs, camera: 'free', cine };
       },
       camera(mode) {
         const frames = { side: [V3(0.6, 1.4, -3.4), V3(0.1, 1.0, 0)], front: [V3(2.6, 1.6, -2.6), V3(0, 1.0, 0)], top: [V3(0.2, 4.2, -0.4), V3(0.2, 0.9, 0)], onboard: [V3(0.25, 1.75, -0.9), V3(-0.1, 1.45, 0)], free: [V3(1.1, 1.5, -3.3), V3(0.1, 1.0, 0)] };
@@ -1040,9 +1067,9 @@
     };
     let res = null, runs = null, occ = null, org = null, trail = null, inj = null;
     const occOpts = (k) => Object.assign({ interior: spec.interior }, OPTS[k]);
-    function headPath(o) {   // head centre in the H-point frame (x forward, y up), one point per pose
-      const NP = Occ.PARTICLES.NP, out = [];
-      for (let p = 0; p * o.poseStride < o.pose.length; p++) { const b = p * o.poseStride; out.push([(o.pose[b + 2 * Occ.PARTICLES.HF] + o.pose[b + 2 * Occ.PARTICLES.HB]) / 2, (o.pose[b + 2 * Occ.PARTICLES.HF + 1] + o.pose[b + 2 * Occ.PARTICLES.HB + 1]) / 2]); }
+    function headPath(o) {   // head centre in the H-point frame (x forward, y up, z right), one point per pose
+      const out = [], F = 3 * Occ.PARTICLES.HF, B = 3 * Occ.PARTICLES.HB;
+      for (let p = 0; p * o.poseStride < o.pose.length; p++) { const b = p * o.poseStride; out.push([0, 1, 2].map(c => (o.pose[b + F + c] + o.pose[b + B + c]) / 2)); }
       return out;
     }
     return {
@@ -1078,7 +1105,8 @@
       results(r) {
         res = r;
         Scene3D.setDestruction(res);
-        runs = {}; for (const k of Object.keys(OPTS)) runs[k] = Occ.simulate(res.pulse, occOpts(k));
+        const cabin = Phys.cabinInput(res, 0);
+        runs = {}; for (const k of Object.keys(OPTS)) runs[k] = Occ.simulate(res.pulse, Object.assign({ cabin }, occOpts(k)));
         return this.show();
       },
       show() {
@@ -1124,7 +1152,7 @@
         lineChart(tab('organs'), { title: 'Brain movement inside the skull, mm', value: `${fmt(org.brainMaxMm, 1)} mm`, xRange: xr, shade: [(ph[2].t0 - t0) * 1000, (ph[2].t1 - t0) * 1000], series: [{ x: tms, y: Float64Array.from(org.brain.disp, v => v * 1000), color: COL.purple, label: 'brain', width: 2 }] });
         lineChart(tab('organs'), { title: 'Heart and aorta movement in the chest, mm', value: `${fmt(org.heartMaxMm)} mm`, xRange: xr, shade: [(ph[2].t0 - t0) * 1000, (ph[2].t1 - t0) * 1000], series: [{ x: tms, y: Float64Array.from(org.heart.disp, v => v * 1000), color: COL.red, label: 'heart', width: 2 }] });
         note(tab('organs'), 'The organs are modelled as masses on springs inside the head and chest: they keep moving after the body has stopped, then hit the inside of the skull or rib cage. That third collision is why a hard stop can injure the brain or tear the aorta without a mark outside.', 'muted small');
-        Scene3D.setHeadStrikes(occ.events.filter(e => e.type === 'headStrike' && e.surface === 'windshield').map(e => ({ t: e.t, mag: e.mag, p: [spec.hPoint[0] + e.hx, spec.hPoint[1] + e.hy, spec.hPoint[2]] })));
+        Scene3D.setHeadStrikes(occ.events.filter(e => e.type === 'headStrike' && e.surface === 'windshield').map(e => ({ t: e.t, mag: e.mag, p: [spec.hPoint[0] + e.hx, spec.hPoint[1] + e.hy, spec.hPoint[2] + e.hz] })));
         this.path = paths[cfg.restraint]; this.t0 = t0;
         return { tStart: Math.max(res.frames.t[0], t0 - 0.02), tEnd: Math.min(res.tEnd, t0 + 0.6), t0, events: crashEvents(res, occ.events) };
       },
@@ -1291,6 +1319,7 @@
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (VideoExport.busy) { requestAnimationFrame(frame); return; }   // the exporter steps and draws
     try {
       if (state === 'approach' && approach) { const r = approach.step(dt); if (r === 'abort') approach = null; }
       else if (state === 'impact' && task) {
@@ -1302,7 +1331,7 @@
       } else if (state === 'playback' && play) updatePlayback(dt);
     } catch (err) { console.error(err); toast('Error: ' + err.message); toSetup(); }
     const bottom = state === 'playback' ? $('#timeline').offsetHeight + 12 : 0;
-    const pip = state === 'playback' && lab !== LABS.whiplash && lab !== LABS.pedestrian;
+    const pip = state === 'playback' && hasPip();
     Scene3D.render(dt, pip, bottom);
     const pr = Scene3D.pipRect, lbl = $('#pip-label');
     lbl.hidden = !pr;

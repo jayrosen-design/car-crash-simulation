@@ -98,8 +98,19 @@ void main() {
   vec4 t = texture2D(map, vUv);
   gl_FragColor = vec4(vCol.rgb, vCol.a * t.a);   // colours are given in display (sRGB) values
 }`;
-  // camera-facing quads, one instance per particle
-  function sprites(scene, max, additive, tex, order) {
+  // what a glowing sprite adds to the glow layer (scene.js blurs it into a bloom)
+  const GLOW_FRAG = `
+uniform sampler2D map;
+uniform float glow;
+varying vec2 vUv;
+varying vec4 vCol;
+void main() {
+  vec4 t = texture2D(map, vUv);
+  gl_FragColor = vec4(vCol.rgb * vCol.a * t.a * glow, 1.0);
+}`;
+  // camera-facing quads, one instance per particle; drawn on layer 2 (effects), and with glow > 0
+  // also on layer 3 (the glow layer)
+  function sprites(scene, max, additive, tex, order, glow) {
     const T = THREE, geo = new T.InstancedBufferGeometry();
     const base = new T.PlaneGeometry(1, 1);
     geo.index = base.index; geo.setAttribute('position', base.attributes.position); geo.setAttribute('uv', base.attributes.uv);
@@ -110,9 +121,16 @@ void main() {
     geo.instanceCount = 0;
     const mat = new T.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: { map: { value: tex } }, transparent: true, depthWrite: false, blending: additive ? T.AdditiveBlending : T.NormalBlending });
     const mesh = new T.Mesh(geo, mat);
-    mesh.frustumCulled = false; mesh.renderOrder = order;
+    mesh.frustumCulled = false; mesh.renderOrder = order; mesh.layers.set(2);
     scene.add(mesh);
+    let glowMesh = null;
+    if (glow) {
+      glowMesh = new T.Mesh(geo, new T.ShaderMaterial({ vertexShader: VERT, fragmentShader: GLOW_FRAG, uniforms: { map: { value: tex }, glow: { value: glow } }, transparent: true, depthWrite: false, blending: T.AdditiveBlending }));
+      glowMesh.frustumCulled = false; glowMesh.layers.set(3);
+      scene.add(glowMesh);
+    }
     let n = 0;
+    const show = (on) => { mesh.visible = on; if (glowMesh) glowMesh.visible = on; };
     return {
       begin() { n = 0; },
       add(x, y, z, s, rot, r, g, b, a) {
@@ -120,16 +138,16 @@ void main() {
         pos[3 * n] = x; pos[3 * n + 1] = y; pos[3 * n + 2] = z; size[2 * n] = s; size[2 * n + 1] = rot;
         col[4 * n] = r; col[4 * n + 1] = g; col[4 * n + 2] = b; col[4 * n + 3] = a; n++;
       },
-      end() { geo.instanceCount = n; for (const k of ['iPos', 'iCol', 'iSize']) geo.attributes[k].needsUpdate = true; mesh.visible = n > 0; },
-      hide() { geo.instanceCount = 0; mesh.visible = false; },
-      dispose() { scene.remove(mesh); geo.dispose(); mat.dispose(); },
+      end() { geo.instanceCount = n; for (const k of ['iPos', 'iCol', 'iSize']) geo.attributes[k].needsUpdate = true; show(n > 0); },
+      hide() { geo.instanceCount = 0; show(false); },
+      dispose() { scene.remove(mesh); mat.dispose(); if (glowMesh) { scene.remove(glowMesh); glowMesh.material.dispose(); } geo.dispose(); },
     };
   }
 
   function Effects(scene) {
     const T = THREE;
     const flameTex = puffTexture('flame'), smokeTex = puffTexture('smoke');
-    const smoke = sprites(scene, 1400, false, smokeTex, 5), steamS = sprites(scene, 500, false, smokeTex, 6), flames = sprites(scene, 1600, true, flameTex, 7), embers = sprites(scene, 300, true, flameTex, 8);
+    const smoke = sprites(scene, 1400, false, smokeTex, 5), steamS = sprites(scene, 500, false, smokeTex, 6), flames = sprites(scene, 1600, true, flameTex, 7, 0.55), embers = sprites(scene, 300, true, flameTex, 8, 3);
     const light = new T.PointLight(0xff7a2e, 0, 14, 2);
     light.castShadow = false;
     scene.add(light);

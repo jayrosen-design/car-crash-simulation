@@ -436,6 +436,8 @@ gl_Position = projectionMatrix * mvPosition;`);
     nodeTex.needsUpdate = true;
     const uniforms = { nodeTex: { value: nodeTex }, uSkin: { value: 0 }, uStrainMode: { value: 0 }, uCrumple: { value: CRUMPLE_DEPTH } };
     const depthMat = depthMaterial(uniforms);
+    // the body in flat black, deformed like the real thing: hides what glows behind it (scene.js bloom)
+    const blackMat = patchSkin(new T.MeshBasicMaterial({ color: 0x000000 }), uniforms, 'posOnly');
     const matCache = {}, wheelMats = {}, plainMats = {}, frozenMats = {};
     const extraInfo = { 'mech:engine': { cls: 'mech', color: [0.09, 0.09, 0.1], metal: 0.6, rough: 0.5 }, 'mech:cover': { cls: 'mech', color: [0.2, 0.21, 0.23], metal: 0.4, rough: 0.4 } };
     const infoOf = (name) => (spec.materials || {})[name] || extraInfo[name] || { cls: 'paint', color: [0.5, 0.5, 0.5], metal: 0, rough: 0.5 };
@@ -500,6 +502,7 @@ gl_Position = projectionMatrix * mvPosition;`);
       mesh.castShadow = mat.userData.cls !== 'glass';
       mesh.receiveShadow = true;
       mesh.customDepthMaterial = depthMat;
+      mesh.userData.blackMat = blackMat;
       mesh.frustumCulled = false;
       mesh.layers.set(1);
       mesh.renderOrder = mat.transparent ? 2 : 0;
@@ -806,7 +809,7 @@ gl_Position = projectionMatrix * mvPosition;`);
         api.clearDestruction();
         group.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
         for (const m of allMats().concat(Object.values(plainMats), Object.values(frozenMats))) m.dispose();
-        depthMat.dispose(); nodeTex.dispose();
+        depthMat.dispose(); blackMat.dispose(); nodeTex.dispose();
       },
     };
     const scene = () => group.parent;

@@ -2077,6 +2077,62 @@ function createImpactSim(cfg) {
 
   const now = (typeof performance !== 'undefined') ? () => performance.now() : () => Date.now();
 
+  // ---------------------------------------------------------------- the GPU solver (opt-in)
+  // cfg.gpu: a device from CrashGPU.init() (gpu-lattice.js). For one car into the rigid barrier only,
+  // and parts don't come off nor tyres burst. The lattice steps run on the GPU in batches, one
+  // recorded frame's worth at a time; the state comes back at every frame, where the bookkeeping
+  // (telemetry, frames, energies) runs as for the CPU solver. Friction heat is not tracked there: it
+  // stays in the "contact, damping & solver" share of the energy.
+  let gpu = null, gpuRunning = false, gpuMs = 0, gpuBatches = 0, gpuSteps = 0, gpuError = null;
+  if (cfg.gpu && rigid && !multi && !wall && !staticObs) {
+    const floor = new Float64Array(n);
+    for (let a = 0; a < n; a++) floor[a] = wheelNode[a] ? wheelFloor[a] : clear[a];
+    gpu = root.CrashGPU.lattice(cfg.gpu, { n, nc, X, V, W, floor, ghost, wheel: wheelNode, muRoll, ca, cb, rest, c0, comp, damp, cey, ck,
+      r: spec.nodeRadius, barrier: RIGID_BARRIER, G, MU_BODY, MU_WALL, MU_LAT: muLat, MIN_RATIO, MAX_RATIO });
+  }
+  async function gpuLoop() {
+    gpuRunning = true;
+    try {
+      while (!done) {
+        const dts = [];
+        let tt = t;
+        do {
+          const fine = T0 < 0 ? tt < 0.6 : tt < T0 + FINE_WINDOW;
+          dts.push((fine ? DT_FINE : DT_COARSE) * (cfg.dtScale || 1)); tt += dts[dts.length - 1];
+        } while (tt < nextRecordT - 1e-9 && dts.length < gpu.maxSteps);
+        const fh = Math.hypot(frame.f[0], frame.f[2]) || 1, t1 = now();
+        const st = await gpu.run(dts, [frame.f[0] / fh, frame.f[2] / fh], gpuSteps);
+        gpuMs += now() - t1; gpuBatches++;
+        if (cancelled) break;
+        X.set(st.X); V.set(st.V);
+        for (let c = 0; c < nc; c++) { rest[c] = st.rest[c]; plastic[c] = st.plastic[c]; Wp += st.wp[c]; }
+        let imp = 0, ix = 0, iy = 0, iz = 0, first = 0xffffffff;
+        for (let a = 0; a < n; a++) {
+          imp += st.imp[4 * a]; ix += st.imp[4 * a + 1]; iy += st.imp[4 * a + 2]; iz += st.imp[4 * a + 3];
+          if (st.first[a] < first) first = st.first[a];
+        }
+        impAcc += imp; impX += ix; impY += iy; impZ += iz;
+        barrierForce = imp / (tt - t);   // the mean over the batch
+        if (T0 < 0 && first !== 0xffffffff) {
+          let tf = t;
+          for (let k = 0; k < first - gpuSteps; k++) tf += dts[k];
+          T0 = tf;
+          events.push({ t: T0, type: 'first', x: ix / (imp || 1), y: iy / (imp || 1), z: iz / (imp || 1), mag: 0, mass: car.massKg });
+        }
+        gpuSteps += dts.length; t = tt;
+        computeFrame();
+        pushTel(t, false);
+        record(); nextRecordT = t + recordInterval();
+        if (T0 >= 0 ? t >= T0 + duration : t >= (cfg.minDuration || 0.8)) done = true;
+      }
+    } catch (e) {
+      gpuError = e; cancelled = true; done = true;
+    } finally {
+      gpuRunning = false;
+      if (done) gpu.destroy();
+    }
+  }
+
   const sim = {
     car, wall, n, nb, NB, X, frame, debris,
     units: units.map(U => ({ off: U.off, n: U.n, spec: U.spec, frame: U.frame, car: U.car })),
@@ -2087,9 +2143,14 @@ function createImpactSim(cfg) {
       outQuat[0] = bq[4 * b]; outQuat[1] = bq[4 * b + 1]; outQuat[2] = bq[4 * b + 2]; outQuat[3] = bq[4 * b + 3];
     },
     progress() { return done ? 1 : Math.min(0.999, t / ((T0 >= 0 ? T0 : 0.01) + duration)); },
-    cancel() { cancelled = true; done = true; },
-    // Advance for up to budgetMs of wall-clock time; returns progress 0..1.
+    cancel() { cancelled = true; done = true; if (gpu && !gpuRunning) gpu.destroy(); },
+    // the GPU solver, if in use: { name, colours, batches, steps, ms } so far; and why it stopped, if it failed
+    get gpu() { return gpu ? { name: gpu.name, colours: gpu.colours, batches: gpuBatches, steps: gpuSteps, ms: gpuMs } : null; },
+    get error() { return gpuError; },
+    // Advance for up to budgetMs of wall-clock time; returns progress 0..1. With the GPU solver the
+    // steps run in the background and this only reports progress.
     advance(budgetMs) {
+      if (gpu) { if (!gpuRunning && !done) gpuLoop(); return sim.progress(); }
       const start = now();
       while (!done) {
         for (let k = 0; k < 10 && !done; k++) step();
@@ -2238,6 +2299,7 @@ function createImpactSim(cfg) {
       offset: offset ? { zEdge: offset.zEdge, side: offset.side, width: offset.width, height: offset.height, edgeRadius: offset.edgeRadius,
         honeycomb: hc ? { cell: hc.h, nzc: hc.nzc, nyc: hc.nyc, y0: hc.y0, depth: hc.depth, frames: frames.honeycomb } : null } : null,
       pole: pole ? { x: pole.x, z: pole.z, r: pole.r } : null,
+      solver: sim.gpu ? Object.assign({ kind: 'gpu' }, sim.gpu) : { kind: 'cpu' },
     };
   }
 
@@ -2283,7 +2345,45 @@ function sideInput(res) {
   return input;
 }
 
-const api = { G, CAR, VEHICLES, WALL, WALL_STRENGTH, STIFFNESS, RIGID_BARRIER, PROFILE, DAMAGE, HONEYCOMB, POLE_RADIUS, SIDE_STEEL, topHeight, columns, axles, buildCar, buildWall, buildOffset, measurePoints, sideInput, createImpactSim, embedPoint, embeddedPos, cornerWeight, DT_FINE };
+// Input for the frontal dummy (occupant.js simulate, opts.cabin) from a crash result: where the
+// parts of the cabin around the driver are at each recorded frame, as the structure deforms. The
+// points (the steering wheel hub and a point down its column, the knee bolster, the toe pan, the
+// windshield's bottom and top edge, the roof above the head, the A-pillar's foot and top, the door
+// at chest and window height) are placed from the occupant's interior layout, embedded in the
+// lattice like the body, and given in the H-point frame (x forward, y up, z toward the car's right),
+// through the cabin frame the crash pulse is measured in. The toe pan is sampled where it meets the
+// floor, at the footwell measurement point: that is where it is pushed in from, while the feet rest
+// higher up on it.
+function cabinInput(res, u) {
+  const U = res.units[u || 0], spec = U.spec, H = spec.hPoint, F = res.frames;
+  if (!H) return null;
+  const Occ = root.CrashOccupant || require('./occupant.js');
+  const I = Occ.interiorFor(spec.interior), zd = -spec.width / 2 + DOOR_TRIM - H[2];   // the door's inner surface, as in sideInput
+  const pts = [
+    ['hub', [I.hub[0], I.hub[1], 0]], ['colBase', [I.hub[0] - 0.3 * I.col[0], I.hub[1] - 0.3 * I.col[1], 0]],
+    ['knee', [I.kneeX, 0.12, 0]], ['toe', measurePoints(spec).find(([nm]) => nm === 'footwell')[1].map((v, c) => v - H[c])],
+    ['wsLow', [I.wsA[0], I.wsA[1], 0]], ['wsHigh', [I.wsB[0], I.wsB[1], 0]], ['roof', [0, I.roofY, 0]],
+    ['aLow', [I.wsA[0], I.wsA[1], zd - 0.05]], ['aHigh', [I.wsB[0], I.wsB[1], zd - 0.05]],
+    ['door', [0.05, 0.30, zd]], ['doorHead', [0.05, 0.62, zd]],
+  ];
+  const emb = embedPoints(U.car, pts.map(([, p]) => [p[0] + H[0], p[1] + H[1], p[2] + H[2]]));
+  const off = res.units.length > 1 ? U.off : 0, cr = U.car.cabinRest, np = pts.length, nf = F.t.length;
+  const out = new Float32Array(nf * np * 3), idx = Int32Array.from(emb.idx, q => q + off), p = [0, 0, 0];
+  for (let k = 0; k < nf; k++) {
+    const X = F.pos[k], A = U.axes[k];
+    const f = [A[3], A[4], A[5]], up = [A[6], A[7], A[8]], l = [f[1] * up[2] - f[2] * up[1], f[2] * up[0] - f[0] * up[2], f[0] * up[1] - f[1] * up[0]];
+    for (let q = 0; q < np; q++) {
+      embeddedPos(X, idx, 8 * q, emb.t, 3 * q, p);
+      const dx = p[0] - A[0], dy = p[1] - A[1], dz = p[2] - A[2], o = 3 * (k * np + q);
+      out[o] = cr[0] + dx * f[0] + dy * f[1] + dz * f[2] - H[0];
+      out[o + 1] = cr[1] + dx * up[0] + dy * up[1] + dz * up[2] - H[1];
+      out[o + 2] = cr[2] + dx * l[0] + dy * l[1] + dz * l[2] - H[2];
+    }
+  }
+  return { t: Float64Array.from(F.t), names: pts.map(([nm]) => nm), np, p: out };
+}
+
+const api = { G, CAR, VEHICLES, WALL, WALL_STRENGTH, STIFFNESS, RIGID_BARRIER, PROFILE, DAMAGE, HONEYCOMB, POLE_RADIUS, SIDE_STEEL, topHeight, columns, axles, buildCar, buildWall, buildOffset, measurePoints, sideInput, cabinInput, createImpactSim, embedPoint, embeddedPos, cornerWeight, DT_FINE };
 root.CrashPhysics = api;
 if (typeof module === 'object' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
