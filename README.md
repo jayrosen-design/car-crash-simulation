@@ -1581,7 +1581,7 @@ A 5 mm shell element gives about 1 µs, so a 100 ms crash needs about 10⁵ step
 **Plastic flow.** After the correction, the spring's elastic extension is *e* = |*x_b* − *x_a*| − *L₀*, and its yield extension is *e_y* = *ε_y L*_orig. If |*e*| > *e_y*, the rest length moves by the excess and the steel stays bent \[[8](#ref-8)\]:
 
 ```math
-L_0 \leftarrow \operatorname{clamp}\!\Big(L_0 + \operatorname{sign}(e)\,\big(\lvert e \rvert - e_y\big),\; 0.25\,L_\text{orig},\; 1.8\,L_\text{orig}\Big)
+L_0 \leftarrow \mathrm{clamp}\!\Big(L_0 + \mathrm{sign}(e)\,\big(\lvert e \rvert - e_y\big),\; 0.25\,L_\text{orig},\; 1.8\,L_\text{orig}\Big)
 ```
 
 The plastic work is the yield force times the flow, and the plastic strain accumulates per spring:
@@ -1719,7 +1719,7 @@ A = \sum_i \mathbf p_i\, \mathbf q_i^{\mathsf T}, \qquad R = A\,\big(A^{\mathsf 
 **Skinned normals.** The render mesh is embedded in the lattice cells. Each vertex is a trilinear blend of its cell's eight nodes. Each normal turns with the cell's deformation gradient through its cofactor, which keeps it perpendicular to the deformed surface \[[12](#ref-12), [13](#ref-13)\]:
 
 ```math
-\mathbf x = \sum_{c=1}^{8} N_c(\mathbf t)\,\mathbf x_c, \qquad F = \frac{\partial \mathbf x}{\partial \mathbf X}, \qquad \mathbf n' \propto \operatorname{cof}(F)\,\mathbf n = \det(F)\,F^{-\mathsf T}\mathbf n
+\mathbf x = \sum_{c=1}^{8} N_c(\mathbf t)\,\mathbf x_c, \qquad F = \frac{\partial \mathbf x}{\partial \mathbf X}, \qquad \mathbf n' \propto \mathrm{cof}(F)\,\mathbf n = \det(F)\,F^{-\mathsf T}\mathbf n
 ```
 
 ### Injury criteria
@@ -1735,7 +1735,7 @@ Limits and filter classes follow the US occupant-protection standard, FMVSS 208,
 **Chest acceleration, 3 ms clip** \[[28](#ref-28)\]. The standard limits the level exceeded for a *cumulative* 3 ms, adding up every interval above it. With the chest resultant (CFC 180) sorted so that *a*₍₁₎ ≥ *a*₍₂₎ ≥ …:
 
 ```math
-a_{3\,\text{ms}} = a_{(k)}, \qquad k = \operatorname{round}(3\ \text{ms} / \Delta t)
+a_{3\,\text{ms}} = a_{(k)}, \qquad k = \mathrm{round}(3\ \text{ms} / \Delta t)
 ```
 
 **Neck injury criterion** \[[28](#ref-28), [30](#ref-30)\]. Each sample's quadrant (tension or compression, flexion or extension) picks the intercepts:
@@ -1817,7 +1817,7 @@ The car is driven on a kinematic bicycle model \[[51](#ref-51), [52](#ref-52)\],
 Pure-pursuit steering aims at a point *L_d* ahead on the approach line, *α* being its angle from the heading \[[53](#ref-53)\]:
 
 ```math
-\delta = \arctan\frac{2L\sin\alpha}{L_d}, \qquad L_d = \operatorname{clamp}(0.9\,v,\ 5\ \text{m},\ 25\ \text{m})
+\delta = \arctan\frac{2L\sin\alpha}{L_d}, \qquad L_d = \mathrm{clamp}(0.9\,v,\ 5\ \text{m},\ 25\ \text{m})
 ```
 
 The speed controller is a PID with the derivative on the measured speed and conditional integration, so the integral doesn't wind up while the force is saturated \[[54](#ref-54)\]:
