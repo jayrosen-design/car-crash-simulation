@@ -1,12 +1,15 @@
 /* Records the home page's media from the simulator, in headless Chrome:
- *   media/crash-reel.mp4   about a minute of Lexus crashes, driven through the setup panel
+ *   media/crash-reel.mp4   the trailer: a minute of the simulations cut to an original rock
+ *                          soundtrack (the shots are in tools/trailer.js, the music in
+ *                          tools/trailer-music.js)
  *   media/poster.jpg       the video's poster frame
  *   media/shot-rigid.jpg   pictures of the two barrier tests for the home page
  *   media/shot-brick.jpg
  *   media/lab-<id>.jpg     a picture of each crash lab's finished test
  * The page runs on a virtual clock: every frame advances it by exactly 1/30 s and is captured,
- * so the video is smooth however long a frame takes to render. Blender encodes the frames
- * (tools/encode-video.py), so no separate ffmpeg install is needed.
+ * so the video is smooth however long a frame takes to render. The soundtrack is rendered in the
+ * page with Web Audio. Blender encodes the frames and the sound (tools/encode-video.py), so no
+ * separate ffmpeg install is needed.
  *   node tools/record-video.js [shots|video|labs] [--chrome <chrome.exe>] [--blender <blender.exe>]
  * Rebuild Simulator.html first (node tools/build-standalone.js): this records that file. Rebuild
  * again afterwards, to embed the new media in Car Crash Simulation.html.
@@ -16,6 +19,8 @@ const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const Trailer = require('./trailer.js');
+const { renderMusic } = require('./trailer-music.js');
 
 const ROOT = path.join(__dirname, '..');
 const MEDIA = path.join(ROOT, 'media');
@@ -72,51 +77,21 @@ async function openBrowser() {
   return { send, ev, shot, close, errors };
 }
 
-// in-page helpers: a drawn cursor, captions, an end card, and UI actions
+// in-page helpers for the pictures: UI actions, a clean view and cameras
 const HELPERS = `(() => {
   const css = document.createElement('style');
-  css.textContent = \`
-    #rec-cursor { position: fixed; left: 0; top: 0; width: 26px; height: 26px; z-index: 10000; pointer-events: none; display: none; filter: drop-shadow(0 2px 3px rgba(0,0,0,.55)); }
-    #rec-ripple { position: fixed; z-index: 9999; pointer-events: none; border: 2px solid #4f9cf0; border-radius: 50%; display: none; }
-    #rec-cap { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 9998; pointer-events: none; display: none;
-      background: rgba(11,15,20,.84); border: 1px solid #2b333d; border-left: 4px solid #4f9cf0; border-radius: 10px; padding: 10px 18px 11px; text-align: left; min-width: 360px; }
-    #rec-cap b { display: block; font: 700 21px/1.25 system-ui, "Segoe UI", sans-serif; color: #e6e9ee; letter-spacing: .2px; }
-    #rec-cap span { display: block; font: 15px/1.35 system-ui, "Segoe UI", sans-serif; color: #b8c1cc; margin-top: 2px; }
-    #rec-card { position: fixed; inset: 0; z-index: 10001; display: none; place-items: center; text-align: center; background: rgba(9,12,16,.9); }
-    #rec-card h1 { margin: 0; font: 800 54px/1.1 system-ui, "Segoe UI", sans-serif; color: #e6e9ee; letter-spacing: .5px; }
-    #rec-card p { margin: 14px 0 0; font: 20px/1.4 system-ui, "Segoe UI", sans-serif; color: #98a2ae; }
-    #rec-card i { display: block; width: 80px; height: 4px; background: #4f9cf0; margin: 22px auto 0; border-radius: 2px; }
-    .rec-clean #topbar, .rec-clean .panel, .rec-clean #pip-label, .rec-clean #toast, .rec-clean #legend { display: none !important; }\`;
+  css.textContent = '.rec-clean #topbar, .rec-clean .panel, .rec-clean #pip-label, .rec-clean #toast, .rec-clean #legend { display: none !important; }';
   document.head.appendChild(css);
-  const cur = document.createElement('div'); cur.id = 'rec-cursor';
-  cur.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26"><path d="M4 2 L4 19 L8.6 14.8 L11.6 21.4 L14.4 20.2 L11.4 13.7 L17.6 13.7 Z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>';
-  const rip = document.createElement('div'); rip.id = 'rec-ripple';
-  const cap = document.createElement('div'); cap.id = 'rec-cap'; cap.innerHTML = '<b></b><span></span>';
-  const card = document.createElement('div'); card.id = 'rec-card';
-  card.innerHTML = '<div><h1>Car Crash Simulation</h1><p>Physics-based crash testing that runs in your browser</p><i></i></div>';
-  document.body.append(cur, rip, cap, card);
   const q = (s) => document.querySelector(s);
   window.__rec = {
     step: (ms) => window.__vstep(ms),
-    cursor(x, y, show) { cur.style.display = show === false ? 'none' : 'block'; cur.style.transform = 'translate(' + (x - 4) + 'px,' + (y - 2) + 'px)'; },
-    ripple(x, y, k) {   // k: 0..1 through the click
-      if (k >= 1) { rip.style.display = 'none'; return; }
-      const r = 6 + 22 * k; rip.style.display = 'block'; rip.style.opacity = String(1 - k);
-      rip.style.left = (x - r) + 'px'; rip.style.top = (y - r) + 'px'; rip.style.width = rip.style.height = 2 * r + 'px';
-    },
-    center(sel) { const el = q(sel); el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; },
-    thumb(sel, v) { const el = q(sel); el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(), t = (v - +el.min) / (+el.max - +el.min); return [r.left + 8 + t * (r.width - 16), r.top + r.height / 2]; },
-    setRange(sel, v) { const el = q(sel); el.value = v; el.dispatchEvent(new Event('input')); },
     click(sel) { q(sel).click(); },
-    caption(title, sub, alpha) { cap.style.display = alpha > 0 ? 'block' : 'none'; cap.style.opacity = String(alpha); cap.querySelector('b').textContent = title; cap.querySelector('span').textContent = sub; },
-    card(alpha) { card.style.display = alpha > 0 ? 'grid' : 'none'; card.style.opacity = String(alpha); },
     clean(on) { document.body.classList.toggle('rec-clean', on); },
     noPip() { const r = Scene3D.render; Scene3D.render = (dt, pip, b) => r(dt, false, b); },
     state() { return q('#stepper li.on')?.dataset.step; },
     ready() { return window.CrashLabs ? CrashLabs.ready() : typeof Scene3D === 'object' && !q('#btn-run').disabled && (!!Scene3D.vehicleModel || q('.seg[data-name=vehicle] button.on')?.dataset.v === 'lab'); },
     // a fixed camera (lab pictures)
     look(px, py, pz, tx, ty, tz) { Scene3D.setCameraMode('free', { frame: { pos: new THREE.Vector3(px, py, pz), target: new THREE.Vector3(tx, ty, tz) } }); },
-    speed(v) { const s = q('#tl-speed'); s.value = String(v); s.dispatchEvent(new Event('change')); },
     playing() { return q('#btn-play').textContent === 'Pause'; },
     time() { return q('#tl-time').textContent; },
     // camera: an orbit around the car (free camera)
@@ -128,60 +103,6 @@ const HELPERS = `(() => {
     },
   };
 })();`;
-
-// ---------------------------------------------------------------- a director for the page
-function director(b, framesDir) {
-  let frameNo = 0, captured = 0, cx = W / 2, cy = H / 2, cursorOn = false;
-  let caption = null;   // { title, sub, start }
-  const ease = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-  const d = {
-    get captured() { return captured; },
-    // advance one frame (1/30 s of page time) and capture it (or not)
-    async frame(capture = true, extra = '') {
-      let capJs = '';
-      if (caption) {
-        const age = captured - caption.start, alpha = caption.out !== undefined ? Math.max(0, 1 - (captured - caption.out) / 8) : Math.min(1, age / 8);
-        capJs = `__rec.caption(${JSON.stringify(caption.title)}, ${JSON.stringify(caption.sub)}, ${alpha.toFixed(3)});`;
-        if (alpha === 0 && caption.out !== undefined) caption = null;
-      }
-      await b.ev(`__rec.step(${DT});__rec.cursor(${cx.toFixed(1)}, ${cy.toFixed(1)}, ${cursorOn});${capJs}${extra}`);
-      frameNo++;
-      if (capture) { fs.writeFileSync(path.join(framesDir, 'f' + String(captured).padStart(5, '0') + '.jpg'), await b.shot(92)); captured++; }
-    },
-    async hold(n, extra) { for (let i = 0; i < n; i++) await d.frame(true, typeof extra === 'function' ? extra(i, n) : (extra || '')); },
-    caption(title, sub) { caption = { title, sub, start: captured }; },
-    captionOut() { if (caption) caption.out = captured; },
-    showCursor(on) { cursorOn = on; },
-    async move(to, n = 14) {
-      const x0 = cx, y0 = cy;
-      for (let i = 1; i <= n; i++) { const t = ease(i / n); cx = x0 + (to[0] - x0) * t; cy = y0 + (to[1] - y0) * t; await d.frame(); }
-    },
-    async click(sel, n = 14) {
-      const p = await b.ev(`__rec.center(${JSON.stringify(sel)})`);
-      await d.move(p, n);
-      for (let i = 0; i < 7; i++) await d.frame(true, `__rec.ripple(${p[0]}, ${p[1]}, ${(i / 6).toFixed(3)});` + (i === 1 ? `__rec.click(${JSON.stringify(sel)});` : ''));
-    },
-    async drag(sel, from, to, n = 24) {
-      await d.move(await b.ev(`__rec.thumb(${JSON.stringify(sel)}, ${from})`), 12);
-      for (let i = 1; i <= n; i++) {
-        const v = Math.round(from + (to - from) * ease(i / n));
-        const p = await b.ev(`__rec.setRange(${JSON.stringify(sel)}, ${v}); __rec.thumb(${JSON.stringify(sel)}, ${v})`);
-        cx = p[0]; cy = p[1];
-        await d.frame();
-      }
-      await d.hold(4);
-    },
-    // run page frames until the test reaches `state`, capturing every k-th frame
-    async until(state, k, maxFrames = 3000) {
-      for (let i = 0; i < maxFrames; i++) {
-        if (await b.ev('__rec.state()') === state) return;
-        await d.frame(i % k === 0);
-      }
-      throw new Error('timed out waiting for ' + state);
-    },
-  };
-  return d;
-}
 
 async function openSimulator(b, query) {
   await b.send('Page.navigate', { url: pageUrl(query) });
@@ -196,104 +117,17 @@ async function openSimulator(b, query) {
   throw new Error('the simulator did not become ready: ' + why + (b.errors.length ? ' ' + b.errors.join(' | ') : ''));
 }
 
-// ---------------------------------------------------------------- the reel (about 60 s)
-async function recordReel(b) {
-  const framesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-frames-'));
-  await openSimulator(b, '');
-  const d = director(b, framesDir);
-  const playFor = async (n, extra) => d.hold(n, extra);
-
-  // 0 - intro: the Lexus on the test track, camera circling
-  d.caption('Car Crash Simulation', 'Physics-based crash testing in the browser');
-  await d.hold(84, (i, n) => `__rec.orbit(${(200 - 70 * i / n).toFixed(2)}, 7.5, 2.4, 0.4);`);
-  d.captionOut();
-
-  // 1 - set up and run: 64 km/h head-on, rigid barrier, Realistic damage
-  await b.ev(`Scene3D.setCameraMode('setup')`);
-  d.caption('Set up a test', 'Choose the car, speed, angle, barrier and damage level');
-  d.showCursor(true);
-  await d.move([140, 330], 12);
-  await d.click('.seg[data-name=vehicle] button[data-v=lexus]');
-  await d.drag('#in-speed', 56, 64, 20);
-  await d.click('.seg[data-name=barrier] button[data-v=rigid]', 12);
-  await d.click('.seg[data-name=damage] button[data-v=realistic]', 12);
-  await d.click('#btn-run', 14);
-  d.showCursor(false); d.captionOut();
-  d.caption('Automated approach', 'Cruise control and steering hold the car on its line');
-  await d.until('impact', 2);
-  d.caption('Impact computed in 0.1 ms steps', 'Then replayed in slow motion, like a high-speed camera');
-  await d.until('playback', 5);
-  await b.ev(`__rec.speed(0.1); document.querySelector('#btn-collapse').click();`);
-  d.caption('64 km/h · head-on · rigid barrier', 'Realistic damage: the front crumples, lamps shatter, the airbag fires');
-  await playFor(126);
-  d.captionOut();
-
-  // 2 - 100 km/h at 30 degrees, Dramatic damage
-  d.showCursor(true);
-  await d.click('#btn-reset', 14);
-  d.caption('Change the angle and speed', 'Dramatic damage lets parts break off at lower speeds');
-  await d.drag('#in-angle', 0, -30, 20);
-  await d.drag('#in-speed', 64, 100, 20);
-  await d.click('.seg[data-name=damage] button[data-v=dramatic]', 12);
-  await d.click('#btn-run', 14);
-  d.showCursor(false); d.captionOut();
-  await d.until('impact', 2);
-  await d.until('playback', 5);
-  await b.ev(`__rec.speed(0.1); document.querySelector('.seg[data-name=camera] button[data-v=front]').click();`);
-  d.caption('100 km/h · 30° angle · Dramatic damage', 'Panels tear off, glass shatters, wheels break away');
-  await playFor(96);
-  await b.ev(`__rec.speed(0.25)`);
-  await playFor(96, (i, n) => `__rec.orbit(${(-60 + 150 * i / n).toFixed(2)}, 9, 3.2, 1.2);`);
-  d.captionOut();
-
-  // 3 - brick wall, 80 km/h
-  d.showCursor(true);
-  await d.click('#btn-reset', 14);
-  await d.click('.seg[data-name=barrier] button[data-v=brick]', 12);
-  await d.drag('#in-angle', -30, 0, 16);
-  await d.drag('#in-speed', 100, 80, 16);
-  await d.click('#btn-run', 14);
-  d.showCursor(false);
-  await d.until('impact', 2);
-  d.caption('Brick wall', '366 mortared bricks: joints crack, the wall breaks up and scatters');
-  await d.until('playback', 12);
-  await b.ev(`__rec.speed(0.1); document.querySelector('.seg[data-name=camera] button[data-v=side]').click();`);
-  d.caption('80 km/h · brick wall · Dramatic damage', 'Bricks and car parts are rigid bodies that tumble and settle');
-  await playFor(90);
-  await b.ev(`__rec.speed(0.25)`);
-  await playFor(96, (i, n) => `__rec.orbit(${(-40 - 70 * i / n).toFixed(2)}, 10, 3.6, 2.5);`);
-  d.captionOut();
-
-  // 4 - 150 km/h at 15 degrees: inside the cabin, then the debris field
-  d.showCursor(true);
-  await d.click('#btn-reset', 14);
-  await d.click('.seg[data-name=barrier] button[data-v=rigid]', 12);
-  await d.drag('#in-speed', 80, 150, 18);
-  await d.drag('#in-angle', 0, 15, 14);
-  await d.click('#btn-run', 14);
-  d.showCursor(false);
-  await d.until('impact', 2);
-  await d.until('playback', 5);
-  await b.ev(`__rec.speed(0.05); document.querySelector('.seg[data-name=camera] button[data-v=onboard]').click();`);
-  d.caption('150 km/h · 15° · onboard camera', 'Dummy, seatbelt, airbag and flying glass, frame by frame');
-  await playFor(72);
-  await b.ev(`__rec.speed(0.25)`);
-  d.caption('Wheels, panels and glass come off', 'Every part keeps the shape it was crushed into');
-  await playFor(110, (i, n) => `__rec.orbit(${(40 + 120 * i / n).toFixed(2)}, 12, 4.2, 3);`);
-  d.captionOut();
-
-  // 5 - results: injury criteria, charts, strain map
-  d.showCursor(true);
-  await d.click('#btn-collapse', 14);
-  await d.click('#tg-strain', 12);
-  d.caption('Results', 'Injury criteria, crash pulse, energy and a strain map of the car');
-  d.showCursor(false);
-  await playFor(70, (i, n) => `__rec.orbit(${(150 + 30 * i / n).toFixed(2)}, 10, 4, 1);`);
-  d.captionOut();
-
-  // 6 - end card
-  await d.hold(97, (i) => `__rec.card(${Math.min(1, (i + 1) / 10).toFixed(2)});`);
-  return { framesDir, frames: d.captured };
+// ---------------------------------------------------------------- the trailer's soundtrack
+// rendered in the page (OfflineAudioContext), then fetched as a WAV in base64 chunks
+async function renderSoundtrack(b) {
+  const n = await b.ev(`(${renderMusic.toString()})(${JSON.stringify({ bars: Trailer.BARS, hits: Trailer.musicHits() })})`);
+  const parts = [];
+  for (let o = 0; o < n; o += 1 << 20) {
+    parts.push(Buffer.from(await b.ev(`(() => { const a = window.__wav.subarray(${o}, ${o + (1 << 20)}); let s = ''; for (let i = 0; i < a.length; i += 8192) s += String.fromCharCode.apply(null, a.subarray(i, i + 8192)); return btoa(s); })()`), 'base64'));
+  }
+  const st = await b.ev('window.__wavStats');
+  console.log(`soundtrack: ${st.seconds.toFixed(1)} s, ${st.rmsDb.toFixed(1)} dBFS RMS`);
+  return Buffer.concat(parts);
 }
 
 // ---------------------------------------------------------------- barrier-test pictures
@@ -355,11 +189,22 @@ async function recordLabShot(b, id, query, tSince, cameraJs) {
     }
     if (ONLY !== 'shots') {
       const t0 = Date.now();
-      const { framesDir, frames } = await recordReel(b);
+      const framesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-frames-'));
+      // drawn at 1920 x 1080 (the same layout at 1.5x) and scaled down when encoded
+      await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1.5, mobile: false });
+      const { frames } = await Trailer.record(b, { open: (q) => openSimulator(b, q), framesDir, log: console.log });
       console.log(`captured ${frames} frames (${(frames / FPS).toFixed(1)} s of video) in ${((Date.now() - t0) / 1000).toFixed(0)} s -> ${framesDir}`);
-      fs.copyFileSync(path.join(framesDir, 'f' + String(Math.min(frames - 1, 640)).padStart(5, '0') + '.jpg'), path.join(MEDIA, 'poster.jpg'));
-      // LOW keeps it near 11 MB, small enough to embed in the home page; the text stays sharp
-      execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', framesDir, path.join(MEDIA, 'crash-reel.mp4'), String(FPS), 'LOW'], { stdio: 'inherit' });
+      const wav = path.join(framesDir, 'soundtrack.wav');
+      fs.writeFileSync(wav, await renderSoundtrack(b));
+      // the poster: one frame, at the video's size
+      const poster = fs.readFileSync(path.join(framesDir, 'f' + String(Trailer.POSTER).padStart(5, '0') + '.jpg')).toString('base64');
+      await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+      await b.send('Page.navigate', { url: 'about:blank' });
+      await sleep(300);
+      await b.ev(`new Promise((r) => { document.body.style.margin = 0; const i = new Image(); i.style.cssText = 'display:block;width:100vw;height:100vh'; i.onload = r; i.src = 'data:image/jpeg;base64,${poster}'; document.body.appendChild(i); })`);
+      fs.writeFileSync(path.join(MEDIA, 'poster.jpg'), await b.shot(88));
+      // LOW keeps it small enough to embed in the home page; the titles stay sharp
+      execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', framesDir, path.join(MEDIA, 'crash-reel.mp4'), String(FPS), 'LOW', 'audio=' + wav, 'size=' + W + 'x' + H], { stdio: 'inherit' });
       const mb = fs.statSync(path.join(MEDIA, 'crash-reel.mp4')).size / 1048576;
       console.log(`wrote media/crash-reel.mp4 (${mb.toFixed(1)} MB)`);
       fs.rmSync(framesDir, { recursive: true, force: true });

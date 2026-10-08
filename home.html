@@ -52,8 +52,12 @@
   h1 { font-size: clamp(38px, 6vw, 64px); line-height: 1.04; letter-spacing: -0.02em; margin: 0 0 20px; }
   .lead { font-size: clamp(17px, 2vw, 20px); color: #c3cad3; max-width: 760px; margin: 0 0 28px; }
   .actions { display: flex; flex-wrap: wrap; gap: 12px; }
-  .reel { margin-top: 44px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: #000; box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.8); aspect-ratio: 16 / 9; }
+  .reel { position: relative; margin-top: 44px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: #000; box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.8); aspect-ratio: 16 / 9; }
   .reel video { width: 100%; height: 100%; object-fit: cover; }
+  .reel-sound { position: absolute; top: 14px; left: 14px; display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(10, 13, 17, 0.72); color: #fff; font: 650 14px/1 var(--font); cursor: pointer; backdrop-filter: blur(6px); }
+  .reel-sound:hover { background: rgba(10, 13, 17, 0.9); border-color: rgba(255, 255, 255, 0.55); }
+  .reel-sound:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .reel-sound[hidden] { display: none; }
   .reel-note { color: var(--muted); font-size: 14px; margin: 12px 2px 0; }
 
   section { padding: 64px 0; }
@@ -156,9 +160,10 @@
 
       <div class="reel">
         <video id="reel" src="media/crash-reel.mp4" poster="media/poster.jpg" muted loop playsinline controls preload="metadata"
-          aria-label="One minute of crash tests recorded from the simulator"></video>
+          aria-label="One-minute trailer: crash tests recorded from the simulator, cut to a rock soundtrack"></video>
+        <button id="reel-sound" class="reel-sound" type="button"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Sound on</button>
       </div>
-      <p class="reel-note">Recorded straight from the simulator: a Lexus RX&nbsp;350 at 64 to 150&nbsp;km/h, head-on and at an angle, into the rigid barrier and the brick wall, set up through the same panel you'll use.</p>
+      <p class="reel-note">The trailer, recorded straight from the simulator: a 150&nbsp;km/h barrier crash, a two-car head-on, a small overlap, a side impact and the brick wall, replayed in slow motion. The crashes were solved on the GPU (WebGPU), except the brick wall, which the CPU solves. The rock soundtrack was synthesised for the trailer.</p>
     </div>
   </div>
 
@@ -481,7 +486,7 @@
 <script>
   // The reel. In the single-file build (Car Crash Simulation.html) the video is embedded as base64
   // (#reel-data) and turned into a blob URL here. It plays automatically (muted) unless the
-  // visitor prefers reduced motion.
+  // visitor prefers reduced motion; "Sound on" restarts it with its soundtrack.
   (function () {
     var v = document.getElementById('reel'), data = document.getElementById('reel-data');
     if (!v) return;
@@ -490,6 +495,13 @@
       for (var i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
       v.src = URL.createObjectURL(new Blob([buf], { type: 'video/mp4' }));
     }
+    var sound = document.getElementById('reel-sound');
+    sound.addEventListener('click', function () {
+      v.muted = false; if (!v.volume) v.volume = 1; v.currentTime = 0;
+      var q = v.play();
+      if (q && q.catch) q.catch(function () { /* the controls are there */ });
+    });
+    v.addEventListener('volumechange', function () { sound.hidden = !v.muted; });
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     var p = v.play();
     if (p && p.catch) p.catch(function () { /* autoplay blocked: the controls are there */ });

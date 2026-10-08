@@ -1959,16 +1959,18 @@ node tools/record-video.js [shots|video|labs] [--lab <id>]
 ```
 
 Records the built `Simulator.html` in headless Chrome. It writes:
-- `media/crash-reel.mp4`: about a minute of crashes with captions;
+- `media/crash-reel.mp4`: the one-minute trailer, with its soundtrack;
 - `media/poster.jpg`: the video's poster frame;
 - `media/shot-rigid.jpg`, `media/shot-brick.jpg`: the barrier tests;
 - `media/lab-<id>.jpg`: one picture per lab.
 
 How it works:
 - **Virtual clock.** The page runs on a virtual clock that advances exactly 1/30 s per captured frame, so the video is smooth however long each frame takes to render.
-- **Encoding.** Blender's built-in FFmpeg encodes the frames (`tools/encode-video.py`), so no separate ffmpeg install is needed. Use `--chrome <path>` and `--blender <path>` if they aren't in their default folders.
+- **The trailer.** `tools/trailer.js` holds the shot list. The crashes are the simulator's own runs with the GPU (WebGPU) solver, except the brick wall, which runs on the CPU. The recorder sets the replay speed and the camera for every frame and lays the titles, colour grade and flashes over the page. At 150 BPM and 30 fps a beat is exactly 12 frames, so every first contact lands on a beat. The shots are drawn at 1920 × 1080 and scaled to 1280 × 720.
+- **The soundtrack.** `tools/trailer-music.js` is an original rock track (drums, bass, double-tracked distorted guitars, a lead guitar and trailer hits), synthesised with Web Audio in an `OfflineAudioContext` in the page. It follows the same bar grid, and the shot list says where the impacts, whooshes and title hits go.
+- **Encoding.** Blender's built-in FFmpeg encodes the frames and the soundtrack (`tools/encode-video.py`), so no separate ffmpeg install is needed. Use `--chrome <path>` and `--blender <path>` if they aren't in their default folders.
 - **Order.** Rebuild before recording, then again afterwards to embed the new media in the home page.
-- **No sound.** The app's sounds are synthesised live and aren't captured. (The in-app **Save video** button does include sound: it renders the sounds offline.)
+- **The app's sounds.** The simulator's own sounds are synthesised live and aren't captured; the trailer has its own soundtrack. (The in-app **Save video** button does include the app's sounds: it renders them offline.)
 
 ### Rebuilding the car models
 
@@ -2082,6 +2084,8 @@ tools/
   gpu-check.js          the GPU solver against the CPU solver, in headless Chrome
   build-standalone.js   builds the two single-file pages
   record-video.js       records the home page's media in headless Chrome
+  trailer.js            the trailer's shot list, cameras, titles and recorder
+  trailer-music.js      the trailer's soundtrack, synthesised with Web Audio
   encode-video.py       encodes the video with Blender's FFmpeg
   export-car.py         Blender exporter for the car models
   cars/*.json           per-car part rules for the exporter
