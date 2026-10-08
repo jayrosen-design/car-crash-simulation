@@ -4,6 +4,8 @@
  *                          tools/trailer-music.js)
  *   media/poster.jpg       the video's poster frame
  *   media/hero-loop.mp4    the home page's background: the trailer's chorus without titles or sound
+ *   media/race-trailer.mp4 the Race game's trailer (tools/race-trailer.js, recorded from Race.html), and
+ *   media/race-poster.jpg  its poster
  *   media/shot-rigid.jpg   pictures of the two barrier tests for the home page
  *   media/shot-brick.jpg
  *   media/lab-<id>.jpg     a picture of each crash lab's finished test
@@ -11,7 +13,7 @@
  * so the video is smooth however long a frame takes to render. The soundtrack is rendered in the
  * page with Web Audio. Blender encodes the frames and the sound (tools/encode-video.py), so no
  * separate ffmpeg install is needed.
- *   node tools/record-video.js [shots|video|loop|labs] [--chrome <chrome.exe>] [--blender <blender.exe>]
+ *   node tools/record-video.js [shots|video|loop|race|labs] [--chrome <chrome.exe>] [--blender <blender.exe>]
  * Rebuild Simulator.html first (node tools/build-standalone.js): this records that file. Rebuild
  * again afterwards, to embed the new media in Car Crash Simulation.html.
  */
@@ -21,6 +23,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const Trailer = require('./trailer.js');
+const RaceTrailer = require('./race-trailer.js');
 const { renderMusic } = require('./trailer-music.js');
 
 const ROOT = path.join(__dirname, '..');
@@ -28,7 +31,7 @@ const MEDIA = path.join(ROOT, 'media');
 const arg = (name, def) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : def; };
 const CHROME = arg('--chrome', 'C:/Program Files/Google/Chrome/Application/chrome.exe');
 const BLENDER = arg('--blender', 'C:/Program Files/Blender Foundation/Blender 5.1/blender.exe');
-const ONLY = ['shots', 'video', 'loop', 'labs'].find(k => process.argv.includes(k));
+const ONLY = ['shots', 'video', 'loop', 'race', 'labs'].find(k => process.argv.includes(k));
 const W = 1280, H = 720, FPS = 30, DT = 1000 / FPS;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const pageUrl = (q) => 'file:///' + path.join(ROOT, 'Simulator.html').replace(/\\/g, '/').replace(/ /g, '%20') + (q || '');
@@ -118,10 +121,10 @@ async function openSimulator(b, query) {
   throw new Error('the simulator did not become ready: ' + why + (b.errors.length ? ' ' + b.errors.join(' | ') : ''));
 }
 
-// ---------------------------------------------------------------- the trailer's soundtrack
+// ---------------------------------------------------------------- the trailers' soundtracks
 // rendered in the page (OfflineAudioContext), then fetched as a WAV in base64 chunks
-async function renderSoundtrack(b) {
-  const n = await b.ev(`(${renderMusic.toString()})(${JSON.stringify({ bars: Trailer.BARS, hits: Trailer.musicHits() })})`);
+async function renderSoundtrack(b, song) {
+  const n = await b.ev(`(${renderMusic.toString()})(${JSON.stringify(song)})`);
   const parts = [];
   for (let o = 0; o < n; o += 1 << 20) {
     parts.push(Buffer.from(await b.ev(`(() => { const a = window.__wav.subarray(${o}, ${o + (1 << 20)}); let s = ''; for (let i = 0; i < a.length; i += 8192) s += String.fromCharCode.apply(null, a.subarray(i, i + 8192)); return btoa(s); })()`), 'base64'));
@@ -129,6 +132,15 @@ async function renderSoundtrack(b) {
   const st = await b.ev('window.__wavStats');
   console.log(`soundtrack: ${st.seconds.toFixed(1)} s, ${st.rmsDb.toFixed(1)} dBFS RMS`);
   return Buffer.concat(parts);
+}
+// a poster: one frame, at the video's size
+async function savePoster(b, jpg, out) {
+  const data = fs.readFileSync(jpg).toString('base64');
+  await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+  await b.send('Page.navigate', { url: 'about:blank' });
+  await sleep(300);
+  await b.ev(`new Promise((r) => { document.body.style.margin = 0; const i = new Image(); i.style.cssText = 'display:block;width:100vw;height:100vh'; i.onload = r; i.src = 'data:image/jpeg;base64,${data}'; document.body.appendChild(i); })`);
+  fs.writeFileSync(out, await b.shot(88));
 }
 
 // ---------------------------------------------------------------- barrier-test pictures
@@ -196,14 +208,8 @@ async function recordLabShot(b, id, query, tSince, cameraJs) {
       const { frames } = await Trailer.record(b, { open: (q) => openSimulator(b, q), framesDir, log: console.log });
       console.log(`captured ${frames} frames (${(frames / FPS).toFixed(1)} s of video) in ${((Date.now() - t0) / 1000).toFixed(0)} s -> ${framesDir}`);
       const wav = path.join(framesDir, 'soundtrack.wav');
-      fs.writeFileSync(wav, await renderSoundtrack(b));
-      // the poster: one frame, at the video's size
-      const poster = fs.readFileSync(path.join(framesDir, 'f' + String(Trailer.POSTER).padStart(5, '0') + '.jpg')).toString('base64');
-      await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
-      await b.send('Page.navigate', { url: 'about:blank' });
-      await sleep(300);
-      await b.ev(`new Promise((r) => { document.body.style.margin = 0; const i = new Image(); i.style.cssText = 'display:block;width:100vw;height:100vh'; i.onload = r; i.src = 'data:image/jpeg;base64,${poster}'; document.body.appendChild(i); })`);
-      fs.writeFileSync(path.join(MEDIA, 'poster.jpg'), await b.shot(88));
+      fs.writeFileSync(wav, await renderSoundtrack(b, { bars: Trailer.BARS, hits: Trailer.musicHits() }));
+      await savePoster(b, path.join(framesDir, 'f' + String(Trailer.POSTER).padStart(5, '0') + '.jpg'), path.join(MEDIA, 'poster.jpg'));
       // LOW keeps it small enough to embed in the home page; the titles stay sharp
       execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', framesDir, path.join(MEDIA, 'crash-reel.mp4'), String(FPS), 'LOW', 'audio=' + wav, 'size=' + W + 'x' + H], { stdio: 'inherit' });
       const mb = fs.statSync(path.join(MEDIA, 'crash-reel.mp4')).size / 1048576;
@@ -219,6 +225,26 @@ async function recordLabShot(b, id, query, tSince, cameraJs) {
       execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', loopDir, path.join(MEDIA, 'hero-loop.mp4'), String(FPS), 'LOW', 'size=' + W + 'x' + H], { stdio: 'inherit' });
       console.log(`wrote media/hero-loop.mp4 (${(fs.statSync(path.join(MEDIA, 'hero-loop.mp4')).size / 1048576).toFixed(1)} MB, ${((z - a) / FPS).toFixed(1)} s)`);
       fs.rmSync(loopDir, { recursive: true, force: true });
+    }
+    if (!ONLY || ONLY === 'race') {
+      // the Race trailer: the takes (fresh races), then the edit composited over them
+      const t0 = Date.now();
+      const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-race-'));
+      const takesDir = path.join(work, 'takes'), framesDir = path.join(work, 'frames');
+      fs.mkdirSync(takesDir); fs.mkdirSync(framesDir);
+      await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1.5, mobile: false });
+      const race = 'file:///' + path.join(ROOT, 'Race.html').replace(/\\/g, '/').replace(/ /g, '%20');
+      const events = await RaceTrailer.recordTakes(b, { dir: takesDir, log: console.log, page: race });
+      RaceTrailer.check(events);
+      await RaceTrailer.composite(b, { takesDir, events, outDir: framesDir, workDir: work, log: console.log });
+      console.log(`recorded and composited ${RaceTrailer.TOTAL} frames in ${((Date.now() - t0) / 1000).toFixed(0)} s -> ${work}`);
+      const wav = path.join(work, 'soundtrack.wav');
+      fs.writeFileSync(wav, await renderSoundtrack(b, { bars: RaceTrailer.BARS, hits: RaceTrailer.musicHits(), song: 'race' }));
+      await savePoster(b, RaceTrailer.posterSource(takesDir, events), path.join(MEDIA, 'race-poster.jpg'));
+      // city footage compresses less well than the crash tests: a step lower keeps it embeddable
+      execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', framesDir, path.join(MEDIA, 'race-trailer.mp4'), String(FPS), 'VERYLOW', 'audio=' + wav, 'size=' + W + 'x' + H], { stdio: 'inherit' });
+      console.log(`wrote media/race-trailer.mp4 (${(fs.statSync(path.join(MEDIA, 'race-trailer.mp4')).size / 1048576).toFixed(1)} MB)`);
+      fs.rmSync(work, { recursive: true, force: true });
     }
     if (b.errors.length) { console.log('page errors:\n' + b.errors.join('\n')); process.exitCode = 1; }
   } finally {

@@ -162,6 +162,11 @@
 
       <h3 class="games-head" id="games">Game modes</h3>
       <p class="sub">Take the wheel yourself. Crashes go through the same crash physics as the simulations.</p>
+      <div class="race-trailer">
+        <video id="race" src="media/race-trailer.mp4" poster="media/race-poster.jpg" playsinline preload="none"
+          aria-label="One-minute trailer of the Race game mode: the start, the pack, oncoming traffic, a takedown and three crashes"></video>
+        <button class="race-play" id="race-play" type="button"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg><span>Watch the Race trailer<small>1:00 · with sound</small></span></button>
+      </div>
       <a class="card game" href="Race.html"><div class="in">
         <div class="shot">
           <img src="media/race.jpg" alt="Race mode: the player's Lexus in a pack of rival cars on a city street, with a rival spun round by a takedown">
@@ -278,12 +283,13 @@
 <script>
   // Behind the title runs a silent loop of crash footage (unless the visitor prefers reduced
   // motion). "Watch the trailer" swaps it for the trailer, with its soundtrack and the controls.
-  // In the single-file build (Car Crash Simulation.html) both videos are embedded as base64
-  // (#loop-data, #reel-data) and turned into blob URLs here.
+  // The Race trailer plays in place, with sound, when its button is pressed. In the single-file
+  // build (Car Crash Simulation.html) the videos are embedded as base64 (#<video id>-data) and
+  // turned into blob URLs here.
   (function () {
     var loop = document.getElementById('loop'), reel = document.getElementById('reel');
     if (!loop || !reel) return;
-    [loop, reel].forEach(function (v) {
+    Array.prototype.forEach.call(document.querySelectorAll('video[id]'), function (v) {
       var data = document.getElementById(v.id + '-data');
       if (!data) return;
       var bin = atob(data.textContent.replace(/\s+/g, '')), buf = new Uint8Array(bin.length);
@@ -307,6 +313,13 @@
     reel.addEventListener('ended', leave);
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && hero.classList.contains('cinema')) leave(); });
     if (!still) play(loop);
+    var race = document.getElementById('race'), racePlay = document.getElementById('race-play');
+    racePlay.addEventListener('click', function () {
+      racePlay.hidden = true; race.controls = true; race.muted = false;
+      if (hero.classList.contains('cinema')) leave();
+      loop.pause(); play(race);
+    });
+    race.addEventListener('ended', function () { racePlay.hidden = false; race.controls = false; if (!still) play(loop); });
   })();
 </script>
 </body>

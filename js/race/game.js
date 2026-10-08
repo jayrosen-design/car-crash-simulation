@@ -328,7 +328,11 @@ const RaceGame = (() => {
   const testDrive = { throttle: 1 };
   const ctxAI = { traffic, racing: true, player: me, lead: leadOver };
   let stepN = 0;
+  // a director (the trailer recorder, tools/race-trailer.js) can drive the player and place the
+  // camera; both stay null in the game
+  const director = { input: null, camera: null };
   function playerInput() {
+    if (director.input) return director.input(STEP);
     if (TEST === 'takedown') return { throttle: 1, steer: simT < 2.8 ? 0.5 : -0.3 };
     if (TEST) return testDrive;
     if (state === 'finished' && autopilot) return ai.drive(autopilot, STEP, ctxAI);
@@ -402,6 +406,7 @@ const RaceGame = (() => {
     sparks.setScale(R.renderer.domElement.height / (2 * Math.tan(R.camera.fov * Math.PI / 360)));
     if (audio && (state === 'race' || state === 'countdown' || state === 'finished')) FX.engineUpdate(car.forward * 3.6, Math.max(car.throttle, input.throttle || 0), state === 'countdown' ? 900 + 4500 * (input.throttle || 0) : car.rpm);
     hud(dt, simT);
+    if (director.camera) director.camera(dt, state);
     R.render();
     requestAnimationFrame(frame);
   }
@@ -506,5 +511,5 @@ const RaceGame = (() => {
   }
   start().catch((err) => { $('#loading').textContent = 'Could not start: ' + err.message; console.error(err); });
 
-  return { level, world, car, R, ai, traffic, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, standings };
+  return { level, world, car, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, standings };
 })();

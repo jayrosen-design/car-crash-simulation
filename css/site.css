@@ -166,6 +166,17 @@ img, video { display: block; max-width: 100%; }
 .card.game h3 { font-size: 54px; }
 @media (max-width: 860px) { .card.game > .in { grid-template-columns: 1fr; } .card.game .shot { aspect-ratio: 16 / 9; min-height: 0; } .card.game .shot::after { background: linear-gradient(0deg, rgba(19, 23, 30, 0.95) 0%, transparent 45%); } .card.game .body { padding: 4px 24px 26px; } .card.game h3 { font-size: 40px; } }
 
+/* the Race trailer: a poster with a play button, then the video in place */
+.race-trailer { position: relative; margin: 0 0 26px; aspect-ratio: 16 / 9; background: #000; clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut))); }
+.race-trailer video { width: 100%; height: 100%; object-fit: cover; }
+.race-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 22px; border: 0; cursor: pointer; color: #fff; background: linear-gradient(0deg, rgba(6, 7, 10, 0.55), rgba(6, 7, 10, 0.15)); }
+.race-play svg { width: clamp(64px, 9vw, 104px); height: clamp(64px, 9vw, 104px); padding: clamp(16px, 2.2vw, 26px); color: var(--ink); background: var(--hz); clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%); transition: transform 0.2s; }
+.race-play span { text-align: left; font: italic 900 clamp(28px, 4.4vw, 58px)/0.95 var(--display); text-transform: uppercase; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7); }
+.race-play small { display: block; margin-top: 10px; font: 600 13px/1 var(--mono); font-style: normal; letter-spacing: 0.18em; color: var(--hz); }
+.race-play:hover svg { transform: scale(1.08); }
+.race-play[hidden] { display: none; }
+@media (max-width: 560px) { .race-play { flex-direction: column; gap: 12px; } .race-play span { text-align: center; } }
+
 /* ---------------------------------------------------------------- home: under the hood */
 .tech { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: var(--line); border: 1px solid var(--line); }
 @media (max-width: 960px) { .tech { grid-template-columns: 1fr 1fr; } }

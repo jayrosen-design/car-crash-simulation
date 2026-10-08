@@ -2,8 +2,9 @@
  * distorted guitars, a lead guitar and trailer hits), synthesised with Web Audio in an
  * OfflineAudioContext, so no samples or licensed music are involved.
  * renderMusic runs inside the page (record-video.js passes its source to headless Chrome):
- *   renderMusic({ bars, hits: [{ t, kind }] }) -> resolves to the byte length of a 16-bit stereo
- *   WAV it leaves in window.__wav
+ *   renderMusic({ bars, hits: [{ t, kind }], song }) -> resolves to the byte length of a 16-bit
+ *   stereo WAV it leaves in window.__wav. song: 'crash' (the home page's trailer, E minor) or 'race'
+ *   (the Race trailer, A minor, with a synth arpeggio, an engine and the start's countdown beeps)
  * The arrangement follows the trailer's bar grid (tools/trailer.js): a 150 BPM bar is 1.6 s,
  * exactly 48 video frames at 30 fps, so cuts and impacts land on the beat. `hits` are the sound
  * effects the picture asks for (impacts, whooshes, the intro's title cards). */
@@ -182,7 +183,7 @@ function renderMusic(opts) {
   const rhythm = [amp(-0.85, 14), amp(0.85, 14)];
   const CH = { E: [40, 47, 52], F: [42, 49, 54], G: [43, 50, 55], A: [45, 52, 57], B: [47, 54, 59], C: [48, 55, 60], D: [50, 57, 62], d: [38, 45, 50] };
   function chord(t, dur, name, muted, v = 1) {
-    const notes = CH[name];
+    const notes = Array.isArray(name) ? name : CH[name];
     rhythm.forEach((inp, side) => {
       const g = ctx.createGain(), lp = ctx.createBiquadFilter();
       lp.type = 'lowpass'; lp.frequency.value = muted ? 900 : 9000;
@@ -340,56 +341,165 @@ function renderMusic(opts) {
   }
   function toms(bar, beat0) { [220, 220, 170, 170, 130, 130, 100, 100].forEach((f, i) => tom(T(bar, beat0) + i * E16, f, 0.9)); }
 
-  // ---------------------------------------------------------------- the arrangement
-  const VERSE = ['e e G - e e A -', 'e e G - e e D C', 'e e G - e e A -', 'e e B - A - G -'];
-  // intro (bars 0-3): palm-muted chugs behind a filter that opens, then drums come in
-  riff(0, 'e e e e e e e e', 0.9, false); riff(1, 'e e e e e e e e', 0.9, false);
-  riff(2, 'e e e e e e e e'); riff(3, 'e e e e G A . .');
-  for (let i = 0; i < 4; i++) kick(T(2, i), 0.9);
-  for (let i = 0; i < 8; i++) hat(T(2) + i * E8, 0.7);
-  roll(3, 0.25, 1.0, 0, 3);
-  riser(T(2), T(4) - 0.01, 0.9); swell(T(4), 1.4);
-  // verse (bars 4-11)
-  for (let b = 4; b < 12; b++) { riff(b, VERSE[(b - 4) % 4]); beat(b, 'rock'); }
-  crash(T(4), 1.2); crash(T(8)); toms(11, 2);
-  // pre-chorus (bars 12-15): half-time, held chords, a rising lead
-  riff(12, 'C - - - - - - -'); riff(13, 'D - - - - - - -'); riff(14, 'E - - - - - - -'); riff(15, 'e e e e e e . .', 1);
-  for (let b = 12; b < 15; b++) beat(b, 'half');
-  crash(T(12)); crash(T(14), 0.8);
-  lead(12, [[0, 4, 64]], 0.8); lead(13, [[0, 2, 66], [2, 2, 67]], 0.85); lead(14, [[0, 4, 71]], 0.9);
-  roll(15, 0.3, 1.1, 0, 3); riser(T(14), T(16) - 0.01, 1); swell(T(16), 1.6, 1.1);
-  // chorus (bars 16-23)
-  const CHORUS = ['E', 'C', 'G', 'D', 'E', 'C', 'G', 'D'];
-  for (let b = 16; b < 24; b++) {
-    const c = CHORUS[b - 16];
-    riff(b, `${c} ${c} ${c} ${c} ${c} ${c} ${c} ${c}`, 0.95); beat(b, 'drive'); crash(T(b), b === 16 ? 1.3 : 0.8);
+  // ---------------------------------------------------------------- the race song's instruments
+  const synthBus = bus('synth', 0.3);
+  // a 16th-note arpeggio: two detuned saws, plucked, through a resonant low-pass and a delay
+  const synthCut = ctx.createBiquadFilter(); synthCut.type = 'lowpass'; synthCut.Q.value = 5; synthCut.frequency.value = 2400;
+  const synthDl = ctx.createDelay(1); synthDl.delayTime.value = BEAT * 0.75;
+  const synthFb = ctx.createGain(); synthFb.gain.value = 0.28;
+  const synthWet = ctx.createGain(); synthWet.gain.value = 0.35;
+  synthCut.connect(synthBus); synthCut.connect(synthDl); synthDl.connect(synthFb); synthFb.connect(synthDl); synthDl.connect(synthWet); synthWet.connect(pan(synthBus, -0.4));
+  function arp(t, m, v = 1) {
+    const g = ctx.createGain();
+    for (const dt of [-7, 7]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(m); o.detune.value = dt; o.connect(g); o.start(t); o.stop(t + 0.3); }
+    env(g, t, 0.16 * v, 0.003, 0.07); g.connect(synthCut);
   }
-  const HOOK = [[[0, 3, 71], [3, 1, 76]], [[0, 2, 74], [2, 2, 71]], [[0, 3, 67], [3, 1, 69]], [[0, 4, 71]],
-    [[0, 3, 71], [3, 1, 76]], [[0, 2, 74], [2, 2, 71]], [[0, 2, 67], [2, 2, 69]], [[0, 4, 64]]];
-  HOOK.forEach((n, i) => lead(16 + i, n));
-  toms(23, 3);
-  // breakdown (bars 24-27): half-time, syncopated low chugs doubled by the kick
-  const BREAK = 'x x . x . . x . x . x x . . . .';
-  for (let b = 24; b < 27; b++) {
-    BREAK.split(' ').forEach((c, i) => { if (c === 'x') { const t = T(b) + i * E16; chord(t, E16 * 1.6, 'd', true, 1.1); bass(t, E16 * 1.5, 26); kick(t, 0.95); } });
-    snare(T(b, 2), 1.1); crash(T(b), 0.55, 0.4);
+  // the engine: a saw and a square at the firing frequency, driven and filtered; f is set by the caller
+  function engine(t0, t1, freq) {
+    const g = ctx.createGain(), ws = ctx.createWaveShaper(), lp = ctx.createBiquadFilter();
+    ws.curve = shaper((x) => Math.tanh(3 * x)); ws.oversample = '2x'; lp.type = 'lowpass'; lp.frequency.value = 1500; lp.Q.value = 2;
+    for (const [type, mul, a] of [['sawtooth', 1, 0.3], ['square', 0.5, 0.25], ['sawtooth', 2.01, 0.1]]) {
+      const o = ctx.createOscillator(); o.type = type; freq(o.frequency, mul);
+      const og = ctx.createGain(); og.gain.value = a; o.connect(og); og.connect(ws); o.start(t0); o.stop(t1 + 0.1);
+    }
+    ws.connect(lp); lp.connect(g); g.connect(fxBus);
+    return g;
   }
-  riff(27, 'd - - - e e . .'); roll(27, 0.3, 1.1, 0, 3); riser(T(26), T(28) - 0.01, 1.1); swell(T(28), 1.6, 1.2);
-  // last chorus (bars 28-33): double kick, the hook an octave higher at the end
-  const FINAL = ['E', 'C', 'G', 'D', 'C', 'D'];
-  for (let b = 28; b < 34; b++) {
-    const c = FINAL[b - 28];
-    riff(b, `${c} ${c} ${c} ${c} ${c} ${c} ${c} ${c}`); beat(b, b < 33 ? 'double' : 'drive'); crash(T(b), b === 28 ? 1.3 : 0.85);
+  function beep(t, f) {
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.32, t + 0.005); g.gain.setValueAtTime(0.32, t + 0.14); g.gain.linearRampToValueAtTime(0, t + 0.18);
+    o.connect(g); g.connect(fxBus); o.start(t); o.stop(t + 0.2);
   }
-  HOOK.slice(0, 4).forEach((n, i) => lead(28 + i, n));
-  lead(32, [[0, 2, 79], [2, 2, 78]]); lead(33, [[0, 2, 76], [2, 2, 74]]);
-  roll(33, 0.4, 1.2, 2, 2);
-  // ending (bars 34-37.5): three hits under the title cards, then the ring-out
-  for (const [b, c, len] of [[34, 'E', BAR], [35, 'C', BAR], [36, 'E', LEN - T(36)]]) {
-    chord(T(b), len, c, false, 1.05); bass(T(b), len - 0.05, CH[c][0] - 12);
-    kick(T(b), 1.1); snare(T(b), 0.8); crash(T(b), 1.2, 1.1);
+
+  // ---------------------------------------------------------------- the race song (A minor)
+  function raceSong() {
+    const RC = { A: [45, 52, 57], F: [41, 48, 53], G: [43, 50, 55], C: [48, 55, 60], D: [38, 45, 50], E: [40, 47, 52] };
+    // one token per eighth: an upper-case chord rings, lower-case is palm-muted, '-' holds, '.' rests
+    function riffR(bar, tokens, v = 1, withBass = true) {
+      const tk = tokens.replace(/\s+/g, '').split('');
+      for (let i = 0; i < tk.length; i++) {
+        const c = tk[i];
+        if (c === '-' || c === '.') continue;
+        let n = 1; while (tk[i + n] === '-') n++;
+        const t = T(bar) + i * E8, muted = c !== c.toUpperCase(), notes = RC[c.toUpperCase()];
+        chord(t, n * E8, notes, muted, v * (muted ? 0.85 : 1));
+        if (withBass) bass(t, n * E8 - 0.01, notes[0] - 12, v);
+      }
+    }
+    const ARP = { A: [57, 60, 64, 69, 72, 69, 64, 60], F: [53, 57, 60, 65, 69, 65, 60, 57], G: [55, 59, 62, 67, 71, 67, 62, 59], C: [60, 64, 67, 72, 76, 72, 67, 64], E: [52, 56, 59, 64, 68, 64, 59, 56] };
+    const arpBar = (bar, c, v) => { for (let i = 0; i < 16; i++) arp(T(bar) + i * E16, ARP[c][i % 8], v); };
+    const strum = (bar, c, v) => riffR(bar, `${c} ${c} ${c} ${c} ${c} ${c} ${c} ${c}`, v);
+    // the arpeggio's filter opens through the intro, closes for the breakdown and opens again
+    const cut = synthCut.frequency;
+    cut.setValueAtTime(450, 0); cut.exponentialRampToValueAtTime(2600, T(4)); cut.setValueAtTime(2600, T(24)); cut.exponentialRampToValueAtTime(700, T(24, 2)); cut.exponentialRampToValueAtTime(3000, T(28));
+
+    // intro (bars 0-2): the engine idling on the grid, the arpeggio behind a filter, palm-muted A
+    for (let b = 0; b < 3; b++) arpBar(b, 'A', 0.75);
+    riffR(1, 'a a a a a a a a', 0.8, false); riffR(2, 'a a a a a a a a', 0.9);
+    for (let i = 0; i < 4; i++) kick(T(2, i), 0.85);
+    for (let i = 0; i < 8; i++) hat(T(2) + i * E8, 0.65);
+    // the countdown (bar 3): a beep and a rev on beats 1-3, a breath, and the start on the drop
+    const eng = engine(0, T(5, 2), (p, mul) => {
+      p.setValueAtTime(30 * mul, 0);
+      for (const i of [0, 1, 2]) { const t = T(3, i); p.setValueAtTime(30 * mul, t); p.exponentialRampToValueAtTime((90 + 25 * i) * mul, t + 0.12); p.exponentialRampToValueAtTime(34 * mul, t + 0.38); }
+      p.setValueAtTime(34 * mul, T(4)); p.exponentialRampToValueAtTime(70 * mul, T(4) + 0.08); p.exponentialRampToValueAtTime(190 * mul, T(5));
+    });
+    eng.gain.setValueAtTime(0.0001, 0); eng.gain.exponentialRampToValueAtTime(0.25, 1.2); eng.gain.setValueAtTime(0.25, T(3));
+    eng.gain.linearRampToValueAtTime(0.45, T(4)); eng.gain.linearRampToValueAtTime(0.5, T(4, 2)); eng.gain.exponentialRampToValueAtTime(0.0001, T(5, 2));
+    for (const i of [0, 1, 2]) beep(T(3, i), 440);
+    beep(T(4), 880);
+    riser(T(2), T(4) - 0.01, 0.8); swell(T(4), 1.4);
+    // verse (bars 4-11): the pack and the oncoming lanes
+    const VR = ['a a a a F - G -', 'a a a a C - G -', 'a a a a F - G -', 'a a E - F - G -'];
+    for (let b = 4; b < 12; b++) { riffR(b, VR[(b - 4) % 4]); beat(b, 'drive'); arpBar(b, (b - 4) % 4 === 3 ? 'E' : 'A', 0.55); }
+    crash(T(4), 1.2); crash(T(8)); toms(11, 2);
+    // pre-chorus (bars 12-15): half-time, held chords, the takedown, then the run at the corner
+    riffR(12, 'F - - - - - - -'); riffR(13, 'G - - - - - - -'); riffR(14, 'A - - - - - - -'); riffR(15, 'a a a a a a a a', 1);
+    for (let b = 12; b < 15; b++) beat(b, 'half');
+    ['F', 'G', 'A', 'A'].forEach((c, i) => arpBar(12 + i, c, 0.6));
+    crash(T(12)); crash(T(14), 0.8);
+    lead(12, [[0, 4, 69]], 0.8); lead(13, [[0, 2, 71], [2, 2, 72]], 0.85); lead(14, [[0, 4, 76]], 0.9);
+    roll(15, 0.3, 1.1, 0, 4); riser(T(14), T(16) - 0.01, 1); swell(T(16), 1.6, 1.1);
+    // chorus (bars 16-23): the crashes
+    const CHO = ['F', 'G', 'A', 'A', 'F', 'G', 'C', 'E'];
+    CHO.forEach((c, i) => { strum(16 + i, c, 0.95); beat(16 + i, 'double'); crash(T(16 + i), i ? 0.8 : 1.3); arpBar(16 + i, c, 0.5); });
+    const HOOK = [[[0, 3, 72], [3, 1, 74]], [[0, 2, 74], [2, 2, 71]], [[0, 3, 76], [3, 1, 74]], [[0, 2, 72], [2, 2, 69]],
+      [[0, 3, 72], [3, 1, 77]], [[0, 2, 79], [2, 2, 74]], [[0, 2, 76], [2, 2, 79]], [[0, 4, 80]]];
+    HOOK.forEach((n, i) => lead(16 + i, n));
+    toms(23, 3);
+    // breakdown (bars 24-27): half-time, syncopated low chugs, the arpeggio closed down
+    const BREAK = 'x x . x . . x . x . x x . . . .';
+    for (let b = 24; b < 27; b++) {
+      BREAK.split(' ').forEach((c, i) => { if (c === 'x') { const t = T(b) + i * E16; chord(t, E16 * 1.6, RC.A, true, 1.1); bass(t, E16 * 1.5, 33); kick(t, 0.95); } });
+      snare(T(b, 2), 1.1); crash(T(b), 0.55, 0.4); arpBar(b, 'A', 0.5);
+    }
+    riffR(27, 'A - - - a a . .'); roll(27, 0.3, 1.1, 0, 3); riser(T(26), T(28) - 0.01, 1.1); swell(T(28), 1.6, 1.2); arpBar(27, 'E', 0.5);
+    // last chorus (bars 28-33): faster and faster
+    ['F', 'G', 'A', 'A', 'F', 'G'].forEach((c, i) => { strum(28 + i, c, 1); beat(28 + i, i < 5 ? 'double' : 'drive'); crash(T(28 + i), i ? 0.85 : 1.3); arpBar(28 + i, c, 0.5); });
+    HOOK.slice(0, 4).forEach((n, i) => lead(28 + i, n));
+    lead(32, [[0, 2, 81], [2, 2, 79]]); lead(33, [[0, 2, 77], [2, 2, 74]]);
+    roll(33, 0.4, 1.2, 2, 2);
+    // ending (bars 34-37.5): three hits under the titles, then the ring-out
+    for (const [b, c, len] of [[34, 'A', BAR], [35, 'F', BAR], [36, 'A', LEN - T(36)]]) {
+      chord(T(b), len, RC[c], false, 1.05); bass(T(b), len - 0.05, RC[c][0] - 12);
+      kick(T(b), 1.1); snare(T(b), 0.8); crash(T(b), 1.2, 1.1);
+    }
+    lead(36, [[0, 5.5, 81]], 0.85);
   }
-  lead(36, [[0, 5.5, 76]], 0.9);
+
+  // ---------------------------------------------------------------- the crash song (E minor)
+  function crashSong() {
+    const VERSE = ['e e G - e e A -', 'e e G - e e D C', 'e e G - e e A -', 'e e B - A - G -'];
+    // intro (bars 0-3): palm-muted chugs behind a filter that opens, then drums come in
+    riff(0, 'e e e e e e e e', 0.9, false); riff(1, 'e e e e e e e e', 0.9, false);
+    riff(2, 'e e e e e e e e'); riff(3, 'e e e e G A . .');
+    for (let i = 0; i < 4; i++) kick(T(2, i), 0.9);
+    for (let i = 0; i < 8; i++) hat(T(2) + i * E8, 0.7);
+    roll(3, 0.25, 1.0, 0, 3);
+    riser(T(2), T(4) - 0.01, 0.9); swell(T(4), 1.4);
+    // verse (bars 4-11)
+    for (let b = 4; b < 12; b++) { riff(b, VERSE[(b - 4) % 4]); beat(b, 'rock'); }
+    crash(T(4), 1.2); crash(T(8)); toms(11, 2);
+    // pre-chorus (bars 12-15): half-time, held chords, a rising lead
+    riff(12, 'C - - - - - - -'); riff(13, 'D - - - - - - -'); riff(14, 'E - - - - - - -'); riff(15, 'e e e e e e . .', 1);
+    for (let b = 12; b < 15; b++) beat(b, 'half');
+    crash(T(12)); crash(T(14), 0.8);
+    lead(12, [[0, 4, 64]], 0.8); lead(13, [[0, 2, 66], [2, 2, 67]], 0.85); lead(14, [[0, 4, 71]], 0.9);
+    roll(15, 0.3, 1.1, 0, 3); riser(T(14), T(16) - 0.01, 1); swell(T(16), 1.6, 1.1);
+    // chorus (bars 16-23)
+    const CHORUS = ['E', 'C', 'G', 'D', 'E', 'C', 'G', 'D'];
+    for (let b = 16; b < 24; b++) {
+      const c = CHORUS[b - 16];
+      riff(b, `${c} ${c} ${c} ${c} ${c} ${c} ${c} ${c}`, 0.95); beat(b, 'drive'); crash(T(b), b === 16 ? 1.3 : 0.8);
+    }
+    const HOOK = [[[0, 3, 71], [3, 1, 76]], [[0, 2, 74], [2, 2, 71]], [[0, 3, 67], [3, 1, 69]], [[0, 4, 71]],
+      [[0, 3, 71], [3, 1, 76]], [[0, 2, 74], [2, 2, 71]], [[0, 2, 67], [2, 2, 69]], [[0, 4, 64]]];
+    HOOK.forEach((n, i) => lead(16 + i, n));
+    toms(23, 3);
+    // breakdown (bars 24-27): half-time, syncopated low chugs doubled by the kick
+    const BREAK = 'x x . x . . x . x . x x . . . .';
+    for (let b = 24; b < 27; b++) {
+      BREAK.split(' ').forEach((c, i) => { if (c === 'x') { const t = T(b) + i * E16; chord(t, E16 * 1.6, 'd', true, 1.1); bass(t, E16 * 1.5, 26); kick(t, 0.95); } });
+      snare(T(b, 2), 1.1); crash(T(b), 0.55, 0.4);
+    }
+    riff(27, 'd - - - e e . .'); roll(27, 0.3, 1.1, 0, 3); riser(T(26), T(28) - 0.01, 1.1); swell(T(28), 1.6, 1.2);
+    // last chorus (bars 28-33): double kick, the hook an octave higher at the end
+    const FINAL = ['E', 'C', 'G', 'D', 'C', 'D'];
+    for (let b = 28; b < 34; b++) {
+      const c = FINAL[b - 28];
+      riff(b, `${c} ${c} ${c} ${c} ${c} ${c} ${c} ${c}`); beat(b, b < 33 ? 'double' : 'drive'); crash(T(b), b === 28 ? 1.3 : 0.85);
+    }
+    HOOK.slice(0, 4).forEach((n, i) => lead(28 + i, n));
+    lead(32, [[0, 2, 79], [2, 2, 78]]); lead(33, [[0, 2, 76], [2, 2, 74]]);
+    roll(33, 0.4, 1.2, 2, 2);
+    // ending (bars 34-37.5): three hits under the title cards, then the ring-out
+    for (const [b, c, len] of [[34, 'E', BAR], [35, 'C', BAR], [36, 'E', LEN - T(36)]]) {
+      chord(T(b), len, c, false, 1.05); bass(T(b), len - 0.05, CH[c][0] - 12);
+      kick(T(b), 1.1); snare(T(b), 0.8); crash(T(b), 1.2, 1.1);
+    }
+    lead(36, [[0, 5.5, 76]], 0.9);
+  }
+  if (opts.song === 'race') raceSong(); else crashSong();
 
   // the picture's sound effects
   for (const h of opts.hits) {
@@ -406,7 +516,9 @@ function renderMusic(opts) {
     const L = buf.getChannelData(0), R = buf.getChannelData(1), n = buf.length;
     let peak = 0, sum = 0;
     for (let i = 0; i < n; i++) { peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); sum += L[i] * L[i] + R[i] * R[i]; }
-    const gain = peak > 0 ? 0.7 / peak : 1;   // peak at -3 dBFS: AAC overshoots by up to 2 dB
+    // peak at -3 dBFS (AAC overshoots the crash song by up to 2 dB); the race song's dense saws by
+    // up to 5 dB, so it peaks at -6 dBFS
+    const target = opts.song === 'race' ? 0.5 : 0.7, gain = peak > 0 ? target / peak : 1;
     const bytes = new Uint8Array(44 + n * 4), dv = new DataView(bytes.buffer);
     const str = (o, s) => { for (let i = 0; i < s.length; i++) bytes[o + i] = s.charCodeAt(i); };
     str(0, 'RIFF'); dv.setUint32(4, 36 + n * 4, true); str(8, 'WAVE'); str(12, 'fmt ');
