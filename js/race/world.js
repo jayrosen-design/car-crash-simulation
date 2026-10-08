@@ -1,0 +1,206 @@
+/* The Race game's world: cars on the level, their collisions, and when a hit is a crash.
+ *
+ * Each car is an oriented box of its length and width (the crash solver's lattice has exactly that
+ * envelope). Against the level's boxes (buildings, barriers) and cylinders (street lights, trees,
+ * signal posts), and against each other, contacts are found by the separating-axis test and
+ * resolved with impulses: restitution and Coulomb friction at the contact point, so a glancing hit
+ * scrapes and turns the car and a square one stops it. A hit is a crash when the approach speed
+ * along the contact normal passes a limit (CRASH); then the game hands the cars over to the full
+ * crash solver from their state one step earlier, just before they touched (history()).
+ *
+ * Cars are RaceCar bodies (vehicle.js). Traffic can be kinematic (set by its driver each step)
+ * until something hits it; then it becomes a free body.
+ *
+ * DOM-free: global RaceWorld in the browser, module.exports in Node.
+ */
+const RaceWorld = (() => {
+  'use strict';
+  // m/s of approach along the contact normal that wrecks a car; rivals jostling each other (pack) take more
+  const CRASH = { wall: 13, car: 13.5, pack: 20 };
+  const E_WALL = 0.12, E_CAR = 0.2, MU_WALL = 0.35, MU_CAR = 0.3;
+  const HISTORY = 12;                       // steps kept for the crash hand-over
+
+  function create(level) {
+    const bodies = [];
+    const events = [];        // contacts this step: { a, b (body or null), kind: 'wall'|'post'|'car', vn, x, z, nx, nz, crash }
+    const hist = [];          // ring of snapshots
+    let tick = 0;
+
+    function add(car, opts = {}) {
+      const b = { car, kind: opts.kind || 'racer', kinematic: !!opts.kinematic, id: bodies.length, ghost: 0, wrecked: false, user: opts.user || null };
+      bodies.push(b);
+      return b;
+    }
+    // the car's box: centre, axes, half sizes
+    function box(b, out) {
+      const c = b.car, s = c.spec, ch = Math.cos(c.h), sh = Math.sin(c.h);
+      const off = s.xMin + s.length / 2 - c.cgX;     // box centre ahead of the centre of gravity
+      out.x = c.x + ch * off; out.z = c.z + sh * off; out.ux = ch; out.uz = sh; out.hx = s.length / 2; out.hz = s.width / 2;
+      return out;
+    }
+    const BA = {}, BB = {};
+
+    // ---------------------------------------------------------------- static contacts
+    function vsBox(b, A, o) {
+      // separating axes: the car's two and the box's two
+      const oc = Math.cos(o.angle), os = Math.sin(o.angle);
+      const axes = [[A.ux, A.uz], [-A.uz, A.ux], [oc, os], [-os, oc]];
+      const dx = A.x - o.x, dz = A.z - o.z;
+      let best = Infinity, nx = 0, nz = 0;
+      for (const [ux, uz] of axes) {
+        const ra = A.hx * Math.abs(A.ux * ux + A.uz * uz) + A.hz * Math.abs(-A.uz * ux + A.ux * uz);
+        const rb = o.hx * Math.abs(oc * ux + os * uz) + o.hz * Math.abs(-os * ux + oc * uz);
+        const d = dx * ux + dz * uz, pen = ra + rb - Math.abs(d);
+        if (pen <= 0) return null;
+        if (pen < best) { best = pen; const sg = d < 0 ? -1 : 1; nx = ux * sg; nz = uz * sg; }   // normal from the box toward the car
+      }
+      const P = deepest(A, { x: o.x, z: o.z, ux: oc, uz: os, hx: o.hx, hz: o.hz });
+      return { nx, nz, depth: best, px: P[0], pz: P[1] };
+    }
+    // signed distance of a point to a box (negative inside)
+    function boxDist(X, px, pz) {
+      const dx = px - X.x, dz = pz - X.z;
+      return Math.max(Math.abs(dx * X.ux + dz * X.uz) - X.hx, Math.abs(-dx * X.uz + dz * X.ux) - X.hz);
+    }
+    // the contact point of two overlapping boxes: the corner of either lying deepest inside the other
+    const CORNERS = [[1, 1], [1, -1], [-1, 1], [-1, -1]], PT = [0, 0];
+    function deepest(A, B) {
+      let best = Infinity;
+      for (const [X, Y] of [[A, B], [B, A]]) for (const [u, w] of CORNERS) {
+        const x = X.x + X.ux * u * X.hx - X.uz * w * X.hz, z = X.z + X.uz * u * X.hx + X.ux * w * X.hz, d = boxDist(Y, x, z);
+        if (d < best) { best = d; PT[0] = x; PT[1] = z; }
+      }
+      return PT;
+    }
+    function vsCyl(b, A, q) {
+      // nearest point of the car's box to the post's centre
+      const dx = q.x - A.x, dz = q.z - A.z, u = Math.max(-A.hx, Math.min(A.hx, dx * A.ux + dz * A.uz)), w = Math.max(-A.hz, Math.min(A.hz, -dx * A.uz + dz * A.ux));
+      const px = A.x + A.ux * u - A.uz * w, pz = A.z + A.uz * u + A.ux * w;
+      let ex = px - q.x, ez = pz - q.z, d = Math.hypot(ex, ez);
+      if (d >= q.r) return null;
+      if (d < 1e-6) { ex = A.x - q.x; ez = A.z - q.z; d = Math.hypot(ex, ez) || 1; return { nx: ex / d, nz: ez / d, depth: q.r, px, pz }; }
+      return { nx: ex / d, nz: ez / d, depth: q.r - d, px, pz };
+    }
+    function resolveStatic(b, hit, kind) {
+      const c = b.car, rx = hit.px - c.x, rz = hit.pz - c.z;
+      // push out, then cancel the approach (impulse with restitution and friction)
+      c.x += hit.nx * (hit.depth + 0.002); c.z += hit.nz * (hit.depth + 0.002);
+      const vx = c.vx - c.yaw * rz, vz = c.vz + c.yaw * rx, vn = vx * hit.nx + vz * hit.nz;
+      if (vn >= 0) return;
+      const rn = rx * hit.nz - rz * hit.nx, kn = 1 / c.m + rn * rn / c.Izz;
+      const J = -(1 + E_WALL) * vn / kn;
+      const tx = -hit.nz, tz = hit.nx, vt = vx * tx + vz * tz, rt = rx * tz - rz * tx, kt = 1 / c.m + rt * rt / c.Izz;
+      const Jt = Math.max(-MU_WALL * J, Math.min(MU_WALL * J, -vt / kt));
+      c.applyImpulse(hit.px, hit.pz, J * hit.nx + Jt * tx, J * hit.nz + Jt * tz);
+      events.push({ a: b, b: null, kind, vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, crash: -vn > CRASH.wall && !b.ghost, J });
+    }
+
+    // ---------------------------------------------------------------- car against car
+    function vsCar(A, B) {
+      const axes = [[A.ux, A.uz], [-A.uz, A.ux], [B.ux, B.uz], [-B.uz, B.ux]];
+      const dx = A.x - B.x, dz = A.z - B.z;
+      let best = Infinity, nx = 0, nz = 0;
+      for (const [ux, uz] of axes) {
+        const ra = A.hx * Math.abs(A.ux * ux + A.uz * uz) + A.hz * Math.abs(-A.uz * ux + A.ux * uz);
+        const rb = B.hx * Math.abs(B.ux * ux + B.uz * uz) + B.hz * Math.abs(-B.uz * ux + B.ux * uz);
+        const d = dx * ux + dz * uz, pen = ra + rb - Math.abs(d);
+        if (pen <= 0) return null;
+        if (pen < best) { best = pen; const sg = d < 0 ? -1 : 1; nx = ux * sg; nz = uz * sg; }   // from B toward A
+      }
+      const P = deepest(A, B);
+      return { nx, nz, depth: best, px: P[0], pz: P[1] };
+    }
+    function resolveCars(a, b, hit) {
+      const A = a.car, B = b.car, ma = a.kinematic ? Infinity : A.m, mb = b.kinematic ? Infinity : B.m;
+      const wa = a.kinematic ? 0 : 1, wb = b.kinematic ? 0 : 1;
+      const share = wa + wb ? 1 / (wa + wb) : 0;
+      A.x += hit.nx * (hit.depth + 0.002) * wa * share; A.z += hit.nz * (hit.depth + 0.002) * wa * share;
+      B.x -= hit.nx * (hit.depth + 0.002) * wb * share; B.z -= hit.nz * (hit.depth + 0.002) * wb * share;
+      const rax = hit.px - A.x, raz = hit.pz - A.z, rbx = hit.px - B.x, rbz = hit.pz - B.z;
+      const vax = A.vx - A.yaw * raz, vaz = A.vz + A.yaw * rax, vbx = B.vx - B.yaw * rbz, vbz = B.vz + B.yaw * rbx;
+      const rvx = vax - vbx, rvz = vaz - vbz, vn = rvx * hit.nx + rvz * hit.nz;
+      if (vn >= 0) return;
+      const ran = rax * hit.nz - raz * hit.nx, rbn = rbx * hit.nz - rbz * hit.nx;
+      const kn = (wa ? 1 / ma + ran * ran / A.Izz : 0) + (wb ? 1 / mb + rbn * rbn / B.Izz : 0);
+      if (kn <= 0) return;
+      const J = -(1 + E_CAR) * vn / kn;
+      const tx = -hit.nz, tz = hit.nx, vt = rvx * tx + rvz * tz;
+      const rat = rax * tz - raz * tx, rbt = rbx * tz - rbz * tx;
+      const kt = (wa ? 1 / ma + rat * rat / A.Izz : 0) + (wb ? 1 / mb + rbt * rbt / B.Izz : 0);
+      const Jt = Math.max(-MU_CAR * J, Math.min(MU_CAR * J, -vt / kt));
+      const jx = J * hit.nx + Jt * tx, jz = J * hit.nz + Jt * tz;
+      if (wa) A.applyImpulse(hit.px, hit.pz, jx, jz);
+      if (wb) B.applyImpulse(hit.px, hit.pz, -jx, -jz);
+      const lim = a.kind === 'rival' && b.kind === 'rival' ? CRASH.pack : CRASH.car;
+      events.push({ a, b, kind: 'car', vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, crash: -vn > lim && !a.ghost && !b.ghost, J });
+    }
+
+    // ---------------------------------------------------------------- the step
+    /* inputs(body) -> the driving input for a non-kinematic body this step */
+    function step(dt, inputs) {
+      events.length = 0;
+      snapshot();
+      for (const b of bodies) {
+        if (b.kinematic || b.frozen) continue;
+        b.car.step(dt, inputs(b) || {});
+        if (b.ghost > 0) b.ghost = Math.max(0, b.ghost - dt);
+      }
+      // static contacts (twice: a corner can be pushed into a neighbouring shape)
+      for (const b of bodies) {
+        if (b.kinematic || b.frozen) continue;
+        for (let pass = 0; pass < 2; pass++) {
+          const A = box(b, BA);
+          for (const o of level.collidersNear(A.x, A.z, A.hx + 1)) {
+            const hit = o.box ? vsBox(b, A, o) : vsCyl(b, A, o);
+            if (hit) { resolveStatic(b, hit, o.box ? 'wall' : 'post'); box(b, A); }
+          }
+        }
+      }
+      // cars against each other: broad phase by distance
+      for (let i = 0; i < bodies.length; i++) {
+        const a = bodies[i];
+        if (a.frozen) continue;
+        for (let j = i + 1; j < bodies.length; j++) {
+          const b = bodies[j];
+          if (b.frozen || (a.kinematic && b.kinematic)) continue;
+          if (a.ghost || b.ghost) continue;
+          const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z;
+          if (dx * dx + dz * dz > 49) continue;
+          const A = box(a, BA), B = box(b, BB), hit = vsCar(A, B);
+          if (!hit) continue;
+          // a hit traffic car becomes a free body
+          if (a.kinematic) a.kinematic = false;
+          if (b.kinematic) b.kinematic = false;
+          resolveCars(a, b, hit);
+        }
+      }
+      tick++;
+      return events;
+    }
+
+    // ---------------------------------------------------------------- history for the hand-over
+    const FIELDS = ['x', 'z', 'h', 'vx', 'vz', 'yaw', 'steer', 'ax', 'ay', 'pitch', 'roll'];
+    function snapshot() {
+      const snap = { tick, cars: bodies.map(b => { const o = { kinematic: b.kinematic }; for (const f of FIELDS) o[f] = b.car[f]; return o; }) };
+      hist.push(snap);
+      if (hist.length > HISTORY) hist.shift();
+    }
+    // the state of body b `back` steps ago (1 = at the start of this step: before the contact)
+    function history(b, back = 1) {
+      const s = hist[hist.length - back];
+      return s && s.cars[b.id];
+    }
+    function restore(b, back = 1) {
+      const st = history(b, back);
+      if (!st) return false;
+      for (const f of FIELDS) b.car[f] = st[f];
+      return true;
+    }
+
+    return { bodies, add, step, events, box: (b) => box(b, {}), history, restore, CRASH, get tick() { return tick; } };
+  }
+
+  // the box of a car spec at a pose (for spawning clear of other cars)
+  return { create, CRASH };
+})();
+if (typeof module === 'object' && module.exports) module.exports = RaceWorld;

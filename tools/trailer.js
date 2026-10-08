@@ -348,11 +348,13 @@ function speedAt(sh, i) {
 // ---------------------------------------------------------------- recording
 // b: the browser (record-video.js), open(query): loads the simulator ready to run, framesDir:
 // where frame f goes as f<00000>.jpg, log: progress output, only: record just the shots it
-// accepts (for trying out changes).
-async function record(b, { open, framesDir, log, only }) {
+// accepts, clean: the colour grade alone, without titles, readouts or flashes (the home page's
+// background loop).
+async function record(b, { open, framesDir, log, only, clean }) {
+  const overlay = clean ? (f) => S.find((x) => f >= x.f && f < x.f + x.n).kind === 'card' ? { black: 1 } : { grade: true } : overlayAt;
   const DT = 1000 / FPS;
   const file = (f) => path.join(framesDir, 'f' + String(f).padStart(5, '0') + '.jpg');
-  const capture = async (f, state) => { await b.ev(`__tr.frame(${JSON.stringify(state)})`); fs.writeFileSync(file(f), await b.shot(93)); };
+  const capture = async (f) => { await b.ev(`__tr.frame(${JSON.stringify(overlay(f))})`); fs.writeFileSync(file(f), await b.shot(93)); };
   const camJs = (c, k) => `__tr.cam = ${JSON.stringify(c)}; __tr.k = ${k.toFixed(4)};`;
   for (const s of S) if (s.f + s.n > TOTAL || s.f < 0) throw new Error('shot outside the trailer at frame ' + s.f);
   const owner = new Int32Array(TOTAL).fill(-1);
@@ -422,19 +424,21 @@ async function record(b, { open, framesDir, log, only }) {
         const pre = s.kind === 'replay' ? `__tr.speed(${speedAt(s, j)});` : '';
         await b.ev(`${pre} ${camJs(s.cam, s.n > 1 ? j / (s.n - 1) : 0)} __rec.step(${DT})`);
         if (s.kind === 'after') afterAt += 1 / FPS;
-        await capture(s.f + j, overlayAt(s.f + j));
+        await capture(s.f + j);
       }
     }
     await b.ev(`Scene3D.setStrainMode(false); Scene3D.setXray(false)`);
     log(`${scene}: ${shots.length} shots (${shots.reduce((a, s) => a + s.n, 0)} frames, approach ${n} frames) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   }
   // the title cards on black
-  for (const s of S.filter((x) => x.kind === 'card' && want(x))) for (let j = 0; j < s.n; j++) await capture(s.f + j, overlayAt(s.f + j));
+  for (const s of S.filter((x) => x.kind === 'card' && want(x))) for (let j = 0; j < s.n; j++) await capture(s.f + j);
   if (!only) for (let f = 0; f < TOTAL; f++) if (!fs.existsSync(file(f))) throw new Error('frame ' + f + ' was not recorded');
   return { frames: TOTAL, fps: FPS };
 }
 
 // the poster: the brick wall bursting, from the wide shot
 const POSTER = F(18) + 16;
+// the home page's background loop (media/hero-loop.mp4): the chorus, recorded clean
+const LOOP = [F(16), F(24)];
 
-module.exports = { record, musicHits, BARS, FPS, TOTAL, POSTER, SCENES, S, overlayAt };
+module.exports = { record, musicHits, BARS, FPS, TOTAL, POSTER, LOOP, SCENES, S, overlayAt };

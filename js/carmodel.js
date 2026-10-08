@@ -673,6 +673,23 @@ gl_Position = projectionMatrix * mvPosition;`);
       im.instanceMatrix.setUsage(T.DynamicDrawUsage);
       return { gb, im, count, seg, nseg, spin, size, SEG, rigidBarrier };
     }
+    // a part that came off (frozen meshes), or a wheel; a broken pane or lamp (shards), or the
+    // laminated windshield's crack
+    function addDebris(d) {
+      const F = D.result.frames;
+      if (d.kind === 'part') {
+        let k = 0; while (k < F.t.length - 1 && F.t[k + 1] <= d.t) k++;
+        const g = debrisMeshes(d, F.strain[k]); scene().add(g); D.debris.push({ d, g });
+      }
+      else D.wheelOff[d.key] = d;
+    }
+    function addPane(gb) {
+      if (gb.t < 0) return;
+      if (gb.laminated) { if (crack.frame) D.cracks.push({ t: gb.t, seed: hash(gb.name), size: 1, ...crackUV(gb.origin) }); return; }
+      D.panes[gb.name] = gb;
+      const S = shards(gb, D.result.frames, D.result.barrier === 'rigid');
+      if (S) { scene().add(S.im); D.shards.push(S); }
+    }
     const M4 = new T.Matrix4(), PV = new T.Vector3(), QV = new T.Quaternion(), SV = new T.Vector3(), AX = new T.Vector3();
     function updateShards(S, t) {
       const tau = t - S.gb.t;
@@ -732,22 +749,46 @@ gl_Position = projectionMatrix * mvPosition;`);
       // build the destruction for an impact result: debris meshes, shards, crack origins
       prepareDestruction(result) {
         api.clearDestruction();
-        const F = result.frames;
         D = { result, debris: [], shards: [], wheelOff: {}, cracks: [], panes: {} };
-        for (const d of result.debris || []) {
-          if (d.kind === 'part') {
-            let k = 0; while (k < F.t.length - 1 && F.t[k + 1] <= d.t) k++;
-            const g = debrisMeshes(d, F.strain[k]); scene().add(g); D.debris.push({ d, g });
-          }
-          else D.wheelOff[d.key] = d;
-        }
-        for (const gb of result.glass || []) {
-          if (gb.t < 0) continue;
-          if (gb.laminated) { if (crack.frame) D.cracks.push({ t: gb.t, seed: hash(gb.name), size: 1, ...crackUV(gb.origin) }); continue; }
-          D.panes[gb.name] = gb;
-          const S = shards(gb, F, result.barrier === 'rigid');
-          if (S) { scene().add(S.im); D.shards.push(S); }
-        }
+        for (const d of result.debris || []) addDebris(d);
+        for (const gb of result.glass || []) addPane(gb);
+      },
+      // the same for a result that is still growing (the Race game's live crash): builds only the
+      // debris and panes added since the last call. Frames must arrive before the debris and glass
+      // that refer to them; for the finished result, prepareDestruction does it in one go.
+      // tUntil, maxNew (optional): build only what happens before tUntil, at most maxNew pieces this call
+      // (each costs some CPU work), so a burst of breakage doesn't stall a frame
+      syncDestruction(result, tUntil = Infinity, maxNew = Infinity) {
+        if (!D || D.result !== result) { api.clearDestruction(); D = { result, debris: [], shards: [], wheelOff: {}, cracks: [], panes: {}, nDebris: 0, nGlass: 0 }; }
+        const debris = result.debris || [], glass = result.glass || [];
+        let made = 0;
+        for (; D.nDebris < debris.length && made < maxNew && debris[D.nDebris].t <= tUntil; D.nDebris++, made++) addDebris(debris[D.nDebris]);
+        for (; D.nGlass < glass.length && made < maxNew && glass[D.nGlass].t <= tUntil; D.nGlass++, made++) addPane(glass[D.nGlass]);
+      },
+      // compile the shaders a crash will need (debris, shards) now, with a dummy break, and draw it
+      // once (some drivers finish a shader only at its first draw), so the first real break doesn't
+      // stall a frame
+      warm(renderer, camera) {
+        const X = Float32Array.from(lat.rest), S = new Uint8Array(n), ax = Float32Array.of(0, 0, 0, 1, 0, 0, 0, 1, 0);
+        const F = { t: [0, 0.001], pos: [X, X], strain: [S, S], bricks: [new Float32Array(7 * 64), new Float32Array(7 * 64)], axes: [ax, ax] };
+        const part = Object.keys(parts).find(k => k.startsWith('DEFORM_'));
+        // a side window, a lamp and the windshield's crack overlay
+        const all = spec.parts || [];
+        const panes = [all.find(p => p.name.startsWith('BRITTLE_Glass') && !p.laminated), all.find(p => p.name.startsWith('BRITTLE_Light')), all.find(p => p.laminated)].filter(Boolean);
+        const fake = { frames: F, barrier: 'world',
+          debris: part ? [{ name: part, kind: 'part', body: 0, t: 0, X, pos: [0, 0, 0], quat: [0, 0, 0, 1] }] : [],
+          glass: panes.map(p => ({ name: p.name, lamp: p.name.startsWith('BRITTLE_Light'), laminated: !!p.laminated, t: 0, frame: 0, origin: p.centre || [0, 0, 0], centre: [0, 0, 0], vel: [0, 0, 0] })) };
+        const was = group.visible;
+        group.visible = true;
+        api.prepareDestruction(fake);
+        api.updateDestruction(0.0005, 0, 1, 0.5);
+        renderer.compile(scene(), camera);
+        const culled = [];
+        for (const { g } of D.debris) g.traverse((o) => { if (o.isMesh && o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
+        renderer.render(scene(), camera);
+        for (const o of culled) o.frustumCulled = true;
+        api.clearDestruction();
+        group.visible = was;
       },
       // windshield hits from the occupant model (re-run with other restraints: call again)
       setHeadStrikes(list) {

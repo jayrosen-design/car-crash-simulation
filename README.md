@@ -22,6 +22,8 @@ There are eight simulations: the two **barrier tests** (a free simulator with fu
 | <img src="media/shot-rigid.jpg" width="200" alt="Rigid barrier"><br>**Rigid barrier** | <img src="media/shot-brick.jpg" width="200" alt="Brick wall"><br>**Brick wall** | <img src="media/lab-overlap.jpg" width="200" alt="Frontal overlap"><br>**Frontal overlap** | <img src="media/lab-multi.jpg" width="200" alt="Two-vehicle collision"><br>**Two-vehicle collision** |
 | <img src="media/lab-side.jpg" width="200" alt="Side impact"><br>**Side impact** | <img src="media/lab-whiplash.jpg" width="200" alt="Whiplash sled"><br>**Whiplash sled** | <img src="media/lab-restraint.jpg" width="200" alt="Occupant restraints"><br>**Occupant restraints** | <img src="media/lab-pedestrian.jpg" width="200" alt="Pedestrian and braking"><br>**Pedestrian & braking** |
 
+There is also a game mode, **[Race](#race-game-mode)**: drive it yourself, three laps of a city street circuit against seven rivals through two-way traffic, with crashes worked out by the same solver.
+
 > **A teaching model.** It is not validated against physical crash tests. Use it to compare settings and see trends, not to predict real injuries.
 
 ---
@@ -31,26 +33,27 @@ There are eight simulations: the two **barrier tests** (a free simulator with fu
 1. [Getting started](#getting-started)
 2. [The simulations](#the-simulations)
 3. [Using the simulator](#using-the-simulator)
-4. [Technical architecture](#technical-architecture)
-5. [How the physics works](#how-the-physics-works)
-6. [Occupant and injury models](#occupant-and-injury-models)
-7. [How each crash lab works](#how-each-crash-lab-works)
-8. [Simulation diagrams](#simulation-diagrams): [rigid barrier](#rigid-barrier), [brick wall](#brick-wall), [frontal overlap](#frontal-overlap-lab), [two vehicles](#two-vehicle-collision-lab), [side impact](#side-impact-lab), [whiplash](#whiplash-sled-lab), [restraints](#occupant-restraint-lab), [pedestrian](#pedestrian-and-emergency-braking-lab)
-9. [Rendering the damage](#rendering-the-damage)
-10. [Equations and sources](#equations-and-sources)
-11. [Verification](#verification)
-12. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
-13. [Design decisions](#design-decisions)
-14. [Limitations](#limitations)
-15. [Project structure](#project-structure)
-16. [Credits](#credits)
-17. [References](#references)
+4. [Race (game mode)](#race-game-mode)
+5. [Technical architecture](#technical-architecture)
+6. [How the physics works](#how-the-physics-works)
+7. [Occupant and injury models](#occupant-and-injury-models)
+8. [How each crash lab works](#how-each-crash-lab-works)
+9. [Simulation diagrams](#simulation-diagrams): [rigid barrier](#rigid-barrier), [brick wall](#brick-wall), [frontal overlap](#frontal-overlap-lab), [two vehicles](#two-vehicle-collision-lab), [side impact](#side-impact-lab), [whiplash](#whiplash-sled-lab), [restraints](#occupant-restraint-lab), [pedestrian](#pedestrian-and-emergency-braking-lab)
+10. [Rendering the damage](#rendering-the-damage)
+11. [Equations and sources](#equations-and-sources)
+12. [Verification](#verification)
+13. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
+14. [Design decisions](#design-decisions)
+15. [Limitations](#limitations)
+16. [Project structure](#project-structure)
+17. [Credits](#credits)
+18. [References](#references)
 
 ---
 
 ## Getting started
 
-**Open `Car Crash Simulation.html`** (the home page) or **`Simulator.html`** (the simulator) in Chrome, Edge, Firefox or Safari. Both are single self-contained files, so they work straight from disk (`file://`) or from any static web host, such as GitHub Pages.
+**Open `Car Crash Simulation.html`** (the home page), **`Simulator.html`** (the simulator) or **`Race.html`** (the Race game) in Chrome, Edge, Firefox or Safari. Each is a single self-contained file, so they work straight from disk (`file://`) or from any static web host, such as GitHub Pages.
 
 Requirements:
 - **WebGL 2.** Any desktop or laptop GPU from the last decade works; phones work but the layout is cramped.
@@ -68,10 +71,10 @@ Simulator.html?lab=side&impactor=pole&steel=mild
 Simulator.html?solver=gpu                      the crash computed on the GPU (WebGPU); also with ?lab=
 ```
 
-For development, open `index.html` instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`.
+For development, open `index.html` (or `game.html` for Race) instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`. Opened from disk, `game.html` runs its crashes on the main thread, because the browser won't let it read its own scripts for the worker; `Race.html` and any web server don't have that limit.
 
 **Hosting.** The site is static and needs no build step.
-- **Vercel:** import the repository with the framework preset *Other*. `vercel.json` serves `home.html` at `/`; it loads the video and pictures from `media/` instead of embedding them, so it opens faster than the single-file home page. `.vercelignore` keeps the docs and tools off the site. It also leaves out `index.html` (the developer page), because Vercel serves a real file at `/` before it applies any rewrite.
+- **Vercel:** import the repository with the framework preset *Other*. `vercel.json` serves `home.html` at `/`; it loads the video and pictures from `media/` instead of embedding them, so it opens faster than the single-file home page. `.vercelignore` keeps the docs and tools off the site. It also leaves out `index.html` (the developer page), because Vercel serves a real file at `/` before it applies any rewrite, and `game.html` with `media/race/`, which `Race.html` embeds. `/race` serves `Race.html`.
 - **Other static hosts** (GitHub Pages, Netlify and others) work too: open `home.html` or `Car Crash Simulation.html`.
 
 ---
@@ -134,6 +137,85 @@ In playback:
   - charts. Click a chart to jump to that moment.
 - **Re-run the dummy.** Change the seatbelt, airbag, curtain airbag or restraint system to replay the same crash with different restraints.
 - **After the crash.** If the crash crushed the radiator, steam vents. If it drove the engine back into the firewall, the engine bay catches fire. This plays in real time once the replay reaches its end; **Show the aftermath** in the results jumps there.
+
+---
+
+## Race (game mode)
+
+<img src="media/race.jpg" width="640" alt="Race mode: the player's Lexus in a pack of rival cars on a city street, with a rival spun round by a takedown">
+
+`Race.html` puts you behind the wheel: three laps of a city street circuit against seven rivals, through traffic going both ways, in the spirit of arcade street racers. A crash is worked out by the same lattice solver as the simulations, starting from your car's real position, speed and spin at the moment of impact. While it computes in the background, a slow-motion crash camera plays it back. Open it from the home page, the **Simulation** menu in the simulator, or `/race` on the website. For development, open `game.html`.
+
+| | Keyboard | Controller (Xbox layout) |
+|---|---|---|
+| Steer | A / D, ← / → | Left stick |
+| Accelerate | W, ↑ | Right trigger |
+| Brake, then reverse | S, ↓ | Left trigger |
+| Handbrake | Space | X |
+| Boost | Shift | A or right bumper |
+| Camera (chase or bumper) | C | Y |
+| Look back | B | Left bumper |
+| Back on the road | R | View |
+| Pause | Esc, P | Menu |
+
+Controllers work through the Gamepad API's standard mapping, with rumble where the browser supports it.
+
+### The race
+
+- **The circuit.** A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, street lights, trees and closed side streets. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
+- **Eight cars.** You start sixth on the grid in the Lexus (`?car=mustang` for the Mustang), against seven rivals in Lexus and Mustang models, each with a name, a paint colour and a skill level.
+- **Traffic, both ways.** Cars keep to their lanes and follow the car ahead with the Intelligent Driver Model \[[77](#ref-77)\]: $\dot v = a\big[1 - (v/v_0)^4 - (s^*/s)^2\big]$, $s^* = s_0 + vT + \frac{v\,\Delta v}{2\sqrt{ab}}$. Here $s$ is the gap to the car ahead and $\Delta v$ the closing speed. The game uses $a = 1.6$ m/s², $b = 3$ m/s², $s_0 = 4$ m, a time gap $T = 1.4$ s, and cruising speeds $v_0$ of 13–19 m/s (47–68 km/h). They are added ahead of you and removed behind you, so the street is busy wherever the race is. They move on rails until something hits them, then become free cars that brake to a stop.
+- **Boost.** Hold Shift for 1.65× engine power. It fills from near misses (passing a traffic car within a metre; more for oncoming ones), driving in the oncoming lanes, drifting and takedowns.
+- **Takedowns.** A rival counts as taken down if it wrecks within two seconds of a hit from you: an impact over 7 m/s, or a spin past 60°. Without your help, a rival needs 13 m/s into a wall and 20 m/s into another rival, so the pack can jostle. Wrecked rivals spin out as rigid bodies and rejoin three seconds later.
+- **Crashes.** For you, a hit with a normal speed of 13 m/s or more against a building, barrier, post or tree, or 13.5 m/s against another car, is a crash. It starts the crash camera (below), then you're put back on the road, with the traffic just ahead cleared. The race goes on meanwhile, so the rivals gain time.
+- **Results.** Positions, lap times and takedowns. Rivals still racing get an estimated time from their pace. **Watch your last crash** replays it with the simulator's bullet-time.
+
+### How it works
+
+- **Driving physics** (`js/race/vehicle.js`). Each car is a rigid body on flat ground, stepped at 240 Hz.
+  - **Tyres.** The lateral force follows Pacejka's Magic Formula \[[55](#ref-55)\], $F_y = D\sin\!\big(C\arctan(B\alpha - E(B\alpha - \arctan B\alpha))\big)$ with $D = \mu F_z$. Drive and brake forces share each tyre's grip with it (the friction ellipse), and the loads shift with acceleration and cornering.
+  - **Engine and brakes.** The engine is power-limited, with an automatic gearbox for the engine sound. The brakes have ABS, and the handbrake locks the rear wheels.
+  - **Assists.** The steering lock narrows with speed. An assist steers into slides, and a stability control limits the yaw rate to what the tyres can hold.
+  - **Performance.** Pitch and roll are drawn, not simulated. The Lexus reaches 100 km/h in 5.9 s, tops out at 217 km/h (258 with boost), stops from 100 km/h in 37 m and corners at 0.86 g.
+- **Collisions** (`js/race/world.js`). Cars are oriented boxes, tested against each other and the city's buildings, barriers, posts and trees with the separating-axis test \[[78](#ref-78)\]. They're resolved with impulses, with restitution and friction \[[7](#ref-7)\].
+- **Rivals** (`js/race/ai.js`).
+  - **Speed.** Each rival follows a speed profile limited by the curve, $v \le \sqrt{\mu g/\kappa}$ with $\mu = 0.78$. A backward pass along the circuit keeps braking within 8 m/s².
+  - **Steering.** They steer by pure pursuit \[[53](#ref-53)\] toward a point ahead, with a correction for their sideways offset.
+  - **Lane choice.** They pick lanes by time to collision with the traffic ahead. They keep out of oncoming lanes with traffic in them, and don't change lanes mid-corner.
+  - **Pace.** Their pace is rubber-banded to yours, and they boost on the straights.
+- **The crash camera** (`js/race/crash.js`).
+  - **Hand-over.** The world steps back one tick, to just before the cars touched. Each car involved goes to the crash solver with its pose, velocity and yaw rate.
+  - **The street.** Nearby buildings, barriers, posts and trees become a `world` barrier: boxes and cylinders combined into one distance field, with horizontal normals.
+  - **The worker.** The solver runs in a Web Worker built from the physics scripts' own text, so it also works from a file opened from disk. Without a worker, it runs on the main thread a few milliseconds per frame.
+  - **Streaming.** The worker sends what it has computed so far: node positions, plastic strain, parts that came off and glass as it breaks. A pane is published only once the next frame confirms it, so the list matches the full run's.
+  - **Playback** never gets ahead of the newest frame. It runs at 1/4× before contact and 0.08× just after, then speeds up to real time by 0.8 s. It ends 1.25 s after contact (accelerate to skip).
+  - **Timing.** The first deformed frame shows within about 0.15 s of the impact, and you're back on the road about 4 s later.
+  - **No stall at the first break.** At load, each car model breaks once out of sight: a panel, a side window, a lamp and the windshield's crack overlay. Each piece is drawn once, not just compiled, because Chrome's Direct3D backend finishes a shader only at its first draw. In testing this removed a 50–140 ms freeze when the windshield first cracked; no crash-camera frame now takes more than about 35 ms.
+- **Rendering** (`js/race/render.js`). Rivals and traffic are instanced copies of the two car models, one draw call per material. Your car is the simulator's deformable model, so the crash's damage shows on the same mesh you drove.
+  - **Street surfaces.** Road, pavements, kerbs and walls use photographed CC0 textures from Poly Haven, with normal and roughness maps.
+  - **Facades.** Windows, floors and shop fronts are drawn by a shader over the wall textures, with some windows lit.
+  - **Lighting.** A street HDRI lights the scene and gives the cars their reflections. A sun shadow map follows the car.
+  - **Frame time.** About 16.7 ms per frame on the development machine (95th percentile 18 ms), about 2.4 million triangles in about 190 draw calls.
+- **Textures** come from `tools/fetch-race-assets.py`. It downloads them, scales and recompresses them with Blender's image library, and writes `media/race/assets.js`. The single-file `Race.html` embeds them.
+
+### Checks
+
+```
+node tools/race-check.js                the Race game's DOM-free parts, in Node
+node tools/headless-check.js world      the crash solver's world barrier
+```
+
+- **`race-check.js`** checks:
+  - **the level:** the circuit's length and tightest radius, that no building or post reaches into the road, and that the same seed gives the same city;
+  - **the cars:** 0–100 km/h, top speed, braking and cornering grip are in plausible bands, a head-on into a wall is a crash and a shallow scrape isn't;
+  - **near misses:** passing within a metre counts and 1.5 m doesn't;
+  - **a full race:** eight AI cars race three laps through traffic, all finish, the winner takes 150–210 s (about 3 minutes), none is stuck for more than 5 s, and lane-bound traffic never overlaps.
+- **The `world` checks** in `headless-check.js`:
+  - a one-cylinder world reproduces the pole barrier exactly;
+  - a box wall agrees with the rigid barrier (peak deceleration and crush), also when turned 30°;
+  - glass streamed live matches the batch result;
+  - two cars at 160 km/h stay finite and gain no energy.
+- **In the browser,** `game.html?test=wall150`, `?test=headon` and `?test=takedown` run scripted crashes and a takedown. The results go in `window.__race.test`: time to the first frame, frame times, the respawn time and the parts that came off. `?worker=0` forces the main-thread fallback.
 
 ---
 
@@ -1950,17 +2032,32 @@ The CPU solver is unchanged by the GPU option. With the GPU option off, eight cr
 node tools/build-standalone.js
 ```
 
-Writes `Simulator.html` (from `index.html` and every script) and `Car Crash Simulation.html` (from `home.html` and `media/`). Edit the sources, not these two files.
+Writes `Simulator.html` (from `index.html` and every script), `Race.html` (from `game.html`, its scripts and the textures in `media/race/assets.js`) and `Car Crash Simulation.html` (from `home.html`, `css/site.css` and `media/`). Edit the sources, not these three files. It stops if any embedded file doesn't appear intact.
+
+```
+blender -b -Y --factory-startup --python tools/fetch-race-assets.py
+```
+
+Downloads the Race game's textures and street HDRI from Poly Haven and writes `media/race/assets.js`. Diffuse maps are 1024 px; normal and roughness maps are scaled to 512 px. All are recompressed as JPEG, and the HDRI is kept at 1k. Rebuild afterwards.
+
+### The website's reading pages
+
+```
+node tools/build-site.js
+```
+
+Writes `physics.html` and `sources.html` from this README. The physics page carries the chapters from [How the physics works](#how-the-physics-works) to [Limitations](#limitations): the physics, the occupant models, the labs and their diagrams, rendering, the equations, verification and the design decisions. The sources page carries the [references](#references) and the credits. Edit the README, not the two pages, then rebuild. They share `css/site.css` with `home.html`. KaTeX draws the equations and Mermaid the diagrams, both loaded from jsDelivr.
 
 ### Recording the home page's video and pictures
 
 ```
-node tools/record-video.js [shots|video|labs] [--lab <id>]
+node tools/record-video.js [shots|video|loop|labs] [--lab <id>]
 ```
 
 Records the built `Simulator.html` in headless Chrome. It writes:
 - `media/crash-reel.mp4`: the one-minute trailer, with its soundtrack;
 - `media/poster.jpg`: the video's poster frame;
+- `media/hero-loop.mp4`: the home page's background, the trailer's chorus without titles or sound (`loop` records just this);
 - `media/shot-rigid.jpg`, `media/shot-brick.jpg`: the barrier tests;
 - `media/lab-<id>.jpg`: one picture per lab.
 
@@ -2042,6 +2139,11 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
   - The pedestrian is a single 2D chain, so the arms and far leg only follow it in the 3D view.
   - Emergency braking is a rule-based model of one system, not a particular product.
 - **The GPU solver doesn't cover everything.** It covers every crash the labs set up, but not the brick wall. Parts don't come off and tyres don't burst, and friction heat isn't in its energy books. At today's lattice size it is slower than the CPU.
+- **Race.**
+  - The city is flat: the kerbs are only drawn, because the crash solver and the debris assume level ground.
+  - Only your crashes run the lattice solver. Rivals and traffic wreck as rigid bodies, because the solver runs slower than real time during an impact, which is also why the crash camera is in slow motion.
+  - Very hard head-on hits (about 150 km/h and up, square into a wall) can tip the car onto its nose. That is the solver's own behaviour, also seen in the simulator's rigid-barrier test.
+  - Opponent driving is a set of rules (speed profile, pure pursuit, lane choice), not a learned driver.
 - **Saving a video** needs WebCodecs. The first time, it loads mp4-muxer from the CDN.
 - **Performance.** The brick-wall computation takes several seconds on a laptop. The phone layout works but is cramped.
 
@@ -2052,9 +2154,15 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
 ```
 Car Crash Simulation.html   generated single-file home page (edit home.html, then rebuild)
 Simulator.html              generated single-file simulator (edit the sources, then rebuild)
+Race.html                   generated single-file Race game (edit game.html and js/race/, then rebuild)
 home.html                   home page source
+physics.html                generated physics page (edit README.md, then run tools/build-site.js)
+sources.html                generated references page (likewise)
 index.html                  simulator page source and script loader
+game.html                   Race game page source and script loader
 css/style.css               layout and theme
+css/site.css                the website's look (home, physics and sources pages)
+css/game.css                the Race game's HUD and menus
 js/
   vehicles.js     vehicle specs: lattice grid, zones, interior lines; the side-impact trolley
   physics.js      XPBD lattice, barriers (rigid, brick wall, offset + honeycomb, pole), several
@@ -2077,12 +2185,25 @@ js/
   export.js       saving a replay as an MP4 video (WebCodecs, mp4-muxer)
   app.js          controller for the barrier tests
   labs.js         controller for the six crash labs (runs instead of app.js with ?lab=)
+  race/
+    level.js      the city: circuit, lanes, buildings, street furniture, colliders (seeded)
+    vehicle.js    driving physics: rigid body, Magic Formula tyres, engine, brakes, assists
+    world.js      collisions between cars and with the city, crash detection, step history
+    ai.js         traffic (Intelligent Driver Model) and the rivals
+    input.js      keyboard and gamepad, rumble
+    crash.js      the crash solver in a Web Worker, streaming frames to the crash camera
+    render.js     the city, instanced cars, the player's deformable car, cameras
+    game.js       the race: grid, laps, positions, boost, takedowns, crash camera, HUD, results
 models/           generated car models (Draco GLB as base64) and physics data
-media/            the home page's video, poster and pictures of the eight simulations
+media/            the home page's trailer, background loop, poster and pictures of the simulations and Race
+media/race/       the Race game's textures and sky (generated by fetch-race-assets.py)
 tools/
   headless-check.js     physics and lab checks in Node
+  race-check.js         the Race game's level, cars, near misses and a full AI race, in Node
   gpu-check.js          the GPU solver against the CPU solver, in headless Chrome
-  build-standalone.js   builds the two single-file pages
+  build-standalone.js   builds the three single-file pages
+  build-site.js         builds physics.html and sources.html from this README
+  fetch-race-assets.py  downloads and packs the Race game's textures (Blender)
   record-video.js       records the home page's media in headless Chrome
   trailer.js            the trailer's shot list, cameras, titles and recorder
   trailer-music.js      the trailer's soundtrack, synthesised with Web Audio
@@ -2099,6 +2220,8 @@ tools/
 - **Ford Mustang GT500:** "[Ford Mustang Gt 500 With pro Rig FOR FREE!](https://sketchfab.com/3d-models/ford-mustang-gt-500-with-pro-rig-for-free-f26a29f766844f46910547d6d2cc291d)" by NoOb StUfFs, CC BY 4.0.
 
 Both models are split into parts, re-oriented, scaled and simplified for this app.
+
+**Race textures and sky:** from [Poly Haven](https://polyhaven.com), CC0: asphalt_02, concrete_floor_02 and red_brick_03 by Rob Tuytel; concrete_pavement and concrete_tile_facade by Charlotte Baglioni; beige_wall_001 by Dimitrios Savva and Rico Cilliers; the wide_street_01 HDRI by Sergej Majboroda.
 
 **Libraries:**
 - [three.js](https://threejs.org/) (MIT), loaded from jsDelivr;
@@ -2210,3 +2333,8 @@ Every entry was checked against the original publication, standard or protocol. 
 74. <a id="ref-74"></a>Pfaff, T., Fortunato, M., Sanchez-Gonzalez, A., Battaglia, P. W. (2021). Learning mesh-based simulation with graph networks. *ICLR 2021*. [paper](https://openreview.net/forum?id=roNqYL0_XP)
 75. <a id="ref-75"></a>Wu, H., Luo, H., Wang, H., Wang, J., Long, M. (2024). Transolver: a fast transformer solver for PDEs on general geometries. *ICML 2024*, PMLR 235, 53681–53705. [paper](https://proceedings.mlr.press/v235/wu24r.html)
 76. <a id="ref-76"></a>Elrefaie, M., Shu, D., Klenk, M., Ahmed, F. (2026). CarCrashNet: a large-scale dataset and hierarchical neural solver for data-driven structural crash simulation. arXiv:2605.07098 (preprint). [arXiv](https://arxiv.org/abs/2605.07098)
+
+**The Race game mode**
+
+77. <a id="ref-77"></a>Treiber, M., Hennecke, A., Helbing, D. (2000). Congested traffic states in empirical observations and microscopic simulations. *Physical Review E* 62(2), 1805–1824. [doi](https://doi.org/10.1103/PhysRevE.62.1805)
+78. <a id="ref-78"></a>Gottschalk, S., Lin, M. C., Manocha, D. (1996). OBBTree: a hierarchical structure for rapid interference detection. *Proc. SIGGRAPH ’96*, 171–180. [doi](https://doi.org/10.1145/237170.237244)

@@ -344,6 +344,52 @@ if (Veh.specs.lexus && (!filter || 'lab-pedestrian'.includes(filter))) {
   labCheck('pedestrian', !aeb.plan.impact && !nan && m.tibiaPeakG < c.tibiaPeakG && fast.plan.impact && fast.plan.impact.v < 37 * 0.44704 * 0.6,
     `25 mph adult: avoided with AEB (stopped ${aeb.plan.distLeft.toFixed(1)} m short); without, HIC ${m ? m.hic15.toFixed(0) : 'NaN'}, leg ${m ? m.tibiaPeakG.toFixed(0) : 'NaN'} g foam vs ${c ? c.tibiaPeakG.toFixed(0) : 'NaN'} g steel; 37 mph with AEB: impact at ${fast.plan.impact ? (fast.plan.impact.v / 0.44704).toFixed(1) : '-'} mph`);
 }
+// ---------------------------------------------------------------- world obstacles (the Race game)
+// barrier 'world': boxes and cylinders anywhere, at any angle. The checks: one cylinder is exactly
+// the pole; a box wall behaves like the rigid barrier, and the same at another angle; the glass
+// found while the run goes on (scanGlass) is exactly what finalize finds; a fast two-car crash
+// among obstacles stays sound.
+if (Veh.specs.lexus && (!filter || 'world'.includes(filter))) {
+  const crypto = require('crypto'), V = Veh.get('lexus'), H = V.hPoint, W = V.width, R = Phys.POLE_RADIUS;
+  const hash = (r) => { const h = crypto.createHash('sha1'); for (const p of r.frames.pos) h.update(Buffer.from(p.buffer, p.byteOffset, p.byteLength)); h.update(JSON.stringify(r.glass)); h.update(JSON.stringify(r.events)); h.update(JSON.stringify(r.metrics)); return h.digest('hex'); };
+  const check = (name, ok, detail) => { console.log(`=== ${name}: ${detail} ${ok ? 'OK' : 'PROBLEM'}`); if (!ok) failures++; };
+  const run = (cfg) => { const sim = Phys.createImpactSim(cfg); sim.advance(1e9); return sim.finalize(); };
+  // one cylinder = the pole
+  const side = (barrier) => { const px = H[0] + 0.05, pz = -W / 2 - R - 0.03, cfg = { barrier, measure: true, duration: 0.5, sled: true,
+    vehicles: [{ vehicle: V, massKg: V.massKg, stiffness: 'standard', damage: 'realistic', pose: { x: 0, z: 0, heading: 0 }, speed: 0, velocity: [0, -20 * 0.44704], structure: { steel: 'mild' } }] };
+    if (barrier === 'pole') cfg.pole = { x: px, z: pz }; else cfg.world = { cyls: [{ x: px, z: pz, r: R, height: 3 }] };
+    return run(cfg); };
+  const hp = hash(side('pole')), hw = hash(side('world'));
+  check('world-pole', hp === hw, `a world of one 254 mm cylinder and the pole test: ${hp === hw ? 'identical' : 'different'} frames, glass, events and metrics`);
+  // a box wall against the rigid barrier, head-on and with the whole scene turned 30 degrees
+  const app = approachTo(V, 56, 0, V.massKg), pose = app.pose(), st = app.state;
+  const base = { vehicle: V, massKg: V.massKg, stiffness: 'standard', damage: 'realistic', speed: st.v, yawRate: st.yawRate };
+  const rigid = run(Object.assign({ barrier: 'rigid', pose }, base));
+  const turned = (th) => { const c = Math.cos(th), s = Math.sin(th), rot = (x, z) => [x * c - z * s, x * s + z * c], p = rot(pose.x, pose.z), w = rot(1.5, 0);
+    return run(Object.assign({ barrier: 'world', world: { boxes: [{ x: w[0], z: w[1], hx: 1.5, hz: 9, angle: th, height: 3 }] }, pose: { x: p[0], z: p[1], heading: pose.heading + th } }, base)); };
+  const w0 = turned(0), w30 = turned(30 * Math.PI / 180), rel = (a, b) => Math.abs(a / b - 1);
+  const pw = residualOk(w0).concat(residualOk(w30));
+  check('world-wall', !pw.length && rel(w0.metrics.peakDecelG, rigid.metrics.peakDecelG) < 0.1 && rel(w0.metrics.maxCrush, rigid.metrics.maxCrush) < 0.1
+    && rel(w30.metrics.peakDecelG, w0.metrics.peakDecelG) < 0.03 && rel(w30.metrics.maxCrush, w0.metrics.maxCrush) < 0.03,
+    `Lexus 56 km/h: rigid barrier peak ${rigid.metrics.peakDecelG.toFixed(1)} g, crush ${(rigid.metrics.maxCrush * 1000).toFixed(0)} mm; box wall ${w0.metrics.peakDecelG.toFixed(1)} g, ${(w0.metrics.maxCrush * 1000).toFixed(0)} mm (within 10%); turned 30 degrees ${w30.metrics.peakDecelG.toFixed(1)} g, ${(w30.metrics.maxCrush * 1000).toFixed(0)} mm (within 3%)${pw.length ? '; ' + pw.join('; ') : ''}`);
+  // live glass = finalize's glass: a Dramatic 100 km/h crash into a wall, and two cars among obstacles
+  const live = (cfg) => { const sim = Phys.createImpactSim(cfg), got = [];
+    while (!sim.done) { sim.advance(5); got.push(...sim.scanGlass(false).glass); }
+    got.push(...sim.scanGlass(true).glass);
+    const fin = sim.finalize().glass.filter(g => g.t >= 0), key = (g) => g.unit + g.name, srt = (a) => a.slice().sort((x, y) => key(x) < key(y) ? -1 : 1);
+    return { same: JSON.stringify(srt(got)) === JSON.stringify(srt(fin)), n: fin.length, sim }; };
+  const a100 = approachTo(V, 100, 0, V.massKg);
+  const g1 = live(Object.assign({}, base, { damage: 'dramatic', speed: a100.state.v, yawRate: a100.state.yawRate, pose: a100.pose(), barrier: 'world', world: { boxes: [{ x: 1.5, z: 0, hx: 1.5, hz: 9, angle: 0, height: 3 }] } }));
+  // two Lexus head-on at 160 km/h each, between a building corner and a lamp post
+  const M = Veh.get('mustang'), v = 160 / 3.6, fa = V.xMin + V.length, fb = M.xMin + M.length, gap = 0.02 + 2 * v * 0.004, a = 0.25;
+  const two = { barrier: 'world', duration: 1.2, world: { boxes: [{ x: 1, z: 4.5, hx: 6, hz: 2, angle: 0.1, height: 12 }], cyls: [{ x: -2, z: -2.6, r: 0.16, height: 6 }] },
+    vehicles: [{ vehicle: V, massKg: V.massKg, stiffness: 'standard', damage: 'realistic', pose: { x: -gap / 2 - fa, z: 0, heading: 0 }, speed: v },
+      { vehicle: M, massKg: M.massKg, stiffness: 'standard', damage: 'realistic', pose: { x: Math.cos(a) * (gap / 2 + fb), z: -Math.sin(a) * (gap / 2 + fb), heading: Math.PI - a }, speed: v }] };
+  const g2 = live(two), r2 = g2.sim.finalize(), p2 = residualOk(r2);
+  check('world-glass', g1.same && g2.same, `glass found during the run = at the end: Dramatic 100 km/h wall ${g1.n} panes ${g1.same ? 'same' : 'DIFFERENT'}; two cars ${g2.n} panes ${g2.same ? 'same' : 'DIFFERENT'}`);
+  check('world-fast', !p2.length, `Lexus and Mustang head-on at 2 x 160 km/h beside a building and a lamp post: peak ${r2.units.map(u => u.metrics.peakDecelG.toFixed(0)).join(' / ')} g, ${r2.debris.length} parts off, back-off ${(r2.world.backOff * 1000).toFixed(1)} mm${p2.length ? '; ' + p2.join('; ') : ''}`);
+}
+
 // after the crash (js/fire.js): steam once the radiator is crushed; fire only when the engine is
 // driven back toward the firewall, which a 56 km/h barrier test must not do and a 100 km/h one does
 if (Veh.specs.lexus && (!filter || 'fire'.includes(filter))) {

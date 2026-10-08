@@ -35,6 +35,9 @@
           <option value="?lab=restraint">Occupant restraints</option>
           <option value="?lab=pedestrian">Pedestrian &amp; braking</option>
         </optgroup>
+        <optgroup label="Game modes">
+          <option value="Race.html">Race</option>
+        </optgroup>
       </select>
     </label>
     <ol id="stepper" aria-label="Test stage">
@@ -50,11 +53,12 @@
     </div>
   </header>
   <script>
-    // Simulation menu: shows the one on screen; picking another opens it on this same page.
+    // Simulation menu: shows the one on screen; picking another opens it on this same page (a game
+    // mode on its own page).
     (function () {
       var sel = document.getElementById('scenario'), q = new URLSearchParams(location.search);
       sel.value = q.get('lab') ? '?lab=' + q.get('lab') : (q.get('preset') === 'brick' || q.get('barrier') === 'brick') ? '?preset=brick' : '?preset=rigid';
-      sel.addEventListener('change', function () { location.href = location.pathname + sel.value; });
+      sel.addEventListener('change', function () { location.href = sel.value.charAt(0) === '?' ? location.pathname + sel.value : sel.value; });
     })();
   </script>
 

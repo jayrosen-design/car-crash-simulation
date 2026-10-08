@@ -245,6 +245,9 @@ table.cmp tr.on td { color: var(--accent); font-weight: 600; }
           <option value="?lab=restraint">Occupant restraints</option>
           <option value="?lab=pedestrian">Pedestrian &amp; braking</option>
         </optgroup>
+        <optgroup label="Game modes">
+          <option value="Race.html">Race</option>
+        </optgroup>
       </select>
     </label>
     <ol id="stepper" aria-label="Test stage">
@@ -260,11 +263,12 @@ table.cmp tr.on td { color: var(--accent); font-weight: 600; }
     </div>
   </header>
   <script>
-    // Simulation menu: shows the one on screen; picking another opens it on this same page.
+    // Simulation menu: shows the one on screen; picking another opens it on this same page (a game
+    // mode on its own page).
     (function () {
       var sel = document.getElementById('scenario'), q = new URLSearchParams(location.search);
       sel.value = q.get('lab') ? '?lab=' + q.get('lab') : (q.get('preset') === 'brick' || q.get('barrier') === 'brick') ? '?preset=brick' : '?preset=rigid';
-      sel.addEventListener('change', function () { location.href = location.pathname + sel.value; });
+      sel.addEventListener('change', function () { location.href = sel.value.charAt(0) === '?' ? location.pathname + sel.value : sel.value; });
     })();
   </script>
 
@@ -2056,6 +2060,44 @@ function buildOffset(off) {
   return o;
 }
 
+/* World obstacles (the Race game): w = { boxes: [{ x, z, hx, hz, angle, height }], cyls: [{ x, z, r,
+ * height }] } in world coordinates. A box's half-lengths hx and hz lie along its own axes, turned by
+ * angle from +x toward +z (as a vehicle's heading). Upright shapes: horizontal normals, ground at y = 0. */
+function buildWorld(w) {
+  const shapes = [];
+  for (const b of (w && w.boxes) || []) {
+    const c = Math.cos(b.angle || 0), s = Math.sin(b.angle || 0);
+    const ex = Math.abs(c) * b.hx + Math.abs(s) * b.hz, ez = Math.abs(s) * b.hx + Math.abs(c) * b.hz;
+    shapes.push({ box: true, x: b.x, z: b.z, hx: b.hx, hz: b.hz, c, s, height: b.height || 3, x0: b.x - ex, x1: b.x + ex, z0: b.z - ez, z1: b.z + ez });
+  }
+  for (const q of (w && w.cyls) || []) shapes.push({ box: false, x: q.x, z: q.z, r: q.r, height: q.height || 3, x0: q.x - q.r, x1: q.x + q.r, z0: q.z - q.r, z1: q.z + q.r });
+  return { shapes, active: shapes.slice() };
+}
+// Signed distance to the nearest shape of `list` (negative inside), its outward normal in G3.
+function worldSDF(x, y, z, G3, list) {
+  let best = Infinity;
+  G3[0] = -1; G3[1] = 0; G3[2] = 0;
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (y > s.height) continue;
+    let d, nx, nz;
+    if (s.box) {
+      const dx = x - s.x, dz = z - s.z, u = dx * s.c + dz * s.s, w = -dx * s.s + dz * s.c;
+      const qu = Math.abs(u) - s.hx, qw = Math.abs(w) - s.hz, su = u < 0 ? -1 : 1, sw = w < 0 ? -1 : 1;
+      let nu, nw;
+      if (qu > 0 || qw > 0) { const ou = Math.max(qu, 0), ow = Math.max(qw, 0), l = Math.hypot(ou, ow) || 1e-9; d = l; nu = su * ou / l; nw = sw * ow / l; }
+      else if (qu > qw) { d = qu; nu = su; nw = 0; }
+      else { d = qw; nu = 0; nw = sw; }
+      nx = nu * s.c - nw * s.s; nz = nu * s.s + nw * s.c;
+    } else {
+      const dx = x - s.x, dz = z - s.z, l = Math.hypot(dx, dz) || 1e-9;
+      d = l - s.r; nx = dx / l; nz = dz / l;
+    }
+    if (d < best) { best = d; G3[0] = nx; G3[2] = nz; }
+  }
+  return best;
+}
+
 // Points of the structure where intrusion is measured (car-local), placed from the driver's
 // H-point (left seat) and the body side: the steering column at the wheel hub, the brake pedal,
 // the left toe pan, the instrument panel, the lower hinge pillar, the B-pillar at three heights
@@ -2075,12 +2117,13 @@ function measurePoints(spec) {
 
 // ------------------------------------------------------------------ impact simulation
 /* cfg: { vehicle (a CrashVehicles spec; default the lab car), massKg, stiffness,
- *        barrier: 'rigid'|'brick'|'offset'|'pole'|'none', wallStrength, damage: 'realistic'|'dramatic',
+ *        barrier: 'rigid'|'brick'|'offset'|'pole'|'world'|'none', wallStrength, damage: 'realistic'|'dramatic',
  *        pose: { x, z, heading }, speed (m/s), yawRate (rad/s) }
  * Several vehicles (the multi-vehicle and side-impact labs): cfg.vehicles = [{ vehicle, massKg,
  *   stiffness, damage, pose, speed, yawRate, velocity: [vx, vz] (instead of speed along the
  *   heading), structure: { steel } (side structure, see buildCar) }]; they collide with each other.
- * offset: see buildOffset; pole: { x, z }; sled: true puts the cars on a low-friction carrier
+ * offset: see buildOffset; pole: { x, z }; world: see buildWorld (the Race game's street furniture
+ *   and buildings, CPU only); sled: true puts the cars on a low-friction carrier
  *   (they slide sideways into the pole); measure: true records intrusion at fixed points;
  *   duration: seconds after first contact; structure: { footwell } for a single vehicle (see
  *   buildCar).
@@ -2116,13 +2159,32 @@ function createImpactSim(cfg) {
   const rigid = barrierKind === 'rigid', wallMode = barrierKind === 'brick';
   const offset = barrierKind === 'offset' ? buildOffset(cfg.offset) : null, hc = offset ? offset.hc : null;
   const pole = barrierKind === 'pole' ? { x: cfg.pole.x, z: cfg.pole.z, r: POLE_RADIUS, height: 3 } : null;
-  const staticObs = !!(offset || pole);
+  const world = barrierKind === 'world' ? buildWorld(cfg.world) : null;
+  const staticObs = !!(offset || pole || world);
+  let backOff = 0;
   if (rigid || wallMode) {
     // Never start overlapping the barrier face (x = 0): a starting overlap would be resolved in one
     // step and fire nodes backwards at hundreds of m/s.
     let maxFront = -Infinity;
     for (let a = 0; a < n; a++) if (!ghost[a]) maxFront = Math.max(maxFront, X[3 * a] + spec.nodeRadius);
     if (maxFront > -0.002) for (let a = 0; a < n; a++) X[3 * a] -= maxFront + 0.002;
+  } else if (world) {
+    // world obstacles: move each vehicle out along the normal at its deepest node (normally nothing
+    // to do: the game hands over its cars just before they touch)
+    const G3 = [0, 0, 0];
+    for (const U of units) {
+      for (let it = 0; it < 20; it++) {
+        let worst = 0, nx = 0, nz = 0;
+        for (let a = U.off; a < U.off + U.n; a++) {
+          if (ghost[a]) continue;
+          const d = U.spec.nodeRadius + 0.002 - worldSDF(X[3 * a], X[3 * a + 1], X[3 * a + 2], G3, world.shapes);
+          if (d > worst) { worst = d; nx = G3[0]; nz = G3[2]; }
+        }
+        if (worst <= 0) break;
+        for (let a = U.off; a < U.off + U.n; a++) { X[3 * a] += nx * (worst + 0.001); X[3 * a + 2] += nz * (worst + 0.001); }
+        backOff += worst + 0.001;
+      }
+    }
   } else if (staticObs) {
     // the same for the offset barrier and the pole: back each vehicle off along its velocity
     const G3 = [0, 0, 0];
@@ -2177,7 +2239,9 @@ function createImpactSim(cfg) {
 
   // Signed distance from a world point to the offset barrier or the pole (negative inside), and
   // the outward normal in G3. The barrier's honeycomb face is handled separately (honeycombContact).
-  function obstacleSDF(x, y, z, G3) {
+  // World obstacles: the shapes near the vehicles this step, or all of them (all = true).
+  function obstacleSDF(x, y, z, G3, all) {
+    if (world) return worldSDF(x, y, z, G3, all ? world.shapes : world.active);
     if (pole) {
       const dx = x - pole.x, dz = z - pole.z, d = Math.hypot(dx, dz) || 1e-9;
       G3[0] = dx / d; G3[1] = 0; G3[2] = dz / d;
@@ -2669,6 +2733,7 @@ function createImpactSim(cfg) {
     //    contact, structural damping and solver losses only make sense together (the
     //    "contactSolver" residual).
     if (wall) buildHash();
+    if (world) nearWorld();
     const r = spec.nodeRadius, QR = r + 0.27;
     for (let a = 0; a < n; a++) {
       if (ghost[a]) continue;
@@ -2779,6 +2844,24 @@ function createImpactSim(cfg) {
     if (nd && ++damageTick % 5 === 0) damageChecks(dt);
   }
 
+  // World obstacles: keep the shapes near the vehicles and the awake debris for this step's contacts
+  function nearWorld() {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let a = 0; a < n; a++) {
+      if (ghost[a]) continue;
+      const x = X[3 * a], z = X[3 * a + 2];
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    for (let b = nb; b < NB; b++) {
+      if (bstate[b] !== AWAKE) continue;
+      const x = bc[3 * b], z = bc[3 * b + 2];
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z;
+    }
+    const m = 2.5;   // node radius, a step's travel and a part's reach from its centre
+    world.active.length = 0;
+    for (const s of world.shapes) if (s.x1 > x0 - m && s.x0 < x1 + m && s.z1 > z0 - m && s.z0 < z1 + m) world.active.push(s);
+  }
+
   // A lattice node against the offset barrier (and its honeycomb face) or the pole.
   const G3 = [0, 0, 0];
   function staticContact(a, a3, r, dt, dt2) {
@@ -2792,7 +2875,7 @@ function createImpactSim(cfg) {
     X[a3] += pen * G3[0]; X[a3 + 2] += pen * G3[2];
     addContact(KIND_NODE_SURF, a, -1, G3[0], 0, G3[2], pen);
     const f = mass[a] * pen / dt2;
-    barrierForce += pole ? f : f * Math.max(0, -G3[0]);
+    barrierForce += (pole || world) ? f : f * Math.max(0, -G3[0]);
     impAcc += f * dt; impX += f * dt * X[a3]; impY += f * dt * X[a3 + 1]; impZ += f * dt * X[a3 + 2];
     if (T0 < 0) T0 = t;
   }
@@ -3482,15 +3565,35 @@ function createImpactSim(cfg) {
     return out;
   }
   function unitGlass(U, u, out) {
-    const spec = U.spec, car = U.car, ghost = car.ghost, dmg = U.dmg;
-    if (!spec.parts) return;
+    if (!U.spec.parts) return;
     const detachT = {};
     for (const d of debris) if (d.kind === 'part' && d.unit === u) detachT[d.name] = d.t;
-    const hosts = spec.parts.filter(q => q.name.startsWith('DEFORM_'));
-    const P3 = [0, 0, 0];
     // this vehicle's nodes in the recorded frames
     const F = !multi ? frames : { t: frames.t, bricks: frames.bricks,
       pos: frames.pos.map(f => f.subarray(3 * U.off, 3 * (U.off + U.n))), strain: frames.strain.map(f => f.subarray(U.off, U.off + U.n)) };
+    for (const pn of unitPanes(U)) {
+      const tHost = pn.host && detachT[pn.host.name] !== undefined ? detachT[pn.host.name] : Infinity;
+      let k = -1, cause = '', origin = null;
+      for (let f = 0; f < F.t.length && F.t[f] < tHost; f++) {
+        const r = paneTest(pn, F, f, U.car);
+        if (r) { k = f; cause = r.cause; origin = r.origin; break; }
+      }
+      let tb = k >= 0 ? F.t[k] : -1;
+      if (tHost < Infinity && (tb < 0 || tHost < tb)) {
+        tb = tHost; cause = 'panel'; origin = pn.c;
+        k = 0; while (k < F.t.length - 1 && F.t[k] < tb) k++;
+      }
+      if (tb < 0) { out.push({ name: pn.p.name, unit: u, laminated: !!pn.p.laminated, lamp: pn.lamp, t: -1 }); continue; }
+      const b = paneBreak(pn, U, u, F, k, tb, cause, origin);
+      out.push(b.glass);
+      events.push(b.event);
+    }
+  }
+  // The panes and lamps of a vehicle, set up to be tested frame by frame
+  function unitPanes(U) {
+    const spec = U.spec, car = U.car, ghost = car.ghost, dmg = U.dmg;
+    const hosts = spec.parts.filter(q => q.name.startsWith('DEFORM_'));
+    const out = [];
     for (const p of spec.parts) {
       const glass = p.name.startsWith('BRITTLE_Glass'), lamp = p.name.startsWith('BRITTLE_Light');
       if (!glass && !lamp) continue;
@@ -3501,44 +3604,77 @@ function createImpactSim(cfg) {
       const limit = (glass ? (p.laminated ? GLASS.laminated : p.name === 'BRITTLE_GlassRoof' ? GLASS.roof : GLASS.tempered) : GLASS.light) * dmg;
       const c = pts[pts.length - 1];
       const host = hosts.find(h => c[0] > h.lo[0] - 0.03 && c[0] < h.hi[0] + 0.03 && c[1] > h.lo[1] - 0.03 && c[1] < h.hi[1] + 0.03 && c[2] > h.lo[2] - 0.03 && c[2] < h.hi[2] + 0.03);
-      const tHost = host && detachT[host.name] !== undefined ? detachT[host.name] : Infinity;
-      let k = -1, cause = '', origin = null;
-      const W = new Float64Array(3 * m);
-      for (let f = 0; f < F.t.length && F.t[f] < tHost; f++) {
-        let st = 0, best = -1, bestS = -1;
-        for (const a of ring) { const v = F.strain[f][a]; st += v; if (v > bestS) { bestS = v; best = a; } }
-        st = ring.length ? st / ring.length / 255 * 0.5 : 0;
-        for (let q = 0; q < m; q++) { embeddedPos(F.pos[f], emb.idx, 8 * q, emb.t, 3 * q, P3); W[3 * q] = P3[0]; W[3 * q + 1] = P3[1]; W[3 * q + 2] = P3[2]; }
-        let hit = -1;
-        for (let q = 0; q < m && hit < 0; q++) {
-          if (rigid) { if (W[3 * q] > -0.005 && W[3 * q + 1] < RIGID_BARRIER.height) hit = q; }
-          else if (staticObs) { if (obstacleSDF(W[3 * q], W[3 * q + 1], W[3 * q + 2], G3) < 0.005) hit = q; }
-          else if (wall && F.bricks.length && nearBrickFrame(F.bricks[f], W[3 * q], W[3 * q + 1], W[3 * q + 2])) hit = q;
-        }
-        if (st > limit || hit >= 0) {
-          k = f; cause = hit >= 0 ? 'contact' : 'frame';
-          // crack / shatter origin: the contact point, else the pane point nearest the most strained node
-          if (hit >= 0) origin = pts[hit];
-          else { const r = car.rest; origin = pts.reduce((o, q) => Math.hypot(q[0] - r[3 * best], q[1] - r[3 * best + 1], q[2] - r[3 * best + 2]) < Math.hypot(o[0] - r[3 * best], o[1] - r[3 * best + 1], o[2] - r[3 * best + 2]) ? q : o, pts[0]); }
-          break;
-        }
-      }
-      let tb = k >= 0 ? F.t[k] : -1;
-      if (tHost < Infinity && (tb < 0 || tHost < tb)) {
-        tb = tHost; cause = 'panel'; origin = c;
-        k = 0; while (k < F.t.length - 1 && F.t[k] < tb) k++;
-      }
-      if (tb < 0) { out.push({ name: p.name, unit: u, laminated: !!p.laminated, lamp, t: -1 }); continue; }
-      // centre position and velocity at the break, from the recorded frames
-      const k0 = Math.max(0, k - 1), k1 = Math.min(F.t.length - 1, k + 1);
-      const ce = embedPoints(car, [c]);
-      const A = embeddedPos(F.pos[k0], ce.idx, 0, ce.t, 0, [0, 0, 0]), B = embeddedPos(F.pos[k1], ce.idx, 0, ce.t, 0, [0, 0, 0]);
-      const h = Math.max(1e-6, F.t[k1] - F.t[k0]);
-      const at = embeddedPos(F.pos[k], ce.idx, 0, ce.t, 0, [0, 0, 0]);
-      const vel = [(B[0] - A[0]) / h, (B[1] - A[1]) / h, (B[2] - A[2]) / h];
-      out.push({ name: p.name, unit: u, laminated: !!p.laminated, lamp, t: tb, frame: k, cause, origin: origin.slice(), centre: at, vel });
-      events.push({ t: tb, type: p.laminated ? 'crack' : 'glass', x: at[0], y: at[1], z: at[2], mag: Math.hypot(vel[0], vel[1], vel[2]), mass: p.area * (glass ? 5 : 2), part: p.name });
+      out.push({ p, glass, lamp, pts, emb, m, ring, limit, c, host, W: new Float64Array(3 * m), P3: [0, 0, 0] });
     }
+    return out;
+  }
+  // Does pane pn break at frame f of F (its vehicle's frames)? null, or { cause, origin }
+  function paneTest(pn, F, f, car) {
+    const { pts, emb, m, ring, W, P3 } = pn;
+    let st = 0, best = -1, bestS = -1;
+    for (const a of ring) { const v = F.strain[f][a]; st += v; if (v > bestS) { bestS = v; best = a; } }
+    st = ring.length ? st / ring.length / 255 * 0.5 : 0;
+    for (let q = 0; q < m; q++) { embeddedPos(F.pos[f], emb.idx, 8 * q, emb.t, 3 * q, P3); W[3 * q] = P3[0]; W[3 * q + 1] = P3[1]; W[3 * q + 2] = P3[2]; }
+    let hit = -1;
+    for (let q = 0; q < m && hit < 0; q++) {
+      if (rigid) { if (W[3 * q] > -0.005 && W[3 * q + 1] < RIGID_BARRIER.height) hit = q; }
+      else if (staticObs) { if (obstacleSDF(W[3 * q], W[3 * q + 1], W[3 * q + 2], G3, true) < 0.005) hit = q; }
+      else if (wall && F.bricks.length && nearBrickFrame(F.bricks[f], W[3 * q], W[3 * q + 1], W[3 * q + 2])) hit = q;
+    }
+    if (!(st > pn.limit || hit >= 0)) return null;
+    // crack / shatter origin: the contact point, else the pane point nearest the most strained node
+    if (hit >= 0) return { cause: 'contact', origin: pts[hit] };
+    const r = car.rest;
+    return { cause: 'frame', origin: pts.reduce((o, q) => Math.hypot(q[0] - r[3 * best], q[1] - r[3 * best + 1], q[2] - r[3 * best + 2]) < Math.hypot(o[0] - r[3 * best], o[1] - r[3 * best + 1], o[2] - r[3 * best + 2]) ? q : o, pts[0]) };
+  }
+  // The break of pane pn at frame k (time tb): its glass entry and event, with the pane's centre
+  // position and velocity from the recorded frames
+  function paneBreak(pn, U, u, F, k, tb, cause, origin) {
+    const p = pn.p, c = pn.c;
+    const k0 = Math.max(0, k - 1), k1 = Math.min(F.t.length - 1, k + 1);
+    const ce = embedPoints(U.car, [c]);
+    const A = embeddedPos(F.pos[k0], ce.idx, 0, ce.t, 0, [0, 0, 0]), B = embeddedPos(F.pos[k1], ce.idx, 0, ce.t, 0, [0, 0, 0]);
+    const h = Math.max(1e-6, F.t[k1] - F.t[k0]);
+    const at = embeddedPos(F.pos[k], ce.idx, 0, ce.t, 0, [0, 0, 0]);
+    const vel = [(B[0] - A[0]) / h, (B[1] - A[1]) / h, (B[2] - A[2]) / h];
+    return {
+      glass: { name: p.name, unit: u, laminated: !!p.laminated, lamp: pn.lamp, t: tb, frame: k, cause, origin: origin.slice(), centre: at, vel },
+      event: { t: tb, type: p.laminated ? 'crack' : 'glass', x: at[0], y: at[1], z: at[2], mag: Math.hypot(vel[0], vel[1], vel[2]), mass: p.area * (pn.glass ? 5 : 2), part: p.name },
+    };
+  }
+  // Glass while the run goes on (the Race game's crash camera): the same tests as glassBreaks on
+  // the frames recorded so far. A pane is published once the frame after its break exists (the
+  // velocity needs it), so every break comes out as glassBreaks will find it at the end. Returns
+  // the panes broken since the last call: { glass: [...], events: [...] }; final: the run is over.
+  let liveGlass = null;
+  function scanGlass(final) {
+    if (!liveGlass) liveGlass = units.map((U, u) => ({ U, u, pos: [], strain: [], panes: U.spec.parts ? unitPanes(U).map(pn => ({ pn, f: 0, done: false })) : [] }));
+    const found = { glass: [], events: [] }, nF = frames.t.length;
+    for (const L of liveGlass) {
+      const U = L.U, u = L.u;
+      while (L.pos.length < nF) {
+        const f = L.pos.length;
+        L.pos.push(multi ? frames.pos[f].subarray(3 * U.off, 3 * (U.off + U.n)) : frames.pos[f]);
+        L.strain.push(multi ? frames.strain[f].subarray(U.off, U.off + U.n) : frames.strain[f]);
+      }
+      const F = { t: frames.t, bricks: frames.bricks, pos: L.pos, strain: L.strain };
+      for (const S of L.panes) {
+        if (S.done) continue;
+        const pn = S.pn;
+        let tHost = Infinity;
+        if (pn.host) for (const d of debris) if (d.kind === 'part' && d.unit === u && d.name === pn.host.name) tHost = d.t;
+        while (S.f < nF && F.t[S.f] < tHost && (S.f + 1 < nF || final)) {
+          const r = paneTest(pn, F, S.f, U.car);
+          if (r) { const b = paneBreak(pn, U, u, F, S.f, F.t[S.f], r.cause, r.origin); found.glass.push(b.glass); found.events.push(b.event); S.done = true; break; }
+          S.f++;
+        }
+        if (S.done || tHost === Infinity || S.f >= nF || F.t[S.f] < tHost) continue;
+        // its panel came off first: the pane goes with it
+        let k = 0; while (k < nF - 1 && F.t[k] < tHost) k++;
+        if (k + 1 < nF || final) { const b = paneBreak(pn, U, u, F, k, tHost, 'panel', pn.c); found.glass.push(b.glass); found.events.push(b.event); S.done = true; }
+      }
+    }
+    return found;
   }
   function nearBrickFrame(bp, x, y, z) {
     for (let o = 0; o < nb; o++) {
@@ -3754,6 +3890,7 @@ function createImpactSim(cfg) {
   // can't take this set-up, the CPU solves it (gpuFallback says why).
   let gpu = null, gpuRunning = false, gpuMs = 0, gpuBatches = 0, gpuSteps = 0, gpuError = null, gpuFallback = null;
   if (cfg.gpu && wall) gpuFallback = 'the GPU solver has no brick wall';
+  else if (cfg.gpu && world) gpuFallback = 'the GPU solver has no world obstacles';
   else if (cfg.gpu) {
     const floor = new Float64Array(n);
     for (let a = 0; a < n; a++) floor[a] = wheelNode[a] ? wheelFloor[a] : clear[a];
@@ -3817,8 +3954,10 @@ function createImpactSim(cfg) {
     }
   }
 
+  let fin = null;
   const sim = {
     car, wall, n, nb, NB, X, frame, debris,
+    frames, events,   // as recorded so far (glass events are added by finalize)
     units: units.map(U => ({ off: U.off, n: U.n, spec: U.spec, frame: U.frame, car: U.car })),
     honeycomb: hc ? hc.crush : null,
     get t() { return t; }, get T0() { return T0; }, get done() { return done; },
@@ -3843,7 +3982,9 @@ function createImpactSim(cfg) {
       }
       return sim.progress();
     },
-    finalize() { return cancelled ? null : finalize(); },
+    finalize() { return cancelled ? null : (fin || (fin = finalize())); },
+    // the panes broken since the last call (see scanGlass); final: the run is over
+    scanGlass(final) { return scanGlass(!!final); },
     // test hook: release wheel `key` now, then place it and set its velocity and spin
     testWheel(key, pos, vel, omega) {
       const cw = corners.find(c => c.key === key);
@@ -3984,6 +4125,7 @@ function createImpactSim(cfg) {
       offset: offset ? { zEdge: offset.zEdge, side: offset.side, width: offset.width, height: offset.height, edgeRadius: offset.edgeRadius,
         honeycomb: hc ? { cell: hc.h, nzc: hc.nzc, nyc: hc.nyc, y0: hc.y0, depth: hc.depth, frames: frames.honeycomb } : null } : null,
       pole: pole ? { x: pole.x, z: pole.z, r: pole.r } : null,
+      world: world ? { boxes: (cfg.world && cfg.world.boxes) || [], cyls: (cfg.world && cfg.world.cyls) || [], backOff } : null,
       solver: sim.gpu ? Object.assign({ kind: 'gpu' }, sim.gpu) : { kind: 'cpu', fallback: gpuFallback },
     };
   }
@@ -5847,9 +5989,10 @@ const FX = (() => {
     g.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.4);
     engine = { o, o2, g, f };
   }
-  function engineUpdate(kmh, load) {
+  // rpm: the engine's revs if the caller models a gearbox (the Race game); else a sawtooth from the speed
+  function engineUpdate(kmh, load, rpmIn) {
     if (!engine) return;
-    const t = ctx.currentTime, rpm = 900 + (kmh % 45) * 90 + kmh * 12;
+    const t = ctx.currentTime, rpm = rpmIn || 900 + (kmh % 45) * 90 + kmh * 12;
     engine.o.frequency.setTargetAtTime(rpm / 30, t, 0.05);
     engine.o2.frequency.setTargetAtTime(rpm / 60, t, 0.05);
     engine.f.frequency.setTargetAtTime(350 + 600 * Math.max(0, load), t, 0.08);
@@ -7250,6 +7393,23 @@ gl_Position = projectionMatrix * mvPosition;`);
       im.instanceMatrix.setUsage(T.DynamicDrawUsage);
       return { gb, im, count, seg, nseg, spin, size, SEG, rigidBarrier };
     }
+    // a part that came off (frozen meshes), or a wheel; a broken pane or lamp (shards), or the
+    // laminated windshield's crack
+    function addDebris(d) {
+      const F = D.result.frames;
+      if (d.kind === 'part') {
+        let k = 0; while (k < F.t.length - 1 && F.t[k + 1] <= d.t) k++;
+        const g = debrisMeshes(d, F.strain[k]); scene().add(g); D.debris.push({ d, g });
+      }
+      else D.wheelOff[d.key] = d;
+    }
+    function addPane(gb) {
+      if (gb.t < 0) return;
+      if (gb.laminated) { if (crack.frame) D.cracks.push({ t: gb.t, seed: hash(gb.name), size: 1, ...crackUV(gb.origin) }); return; }
+      D.panes[gb.name] = gb;
+      const S = shards(gb, D.result.frames, D.result.barrier === 'rigid');
+      if (S) { scene().add(S.im); D.shards.push(S); }
+    }
     const M4 = new T.Matrix4(), PV = new T.Vector3(), QV = new T.Quaternion(), SV = new T.Vector3(), AX = new T.Vector3();
     function updateShards(S, t) {
       const tau = t - S.gb.t;
@@ -7309,22 +7469,46 @@ gl_Position = projectionMatrix * mvPosition;`);
       // build the destruction for an impact result: debris meshes, shards, crack origins
       prepareDestruction(result) {
         api.clearDestruction();
-        const F = result.frames;
         D = { result, debris: [], shards: [], wheelOff: {}, cracks: [], panes: {} };
-        for (const d of result.debris || []) {
-          if (d.kind === 'part') {
-            let k = 0; while (k < F.t.length - 1 && F.t[k + 1] <= d.t) k++;
-            const g = debrisMeshes(d, F.strain[k]); scene().add(g); D.debris.push({ d, g });
-          }
-          else D.wheelOff[d.key] = d;
-        }
-        for (const gb of result.glass || []) {
-          if (gb.t < 0) continue;
-          if (gb.laminated) { if (crack.frame) D.cracks.push({ t: gb.t, seed: hash(gb.name), size: 1, ...crackUV(gb.origin) }); continue; }
-          D.panes[gb.name] = gb;
-          const S = shards(gb, F, result.barrier === 'rigid');
-          if (S) { scene().add(S.im); D.shards.push(S); }
-        }
+        for (const d of result.debris || []) addDebris(d);
+        for (const gb of result.glass || []) addPane(gb);
+      },
+      // the same for a result that is still growing (the Race game's live crash): builds only the
+      // debris and panes added since the last call. Frames must arrive before the debris and glass
+      // that refer to them; for the finished result, prepareDestruction does it in one go.
+      // tUntil, maxNew (optional): build only what happens before tUntil, at most maxNew pieces this call
+      // (each costs some CPU work), so a burst of breakage doesn't stall a frame
+      syncDestruction(result, tUntil = Infinity, maxNew = Infinity) {
+        if (!D || D.result !== result) { api.clearDestruction(); D = { result, debris: [], shards: [], wheelOff: {}, cracks: [], panes: {}, nDebris: 0, nGlass: 0 }; }
+        const debris = result.debris || [], glass = result.glass || [];
+        let made = 0;
+        for (; D.nDebris < debris.length && made < maxNew && debris[D.nDebris].t <= tUntil; D.nDebris++, made++) addDebris(debris[D.nDebris]);
+        for (; D.nGlass < glass.length && made < maxNew && glass[D.nGlass].t <= tUntil; D.nGlass++, made++) addPane(glass[D.nGlass]);
+      },
+      // compile the shaders a crash will need (debris, shards) now, with a dummy break, and draw it
+      // once (some drivers finish a shader only at its first draw), so the first real break doesn't
+      // stall a frame
+      warm(renderer, camera) {
+        const X = Float32Array.from(lat.rest), S = new Uint8Array(n), ax = Float32Array.of(0, 0, 0, 1, 0, 0, 0, 1, 0);
+        const F = { t: [0, 0.001], pos: [X, X], strain: [S, S], bricks: [new Float32Array(7 * 64), new Float32Array(7 * 64)], axes: [ax, ax] };
+        const part = Object.keys(parts).find(k => k.startsWith('DEFORM_'));
+        // a side window, a lamp and the windshield's crack overlay
+        const all = spec.parts || [];
+        const panes = [all.find(p => p.name.startsWith('BRITTLE_Glass') && !p.laminated), all.find(p => p.name.startsWith('BRITTLE_Light')), all.find(p => p.laminated)].filter(Boolean);
+        const fake = { frames: F, barrier: 'world',
+          debris: part ? [{ name: part, kind: 'part', body: 0, t: 0, X, pos: [0, 0, 0], quat: [0, 0, 0, 1] }] : [],
+          glass: panes.map(p => ({ name: p.name, lamp: p.name.startsWith('BRITTLE_Light'), laminated: !!p.laminated, t: 0, frame: 0, origin: p.centre || [0, 0, 0], centre: [0, 0, 0], vel: [0, 0, 0] })) };
+        const was = group.visible;
+        group.visible = true;
+        api.prepareDestruction(fake);
+        api.updateDestruction(0.0005, 0, 1, 0.5);
+        renderer.compile(scene(), camera);
+        const culled = [];
+        for (const { g } of D.debris) g.traverse((o) => { if (o.isMesh && o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
+        renderer.render(scene(), camera);
+        for (const o of culled) o.frustumCulled = true;
+        api.clearDestruction();
+        group.visible = was;
       },
       // windshield hits from the occupant model (re-run with other restraints: call again)
       setHeadStrikes(list) {

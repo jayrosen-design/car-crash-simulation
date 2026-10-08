@@ -3,6 +3,7 @@
  *                          soundtrack (the shots are in tools/trailer.js, the music in
  *                          tools/trailer-music.js)
  *   media/poster.jpg       the video's poster frame
+ *   media/hero-loop.mp4    the home page's background: the trailer's chorus without titles or sound
  *   media/shot-rigid.jpg   pictures of the two barrier tests for the home page
  *   media/shot-brick.jpg
  *   media/lab-<id>.jpg     a picture of each crash lab's finished test
@@ -10,7 +11,7 @@
  * so the video is smooth however long a frame takes to render. The soundtrack is rendered in the
  * page with Web Audio. Blender encodes the frames and the sound (tools/encode-video.py), so no
  * separate ffmpeg install is needed.
- *   node tools/record-video.js [shots|video|labs] [--chrome <chrome.exe>] [--blender <blender.exe>]
+ *   node tools/record-video.js [shots|video|loop|labs] [--chrome <chrome.exe>] [--blender <blender.exe>]
  * Rebuild Simulator.html first (node tools/build-standalone.js): this records that file. Rebuild
  * again afterwards, to embed the new media in Car Crash Simulation.html.
  */
@@ -27,7 +28,7 @@ const MEDIA = path.join(ROOT, 'media');
 const arg = (name, def) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : def; };
 const CHROME = arg('--chrome', 'C:/Program Files/Google/Chrome/Application/chrome.exe');
 const BLENDER = arg('--blender', 'C:/Program Files/Blender Foundation/Blender 5.1/blender.exe');
-const ONLY = ['shots', 'video', 'labs'].find(k => process.argv.includes(k));
+const ONLY = ['shots', 'video', 'loop', 'labs'].find(k => process.argv.includes(k));
 const W = 1280, H = 720, FPS = 30, DT = 1000 / FPS;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const pageUrl = (q) => 'file:///' + path.join(ROOT, 'Simulator.html').replace(/\\/g, '/').replace(/ /g, '%20') + (q || '');
@@ -183,11 +184,11 @@ async function recordLabShot(b, id, query, tSince, cameraJs) {
       if (b.errors.length) { console.log('page errors:\n' + b.errors.join('\n')); process.exitCode = 1; }
       return;
     }
-    if (ONLY !== 'video') {
+    if (!ONLY || ONLY === 'shots') {
       await recordShot(b, '?preset=rigid', 75, `__rec.orbit(-112, 8.2, 3.1, 0.7)`, path.join(MEDIA, 'shot-rigid.jpg'));
       await recordShot(b, '?preset=brick', 170, `__rec.orbit(-52, 6.4, 2.1, 1.4)`, path.join(MEDIA, 'shot-brick.jpg'));
     }
-    if (ONLY !== 'shots') {
+    if (!ONLY || ONLY === 'video') {
       const t0 = Date.now();
       const framesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-frames-'));
       // drawn at 1920 x 1080 (the same layout at 1.5x) and scaled down when encoded
@@ -208,6 +209,16 @@ async function recordLabShot(b, id, query, tSince, cameraJs) {
       const mb = fs.statSync(path.join(MEDIA, 'crash-reel.mp4')).size / 1048576;
       console.log(`wrote media/crash-reel.mp4 (${mb.toFixed(1)} MB)`);
       fs.rmSync(framesDir, { recursive: true, force: true });
+    }
+    if (!ONLY || ONLY === 'video' || ONLY === 'loop') {
+      // the background loop: the trailer's chorus again, with the colour grade but no titles
+      const loopDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-loop-'));
+      await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1.5, mobile: false });
+      const [a, z] = Trailer.LOOP;
+      await Trailer.record(b, { open: (q) => openSimulator(b, q), framesDir: loopDir, log: console.log, only: (s) => s.f >= a && s.f + s.n <= z, clean: true });
+      execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', loopDir, path.join(MEDIA, 'hero-loop.mp4'), String(FPS), 'LOW', 'size=' + W + 'x' + H], { stdio: 'inherit' });
+      console.log(`wrote media/hero-loop.mp4 (${(fs.statSync(path.join(MEDIA, 'hero-loop.mp4')).size / 1048576).toFixed(1)} MB, ${((z - a) / FPS).toFixed(1)} s)`);
+      fs.rmSync(loopDir, { recursive: true, force: true });
     }
     if (b.errors.length) { console.log('page errors:\n' + b.errors.join('\n')); process.exitCode = 1; }
   } finally {

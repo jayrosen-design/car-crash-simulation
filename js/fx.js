@@ -275,9 +275,10 @@ const FX = (() => {
     g.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.4);
     engine = { o, o2, g, f };
   }
-  function engineUpdate(kmh, load) {
+  // rpm: the engine's revs if the caller models a gearbox (the Race game); else a sawtooth from the speed
+  function engineUpdate(kmh, load, rpmIn) {
     if (!engine) return;
-    const t = ctx.currentTime, rpm = 900 + (kmh % 45) * 90 + kmh * 12;
+    const t = ctx.currentTime, rpm = rpmIn || 900 + (kmh % 45) * 90 + kmh * 12;
     engine.o.frequency.setTargetAtTime(rpm / 30, t, 0.05);
     engine.o2.frequency.setTargetAtTime(rpm / 60, t, 0.05);
     engine.f.frequency.setTargetAtTime(350 + 600 * Math.max(0, load), t, 0.08);

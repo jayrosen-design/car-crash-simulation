@@ -4,3 +4,6 @@
 /tools
 # the developer page: a real file at / would be served ahead of the rewrite to home.html
 /index.html
+# the Race game's developer page and its textures (Race.html has them embedded)
+/game.html
+/media/race
