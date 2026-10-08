@@ -10,6 +10,7 @@
  *   look back    B                                left bumper
  *   reset        R                                View
  *   pause        Esc, P                           Menu
+ *   menus        arrows, WASD; Enter              d-pad, left stick; A
  *
  * Keyboard steering eases in and out (a key is all or nothing; a stick isn't). Rumble, where the
  * browser and controller support it, through the gamepad's vibrationActuator.
@@ -35,7 +36,11 @@ const RaceInput = (() => {
 
   const dz = (v) => Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD);
   const prevButtons = [];
-  /* -> { steer, throttle, brake, handbrake, boost, camera, lookBack, reset, pause, start, any, device } */
+  // menu steps from the stick: one per flick past 0.6, re-armed once it's back under 0.3
+  const armed = [true, true];
+  const flick = (i, v) => { if (Math.abs(v) < 0.3) armed[i] = true; else if (Math.abs(v) > 0.6 && armed[i]) { armed[i] = false; return Math.sign(v); } return 0; };
+  /* -> { steer, throttle, brake, handbrake, boost, camera, lookBack, reset, pause, start, any, device,
+   *      nav: { x, y } (menu steps this poll: -1, 0 or 1; right and down positive) } */
   function poll(dt) {
     const k = (...c) => c.some(x => keys.has(x)), e = (...c) => c.some(x => pressed.has(x));
     // keyboard steering: ease toward the key's direction, quicker back to centre
@@ -47,6 +52,7 @@ const RaceInput = (() => {
       handbrake: k('Space') ? 1 : 0, boost: k('ShiftLeft', 'ShiftRight', 'KeyN'), lookBack: k('KeyB'),
       camera: e('KeyC'), reset: e('KeyR'), pause: e('Escape', 'KeyP'), start: e('Enter', 'Space'),
       any: pressed.size > 0, device: 'keyboard',
+      nav: { x: (e('KeyD', 'ArrowRight') ? 1 : 0) - (e('KeyA', 'ArrowLeft') ? 1 : 0), y: (e('KeyS', 'ArrowDown') ? 1 : 0) - (e('KeyW', 'ArrowUp') ? 1 : 0) },
     };
     // the first connected standard-mapping gamepad
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -68,6 +74,10 @@ const RaceInput = (() => {
       out.reset = out.reset || edge(8);
       out.pause = out.pause || edge(9);
       out.start = out.start || edge(0) || edge(9);
+      // menus: the d-pad (12 up, 13 down, 14 left, 15 right) or a flick of the left stick
+      const fx = flick(0, gp.axes[0] || 0), fy = flick(1, gp.axes[1] || 0);
+      out.nav.x = out.nav.x || (edge(15) ? 1 : edge(14) ? -1 : fx);
+      out.nav.y = out.nav.y || (edge(13) ? 1 : edge(12) ? -1 : fy);
       out.any = out.any || gp.buttons.some((x, i) => edge(i));
       if (padUsed) out.device = 'gamepad';
       gp.buttons.forEach((x, i) => { prevButtons[i] = x && x.pressed; });

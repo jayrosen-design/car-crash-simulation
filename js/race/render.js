@@ -119,18 +119,29 @@ const RaceRender = (() => {
       }
     }
 
-    // the player's car: a CarModels instance (skinned to its lattice, can show crash damage)
-    let player = null;
+    // the player's car: a CarModels instance (skinned to its lattice, can show crash damage). One per
+    // model, made (and warmed for a crash) the first time it's chosen; the others are hidden.
+    const making = {}, made = {};   // key -> promise of the model; key -> the model, once made
+    let player = null, wanted = null;
     async function preparePlayer(key, spec, paint) {
-      const lat = CrashPhysics.buildCar(spec.massKg, 'standard', spec);
-      player = await CarModels.create(key, spec, lat, renderer);
-      player.lat = lat;
-      useEnv(player.group, env);
-      scene.add(player.group);
-      if (paint !== undefined) {
-        player.group.traverse((o) => { if (o.isMesh && o.material && o.material.userData && o.material.userData.cls === 'paint') o.material.color.setHex(paint).convertSRGBToLinear(); });
+      wanted = key;
+      making[key] = making[key] || (async () => {
+        const lat = CrashPhysics.buildCar(spec.massKg, 'standard', spec);
+        const m = await CarModels.create(key, spec, lat, renderer);
+        m.lat = lat;
+        useEnv(m.group, env);
+        m.group.visible = false;
+        scene.add(m.group);
+        m.warm(renderer, camera);
+        return (made[key] = m);
+      })();
+      const m = await making[key];
+      if (wanted === key) {   // unless another car was asked for meanwhile
+        player = m;
+        for (const k in made) made[k].group.visible = made[k] === m;
+        if (paint !== undefined) m.setPaint(paint);
       }
-      return player;
+      return m;
     }
     const PM = new T.Matrix4();
     function drawPlayer(st, spinDelta) {
@@ -583,8 +594,8 @@ float lnoise(vec3 p) {
   function buildStart(group, level) {
     const p = level.poseAt(level.start.s, 0);
     const line = canvasTex(256, 32, (c, w, h) => { for (let i = 0; i < 16; i++) for (let j = 0; j < 2; j++) { c.fillStyle = (i + j) % 2 ? '#111' : '#eee'; c.fillRect(i * 16, j * 16, 16, 16); } });
-    line.wrapS = T.RepeatWrapping; line.repeat.set(1, 1);
-    const g = new T.PlaneGeometry(1.6, level.roadHalf * 2); g.rotateX(-Math.PI / 2);
+    line.wrapS = T.RepeatWrapping; line.repeat.set(1.25, 1);   // 20 squares across the street, 2 along it
+    const g = new T.PlaneGeometry(level.roadHalf * 2, 1.6); g.rotateX(-Math.PI / 2);   // across the street, 1.6 m deep
     const m = new T.Mesh(g, new T.MeshStandardMaterial({ map: line, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -3 }));
     m.position.set(p.x, 0.006, p.z); m.rotation.y = -p.h + Math.PI / 2;
     m.receiveShadow = true;

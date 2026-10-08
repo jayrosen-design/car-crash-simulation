@@ -180,6 +180,26 @@ const RaceCar = (() => {
     return car;
   }
 
-  return { create, TUNE, BOOST, G };
+  /* a car's performance, measured by driving it on an empty, level road (the car-select screen
+   * shows these, tools/race-check.js checks them): { t100 (0-100 km/h, s), top and topBoost (km/h,
+   * after a minute flat out), stop100 (100-0 km/h, m), lateralG (steady cornering, g), powerKW,
+   * massKg, drive ('AWD' | 'RWD' | 'FWD'), gears } */
+  function measure(spec) {
+    const DT = 1 / 240;
+    const run = (speed, n, inp) => { const car = create(spec); car.place(0, 0, 0, speed); for (let i = 0; i < n; i++) car.step(DT, typeof inp === 'function' ? inp(car, i) : inp); return car; };
+    let t100 = -1;
+    { const car = create(spec); car.place(0, 0, 0, 0); for (let i = 0; i < 240 * 20 && t100 < 0; i++) { car.step(DT, { throttle: 1 }); if (car.forward >= 100 / 3.6) t100 = i / 240; } }
+    const top = run(0, 240 * 60, { throttle: 1 }).forward * 3.6;
+    const topBoost = run(0, 240 * 60, { throttle: 1, boost: true }).forward * 3.6;
+    let stop100 = 0;
+    { const car = create(spec); car.place(0, 0, 0, 100 / 3.6); while (car.forward > 0.1) { car.step(DT, { brake: 1 }); stop100 += car.forward * DT; } }
+    let ay = 0;
+    run(25, 240 * 6, (car, i) => { if (i > 240 * 4) ay = Math.max(ay, Math.abs(car.ay)); return { steer: 0.4, throttle: car.forward < 25 ? 0.6 : 0.05 }; });
+    const tune = TUNE[spec.key] || TUNE.lexus;
+    const drive = tune.drive[0] > 0 && tune.drive[1] > 0 ? 'AWD' : tune.drive[1] > 0 ? 'RWD' : 'FWD';
+    return { t100, top, topBoost, stop100, lateralG: ay / G, powerKW: tune.power / 1000, massKg: spec.massKg, drive, gears: tune.gears.length };
+  }
+
+  return { create, measure, TUNE, BOOST, G };
 })();
 if (typeof module === 'object' && module.exports) module.exports = RaceCar;

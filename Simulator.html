@@ -7161,11 +7161,13 @@ gl_Position = projectionMatrix * mvPosition;`);
     const matCache = {}, wheelMats = {}, plainMats = {}, frozenMats = {};
     const extraInfo = { 'mech:engine': { cls: 'mech', color: [0.09, 0.09, 0.1], metal: 0.6, rough: 0.5 }, 'mech:cover': { cls: 'mech', color: [0.2, 0.21, 0.23], metal: 0.4, rough: 0.4 } };
     const infoOf = (name) => (spec.materials || {})[name] || extraInfo[name] || { cls: 'paint', color: [0.5, 0.5, 0.5], metal: 0, rough: 0.5 };
+    let paint = null;   // a body colour set with setPaint (sRGB hex), else the model's own
     const materialFor = (name, kind) => {
       const info = infoOf(name);
       const cache = kind === 'wheel' ? wheelMats : kind === 'plain' ? plainMats : kind === 'frozen' ? frozenMats : matCache;
       if (!cache[name]) {
         let m = makeMaterial(info, env);
+        if (paint !== null && info.cls === 'paint') m.color.setHex(paint);
         m.userData.cls = info.cls;
         m.userData.baseOpacity = m.opacity; m.userData.baseTransparent = m.transparent;
         if (kind === 'wheel') { if (info.cls === 'tire') patchTyre(m); }
@@ -7509,6 +7511,11 @@ gl_Position = projectionMatrix * mvPosition;`);
         for (const o of culled) o.frustumCulled = true;
         api.clearDestruction();
         group.visible = was;
+      },
+      // the body colour (sRGB hex): the car, and parts that have come off or come off later
+      setPaint(hex) {
+        paint = hex;
+        for (const cache of [matCache, plainMats, frozenMats]) for (const m of Object.values(cache)) if (m.userData.cls === 'paint') m.color.setHex(hex);
       },
       // windshield hits from the occupant model (re-run with other restraints: call again)
       setHeadStrikes(list) {

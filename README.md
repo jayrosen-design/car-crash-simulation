@@ -157,13 +157,19 @@ In playback:
 | Look back | B | Left bumper |
 | Back on the road | R | View |
 | Pause | Esc, P | Menu |
+| Menus (car select) | arrows or WASD, Enter | d-pad or left stick, A |
 
 Controllers work through the Gamepad API's standard mapping, with rumble where the browser supports it.
 
 ### The race
 
+- **Car select.** Before the race, pick the Lexus RX 350 or the Ford Mustang GT500 and one of eight paints. The car waits on the street past the start line, facing the camera, while you choose.
+  - **Performance.** The screen shows each car's performance as bars and figures: top speed (and with boost), 0–100 km/h, 100–0 km/h braking distance and steady cornering grip. It also lists the car's power, weight, drive and gearbox.
+  - **Where the figures come from.** They aren't typed in. `RaceCar.measure` works them out at load by driving each car on an empty road with the game's own physics, about 0.1 s for both. `tools/race-check.js` checks the same figures.
+  - **The paint** covers the whole car, parts that break off it in a crash included.
+  - **Remembered choice.** The choice is kept in the browser for the next race. `?car=lexus|mustang` sets the car the screen starts on.
 - **The circuit.** A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, street lights, trees and closed side streets. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
-- **Eight cars.** You start sixth on the grid in the Lexus (`?car=mustang` for the Mustang), against seven rivals in Lexus and Mustang models, each with a name, a paint colour and a skill level.
+- **Eight cars.** You start sixth on the grid, against seven rivals in Lexus and Mustang models, each with a name, a paint colour and a skill level.
 - **Traffic, both ways.** Cars keep to their lanes and follow the car ahead with the Intelligent Driver Model \[[77](#ref-77)\]: $\dot v = a\big[1 - (v/v_0)^4 - (s^*/s)^2\big]$, $s^* = s_0 + vT + \frac{v\,\Delta v}{2\sqrt{ab}}$. Here $s$ is the gap to the car ahead and $\Delta v$ the closing speed. The game uses $a = 1.6$ m/s², $b = 3$ m/s², $s_0 = 4$ m, a time gap $T = 1.4$ s, and cruising speeds $v_0$ of 13–19 m/s (47–68 km/h). They are added ahead of you and removed behind you, so the street is busy wherever the race is. They move on rails until something hits them, then become free cars that brake to a stop.
 - **Boost.** Hold Shift for 1.65× engine power. It fills from near misses (passing a traffic car within a metre; more for oncoming ones), driving in the oncoming lanes, drifting and takedowns.
 - **Takedowns.** A rival counts as taken down if it wrecks within two seconds of a hit from you: an impact over 7 m/s, or a spin past 60°. Without your help, a rival needs 13 m/s into a wall and 20 m/s into another rival, so the pack can jostle. Wrecked rivals spin out as rigid bodies and rejoin three seconds later.
@@ -176,7 +182,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Tyres.** The lateral force follows Pacejka's Magic Formula \[[55](#ref-55)\], $F_y = D\sin\!\big(C\arctan(B\alpha - E(B\alpha - \arctan B\alpha))\big)$ with $D = \mu F_z$. Drive and brake forces share each tyre's grip with it (the friction ellipse), and the loads shift with acceleration and cornering.
   - **Engine and brakes.** The engine is power-limited, with an automatic gearbox for the engine sound. The brakes have ABS, and the handbrake locks the rear wheels.
   - **Assists.** The steering lock narrows with speed. An assist steers into slides, and a stability control limits the yaw rate to what the tyres can hold.
-  - **Performance.** Pitch and roll are drawn, not simulated. The Lexus reaches 100 km/h in 5.9 s, tops out at 217 km/h (258 with boost), stops from 100 km/h in 37 m and corners at 0.86 g.
+  - **Performance.** Pitch and roll are drawn, not simulated. The Lexus reaches 100 km/h in 5.9 s, tops out at 217 km/h (261 with boost), stops from 100 km/h in 37 m and corners at 0.86 g. The Mustang: 5.7 s, 230 km/h (278 with boost), 36 m and 0.89 g.
 - **Collisions** (`js/race/world.js`). Cars are oriented boxes, tested against each other and the city's buildings, barriers, posts and trees with the separating-axis test \[[78](#ref-78)\]. They're resolved with impulses, with restitution and friction \[[7](#ref-7)\].
 - **Rivals** (`js/race/ai.js`).
   - **Speed.** Each rival follows a speed profile limited by the curve, $v \le \sqrt{\mu g/\kappa}$ with $\mu = 0.78$. A backward pass along the circuit keeps braking within 8 m/s².
@@ -207,7 +213,7 @@ node tools/headless-check.js world      the crash solver's world barrier
 
 - **`race-check.js`** checks:
   - **the level:** the circuit's length and tightest radius, that no building or post reaches into the road, and that the same seed gives the same city;
-  - **the cars:** 0–100 km/h, top speed, braking and cornering grip are in plausible bands, a head-on into a wall is a crash and a shallow scrape isn't;
+  - **the cars:** the car-select screen's figures (`RaceCar.measure`): 0–100 km/h, top speed, braking and cornering grip are in plausible bands, and boost raises the top speed. A head-on into a wall is a crash and a shallow scrape isn't;
   - **near misses:** passing within a metre counts and 1.5 m doesn't;
   - **a full race:** eight AI cars race three laps through traffic, all finish, the winner takes 150–210 s (about 3 minutes), none is stuck for more than 5 s, and lane-bound traffic never overlaps.
 - **The `world` checks** in `headless-check.js`:

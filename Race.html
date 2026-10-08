@@ -48,9 +48,56 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .boost.on .boost-bar i { background: linear-gradient(90deg, #ffd36b, #ff3b1f); box-shadow: 0 0 12px #ff6a2b; }
 .chip { position: absolute; bottom: 120px; right: 24px; padding: 6px 12px; border-radius: 8px; background: rgba(242, 178, 51, 0.92); color: #1a1205; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; }
 .eyebrow { margin: 0 0 6px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
-.go { margin: 14px 0 0; text-align: center; font-size: 16px; }
 .credits { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.45; }
 .credits a { color: var(--muted); }
+
+/* car select: the car turns in the middle, the panels sit at the sides */
+.overlay.select { display: block; background: linear-gradient(90deg, rgba(5, 7, 10, 0.78), rgba(5, 7, 10, 0) 36%, rgba(5, 7, 10, 0) 64%, rgba(5, 7, 10, 0.78)); pointer-events: none; overflow: auto; }
+.select > * { pointer-events: auto; }
+.sel-head { position: absolute; left: 32px; top: 26px; width: 380px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6); }
+.sel-head h2 { margin: 0 0 8px; font-size: 36px; line-height: 1.05; }
+.sel-head .muted { margin: 0; font-size: 14px; color: #c7ced8; }
+.sel-garage { position: absolute; left: 32px; top: 200px; width: 380px; padding: 10px; }
+.sel-stats { position: absolute; right: 32px; top: 26px; width: 360px; padding: 16px 18px; }
+.sel-row { padding: 10px; border: 1px solid transparent; border-radius: 10px; }
+.sel-row.focus { border-color: rgba(79, 156, 240, 0.55); background: rgba(79, 156, 240, 0.07); }
+.sel-row h3, .sel-stats h3 { margin: 0 0 9px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.sel-row h3 span { color: var(--text); }
+.sel-stats h3 { font-size: 20px; text-transform: none; letter-spacing: 0; color: var(--text); margin-bottom: 14px; }
+.sel-cars { display: grid; gap: 8px; }
+.sel-car { appearance: none; display: grid; gap: 2px; padding: 10px 12px; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.04); color: var(--text); font: inherit; cursor: pointer; }
+.sel-car:hover { background: rgba(255, 255, 255, 0.09); }
+.sel-car b { font-size: 16px; }
+.sel-car span { font-size: 13px; color: var(--muted); }
+.sel-car[aria-checked="true"] { border-color: var(--accent); background: rgba(79, 156, 240, 0.18); }
+.swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+.swatch { aspect-ratio: 1; padding: 0; border: 2px solid rgba(255, 255, 255, 0.28); border-radius: 50%; cursor: pointer; box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.35), inset 0 4px 8px rgba(255, 255, 255, 0.3); }
+.swatch:hover { border-color: rgba(255, 255, 255, 0.7); }
+.swatch[aria-checked="true"] { border-color: #fff; outline: 3px solid var(--accent); outline-offset: 2px; }
+.sel-hint { margin: 6px 10px 2px; font-size: 12px; color: var(--muted); }
+.bars { display: grid; gap: 11px; margin-bottom: 16px; }
+.bar { display: grid; grid-template-columns: 92px 1fr 104px; align-items: center; gap: 10px; font-size: 14px; }
+.bar .k { color: var(--muted); }
+.bar .track { height: 8px; overflow: hidden; border-radius: 4px; background: rgba(255, 255, 255, 0.1); }
+.bar .track i { display: block; height: 100%; background: linear-gradient(90deg, #3d86dc, #8cc4ff); transition: width 0.35s ease; }
+.bar .val { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.specs { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0 0 10px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; }
+.specs dt { color: var(--muted); }
+.specs dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.sel-foot { position: absolute; left: 50%; bottom: 20px; width: min(720px, calc(100% - 32px)); transform: translateX(-50%); text-align: center; }
+.btn.big { padding: 12px 30px; font-size: 18px; }
+.btn:disabled { opacity: 0.5; cursor: wait; }
+.btn.big small { margin-left: 8px; font-size: 13px; font-weight: 500; opacity: 0.7; }
+.sel-keys { max-width: 520px; margin: 12px auto 0; padding: 6px 12px; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.sel-keys summary { color: var(--muted); font-size: 14px; cursor: pointer; }
+.sel-keys .keys { margin: 6px 0 4px; }
+.sel-foot .credits { margin-top: 10px; padding: 6px 12px; border-top: 0; border-radius: 8px; background: rgba(10, 12, 16, 0.72); color: #b3bcc8; }
+.sel-foot .credits a { color: #b3bcc8; }
+@media (max-width: 1100px), (max-height: 640px) {
+  .overlay.select { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: rgba(5, 7, 10, 0.55); }
+  .sel-head, .sel-garage, .sel-stats, .sel-foot { position: static; width: auto; max-width: 520px; transform: none; }
+  .sel-foot { text-align: left; }
+}
 .card.wide { max-width: 640px; width: calc(100% - 32px); }
 .results { border-collapse: collapse; width: 100%; margin: 10px 0 4px; }
 .results th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px 8px; font-size: 13px; }
@@ -121,23 +168,48 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     <div id="hud-wrong" class="wrong" hidden>Wrong way</div>
   </div>
 
-  <div id="intro" class="overlay" hidden>
-    <div class="panel card">
+  <div id="select" class="overlay select" hidden>
+    <header class="sel-head">
       <p class="eyebrow">Car Crash Simulation · Race</p>
-      <h2>Three laps of the city</h2>
-      <p class="muted">Seven rivals, live traffic both ways. Fill your boost with near misses, the oncoming lanes, drifts and takedowns. Crash, and the full crash physics plays it back in slow motion.</p>
-      <table class="keys">
-        <tr><th></th><th>Keyboard</th><th>Controller</th></tr>
-        <tr><td>Steer</td><td>A / D, ← / →</td><td>Left stick</td></tr>
-        <tr><td>Accelerate / brake</td><td>W / S, ↑ / ↓</td><td>Triggers</td></tr>
-        <tr><td>Boost</td><td>Shift</td><td>A or right bumper</td></tr>
-        <tr><td>Handbrake</td><td>Space</td><td>X</td></tr>
-        <tr><td>Camera · look back</td><td>C · B</td><td>Y · left bumper</td></tr>
-        <tr><td>Back on the road · pause</td><td>R · Esc</td><td>View · Menu</td></tr>
-      </table>
-      <p class="go">Press <b>Enter</b> or <b>A</b> to start</p>
+      <h2>Choose your car</h2>
+      <p class="muted">Three laps of the city against seven rivals, with traffic both ways. Near misses, the oncoming lanes, drifts and takedowns fill your boost. Crash, and the full crash physics plays it back in slow motion.</p>
+    </header>
+
+    <section class="panel sel-garage" aria-label="Car and paint">
+      <div class="sel-row" data-row="0">
+        <h3>Car</h3>
+        <div id="sel-cars" class="sel-cars" role="radiogroup" aria-label="Car"></div>
+      </div>
+      <div class="sel-row" data-row="1">
+        <h3>Paint · <span id="sel-paint-name"></span></h3>
+        <div id="sel-swatches" class="swatches" role="radiogroup" aria-label="Paint"></div>
+      </div>
+      <p class="sel-hint">← → change · ↑ ↓ car or paint · or click</p>
+    </section>
+
+    <section class="panel sel-stats" aria-label="Performance">
+      <h3 id="sel-name"></h3>
+      <div id="sel-bars" class="bars"></div>
+      <dl id="sel-specs" class="specs"></dl>
+      <p class="small muted">Measured by driving each car on an empty road in the game's physics.</p>
+    </section>
+
+    <footer class="sel-foot">
+      <button type="button" id="btn-start" class="btn primary big">Start race <small>Enter · A</small></button>
+      <details class="sel-keys">
+        <summary>Controls</summary>
+        <table class="keys">
+          <tr><th></th><th>Keyboard</th><th>Controller</th></tr>
+          <tr><td>Steer</td><td>A / D, ← / →</td><td>Left stick</td></tr>
+          <tr><td>Accelerate / brake</td><td>W / S, ↑ / ↓</td><td>Triggers</td></tr>
+          <tr><td>Boost</td><td>Shift</td><td>A or right bumper</td></tr>
+          <tr><td>Handbrake</td><td>Space</td><td>X</td></tr>
+          <tr><td>Camera · look back</td><td>C · B</td><td>Y · left bumper</td></tr>
+          <tr><td>Back on the road · pause</td><td>R · Esc</td><td>View · Menu</td></tr>
+        </table>
+      </details>
       <p class="credits">3D car models: “<a href="https://sketchfab.com/3d-models/lexus-rx-350-rigged-rigged-driver-human-6b9a1994b2dd445c8248270c81eead6b" target="_blank" rel="noopener">Lexus RX 350 + rigged (+ rigged driver (human))</a>” by menarzuw and “<a href="https://sketchfab.com/3d-models/ford-mustang-gt-500-with-pro-rig-for-free-f26a29f766844f46910547d6d2cc291d" target="_blank" rel="noopener">Ford Mustang Gt 500 With pro Rig FOR FREE!</a>” by NoOb StUfFs, both CC BY 4.0, split into parts and simplified. Street textures and sky: <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (CC0). 3D graphics by three.js.</p>
-    </div>
+    </footer>
   </div>
 
   <div id="results" class="overlay" hidden>
@@ -4410,7 +4482,27 @@ const RaceCar = (() => {
     return car;
   }
 
-  return { create, TUNE, BOOST, G };
+  /* a car's performance, measured by driving it on an empty, level road (the car-select screen
+   * shows these, tools/race-check.js checks them): { t100 (0-100 km/h, s), top and topBoost (km/h,
+   * after a minute flat out), stop100 (100-0 km/h, m), lateralG (steady cornering, g), powerKW,
+   * massKg, drive ('AWD' | 'RWD' | 'FWD'), gears } */
+  function measure(spec) {
+    const DT = 1 / 240;
+    const run = (speed, n, inp) => { const car = create(spec); car.place(0, 0, 0, speed); for (let i = 0; i < n; i++) car.step(DT, typeof inp === 'function' ? inp(car, i) : inp); return car; };
+    let t100 = -1;
+    { const car = create(spec); car.place(0, 0, 0, 0); for (let i = 0; i < 240 * 20 && t100 < 0; i++) { car.step(DT, { throttle: 1 }); if (car.forward >= 100 / 3.6) t100 = i / 240; } }
+    const top = run(0, 240 * 60, { throttle: 1 }).forward * 3.6;
+    const topBoost = run(0, 240 * 60, { throttle: 1, boost: true }).forward * 3.6;
+    let stop100 = 0;
+    { const car = create(spec); car.place(0, 0, 0, 100 / 3.6); while (car.forward > 0.1) { car.step(DT, { brake: 1 }); stop100 += car.forward * DT; } }
+    let ay = 0;
+    run(25, 240 * 6, (car, i) => { if (i > 240 * 4) ay = Math.max(ay, Math.abs(car.ay)); return { steer: 0.4, throttle: car.forward < 25 ? 0.6 : 0.05 }; });
+    const tune = TUNE[spec.key] || TUNE.lexus;
+    const drive = tune.drive[0] > 0 && tune.drive[1] > 0 ? 'AWD' : tune.drive[1] > 0 ? 'RWD' : 'FWD';
+    return { t100, top, topBoost, stop100, lateralG: ay / G, powerKW: tune.power / 1000, massKg: spec.massKg, drive, gears: tune.gears.length };
+  }
+
+  return { create, measure, TUNE, BOOST, G };
 })();
 if (typeof module === 'object' && module.exports) module.exports = RaceCar;
 
@@ -5913,11 +6005,13 @@ gl_Position = projectionMatrix * mvPosition;`);
     const matCache = {}, wheelMats = {}, plainMats = {}, frozenMats = {};
     const extraInfo = { 'mech:engine': { cls: 'mech', color: [0.09, 0.09, 0.1], metal: 0.6, rough: 0.5 }, 'mech:cover': { cls: 'mech', color: [0.2, 0.21, 0.23], metal: 0.4, rough: 0.4 } };
     const infoOf = (name) => (spec.materials || {})[name] || extraInfo[name] || { cls: 'paint', color: [0.5, 0.5, 0.5], metal: 0, rough: 0.5 };
+    let paint = null;   // a body colour set with setPaint (sRGB hex), else the model's own
     const materialFor = (name, kind) => {
       const info = infoOf(name);
       const cache = kind === 'wheel' ? wheelMats : kind === 'plain' ? plainMats : kind === 'frozen' ? frozenMats : matCache;
       if (!cache[name]) {
         let m = makeMaterial(info, env);
+        if (paint !== null && info.cls === 'paint') m.color.setHex(paint);
         m.userData.cls = info.cls;
         m.userData.baseOpacity = m.opacity; m.userData.baseTransparent = m.transparent;
         if (kind === 'wheel') { if (info.cls === 'tire') patchTyre(m); }
@@ -6262,6 +6356,11 @@ gl_Position = projectionMatrix * mvPosition;`);
         api.clearDestruction();
         group.visible = was;
       },
+      // the body colour (sRGB hex): the car, and parts that have come off or come off later
+      setPaint(hex) {
+        paint = hex;
+        for (const cache of [matCache, plainMats, frozenMats]) for (const m of Object.values(cache)) if (m.userData.cls === 'paint') m.color.setHex(hex);
+      },
       // windshield hits from the occupant model (re-run with other restraints: call again)
       setHeadStrikes(list) {
         if (!D || !crack.frame) return;
@@ -6348,6 +6447,7 @@ gl_Position = projectionMatrix * mvPosition;`);
  *   look back    B                                left bumper
  *   reset        R                                View
  *   pause        Esc, P                           Menu
+ *   menus        arrows, WASD; Enter              d-pad, left stick; A
  *
  * Keyboard steering eases in and out (a key is all or nothing; a stick isn't). Rumble, where the
  * browser and controller support it, through the gamepad's vibrationActuator.
@@ -6373,7 +6473,11 @@ const RaceInput = (() => {
 
   const dz = (v) => Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD);
   const prevButtons = [];
-  /* -> { steer, throttle, brake, handbrake, boost, camera, lookBack, reset, pause, start, any, device } */
+  // menu steps from the stick: one per flick past 0.6, re-armed once it's back under 0.3
+  const armed = [true, true];
+  const flick = (i, v) => { if (Math.abs(v) < 0.3) armed[i] = true; else if (Math.abs(v) > 0.6 && armed[i]) { armed[i] = false; return Math.sign(v); } return 0; };
+  /* -> { steer, throttle, brake, handbrake, boost, camera, lookBack, reset, pause, start, any, device,
+   *      nav: { x, y } (menu steps this poll: -1, 0 or 1; right and down positive) } */
   function poll(dt) {
     const k = (...c) => c.some(x => keys.has(x)), e = (...c) => c.some(x => pressed.has(x));
     // keyboard steering: ease toward the key's direction, quicker back to centre
@@ -6385,6 +6489,7 @@ const RaceInput = (() => {
       handbrake: k('Space') ? 1 : 0, boost: k('ShiftLeft', 'ShiftRight', 'KeyN'), lookBack: k('KeyB'),
       camera: e('KeyC'), reset: e('KeyR'), pause: e('Escape', 'KeyP'), start: e('Enter', 'Space'),
       any: pressed.size > 0, device: 'keyboard',
+      nav: { x: (e('KeyD', 'ArrowRight') ? 1 : 0) - (e('KeyA', 'ArrowLeft') ? 1 : 0), y: (e('KeyS', 'ArrowDown') ? 1 : 0) - (e('KeyW', 'ArrowUp') ? 1 : 0) },
     };
     // the first connected standard-mapping gamepad
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -6406,6 +6511,10 @@ const RaceInput = (() => {
       out.reset = out.reset || edge(8);
       out.pause = out.pause || edge(9);
       out.start = out.start || edge(0) || edge(9);
+      // menus: the d-pad (12 up, 13 down, 14 left, 15 right) or a flick of the left stick
+      const fx = flick(0, gp.axes[0] || 0), fy = flick(1, gp.axes[1] || 0);
+      out.nav.x = out.nav.x || (edge(15) ? 1 : edge(14) ? -1 : fx);
+      out.nav.y = out.nav.y || (edge(13) ? 1 : edge(12) ? -1 : fy);
       out.any = out.any || gp.buttons.some((x, i) => edge(i));
       if (padUsed) out.device = 'gamepad';
       gp.buttons.forEach((x, i) => { prevButtons[i] = x && x.pressed; });
@@ -6708,18 +6817,29 @@ const RaceRender = (() => {
       }
     }
 
-    // the player's car: a CarModels instance (skinned to its lattice, can show crash damage)
-    let player = null;
+    // the player's car: a CarModels instance (skinned to its lattice, can show crash damage). One per
+    // model, made (and warmed for a crash) the first time it's chosen; the others are hidden.
+    const making = {}, made = {};   // key -> promise of the model; key -> the model, once made
+    let player = null, wanted = null;
     async function preparePlayer(key, spec, paint) {
-      const lat = CrashPhysics.buildCar(spec.massKg, 'standard', spec);
-      player = await CarModels.create(key, spec, lat, renderer);
-      player.lat = lat;
-      useEnv(player.group, env);
-      scene.add(player.group);
-      if (paint !== undefined) {
-        player.group.traverse((o) => { if (o.isMesh && o.material && o.material.userData && o.material.userData.cls === 'paint') o.material.color.setHex(paint).convertSRGBToLinear(); });
+      wanted = key;
+      making[key] = making[key] || (async () => {
+        const lat = CrashPhysics.buildCar(spec.massKg, 'standard', spec);
+        const m = await CarModels.create(key, spec, lat, renderer);
+        m.lat = lat;
+        useEnv(m.group, env);
+        m.group.visible = false;
+        scene.add(m.group);
+        m.warm(renderer, camera);
+        return (made[key] = m);
+      })();
+      const m = await making[key];
+      if (wanted === key) {   // unless another car was asked for meanwhile
+        player = m;
+        for (const k in made) made[k].group.visible = made[k] === m;
+        if (paint !== undefined) m.setPaint(paint);
       }
-      return player;
+      return m;
     }
     const PM = new T.Matrix4();
     function drawPlayer(st, spinDelta) {
@@ -7172,8 +7292,8 @@ float lnoise(vec3 p) {
   function buildStart(group, level) {
     const p = level.poseAt(level.start.s, 0);
     const line = canvasTex(256, 32, (c, w, h) => { for (let i = 0; i < 16; i++) for (let j = 0; j < 2; j++) { c.fillStyle = (i + j) % 2 ? '#111' : '#eee'; c.fillRect(i * 16, j * 16, 16, 16); } });
-    line.wrapS = T.RepeatWrapping; line.repeat.set(1, 1);
-    const g = new T.PlaneGeometry(1.6, level.roadHalf * 2); g.rotateX(-Math.PI / 2);
+    line.wrapS = T.RepeatWrapping; line.repeat.set(1.25, 1);   // 20 squares across the street, 2 along it
+    const g = new T.PlaneGeometry(level.roadHalf * 2, 1.6); g.rotateX(-Math.PI / 2);   // across the street, 1.6 m deep
     const m = new T.Mesh(g, new T.MeshStandardMaterial({ map: line, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -3 }));
     m.position.set(p.x, 0.006, p.z); m.rotation.y = -p.h + Math.PI / 2;
     m.receiveShadow = true;
@@ -7260,7 +7380,12 @@ float lnoise(vec3 p) {
  * (the rivals gain time); the camera shows the street as it was. Then the car is put back on the
  * road. Rivals that crash on their own spin out as rigid bodies and rejoin.
  *
- * URL: ?car=lexus|mustang, ?seed=<n> (another city), ?damage=dramatic, ?traffic=0,
+ * Before the race, a car-select screen: the Lexus or the Mustang, one of eight paints, and each
+ * car's performance as measured by driving it (RaceCar.measure). The choice is remembered for the
+ * next race in this browser.
+ *
+ * URL: ?car=lexus|mustang (the car the select screen starts on), ?seed=<n> (another city),
+ * ?damage=dramatic, ?traffic=0,
  * ?test=wall150|headon|takedown (a scripted crash or takedown at once, results in
  * window.__race.test), ?worker=0.
  */
@@ -7279,9 +7404,18 @@ const RaceGame = (() => {
   const R = RaceRender.create({ level, container: $('#view') });
   const world = RaceWorld.create(level);
   const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
-  const carKey = specs[q.get('car')] ? q.get('car') : 'lexus';
   const DAMAGE = q.get('damage') === 'dramatic' ? 'dramatic' : 'realistic';
-  const PAINT = 0xa3161f;
+  // the car-select screen's cars and paints (sRGB). Scripted runs (?test, ?director: the trailer
+  // recorder) always start in the URL's car in red; a player's last choice is remembered.
+  const CARS = { lexus: { name: 'Lexus RX 350', kind: 'SUV' }, mustang: { name: 'Ford Mustang GT500', kind: 'Coupe' } };
+  const PAINTS = [
+    { name: 'Crimson red', hex: 0xa3161f }, { name: 'Cobalt blue', hex: 0x1d4fa3 }, { name: 'Pearl white', hex: 0xe9e9e6 }, { name: 'Jet black', hex: 0x121315 },
+    { name: 'Liquid silver', hex: 0x9ea3a8 }, { name: 'Sunset orange', hex: 0xd9581c }, { name: 'Signal yellow', hex: 0xe6b81e }, { name: 'Racing green', hex: 0x1f6b43 },
+  ];
+  const SCRIPTED = !!TEST || q.has('director');
+  const saved = (() => { if (SCRIPTED) return null; try { return JSON.parse(localStorage.getItem('race-choice')); } catch (e) { return null; } })() || {};
+  let carKey = specs[q.get('car')] ? q.get('car') : specs[saved.car] ? saved.car : 'lexus';
+  let paintIdx = PAINTS[saved.paint] ? +saved.paint : 0;
 
   // ---------------------------------------------------------------- the grid
   const RIVALS = [
@@ -7298,7 +7432,7 @@ const RaceGame = (() => {
   const grid = [];
   for (let i = 0, k = 0; i < 8; i++) if (i !== PLAYER_SLOT) grid.push(Object.assign(slotPose(i), RIVALS[k++]));
 
-  const car = RaceCar.create(specs[carKey]);
+  let car = RaceCar.create(specs[carKey]);   // replaced when another car is picked (chooseCar)
   const me = world.add(car, { kind: 'player' });
   const ps = slotPose(PLAYER_SLOT);
   car.place(ps.x, ps.z, ps.h, 0);
@@ -7365,7 +7499,7 @@ const RaceGame = (() => {
   }
 
   // ---------------------------------------------------------------- crashes
-  let state = TEST ? 'race' : 'intro', countdown = 3.6, crash = null, crashT = 0, tPlay = 0, kCur = 0, camAngle = 0, evPending = [], crashUnits = [], frozenDraw = null;
+  let state = TEST ? 'race' : 'select', countdown = 3.6, crash = null, crashT = 0, tPlay = 0, kCur = 0, camAngle = 0, evPending = [], crashUnits = [], frozenDraw = null;
   const crashes = [];   // the last two, for replays
   const testOut = (window.__race = { test: null }).test = { frames: [], aheadOfStream: 0 };
   function triggerCrash(e) {
@@ -7380,8 +7514,8 @@ const RaceGame = (() => {
     const shapes = { boxes: near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height })), cyls: near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height })) };
     crash = RaceCrash.start({ units, world: shapes, duration: 1.6, damage: DAMAGE });
     crash.impactKmh = e.vn * 3.6;
-    crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u) }));
-    for (const U of crashUnits) { U.body.frozen = true; if (U.model !== R.player) U.model.group.visible = true; }
+    crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: paintOf(b) }));
+    for (const U of crashUnits) { U.body.frozen = true; if (U.model !== R.player) { U.model.group.visible = true; if (U.paint !== undefined) U.model.setPaint(U.paint); } }
     frozenDraw = drawStates();   // the street as it was, for the crash camera
     state = 'crash'; crashT = 0; tPlay = 0; kCur = 0; evPending = [];
     camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62;
@@ -7443,7 +7577,7 @@ const RaceGame = (() => {
     }
   }
   function respawn() {
-    crashes.push({ crash, units: crashUnits.map(U => ({ key: U.body.car.key, model: U.model === R.player ? 'player' : U.body.car.key, u: crashUnits.indexOf(U) })) });
+    crashes.push({ crash, units: crashUnits.map(U => ({ key: U.body.car.key, model: U.model === R.player ? 'player' : U.body.car.key, u: crashUnits.indexOf(U), paint: U.paint })) });
     if (crashes.length > 2) crashes.shift();
     for (const U of crashUnits) {
       U.body.frozen = false;
@@ -7474,8 +7608,8 @@ const RaceGame = (() => {
     const c = crashes[idx];
     if (!c || !c.crash.done || !c.crash.result) { toast('The crash is still being worked out', 1500); return; }
     const cr = c.crash, res = cr.result;
-    const units = c.units.map(u => ({ model: u.model === 'player' ? R.player : R.wrecks[u.key], view: cr.unitView(u.u) }));
-    for (const U of units) { U.model.group.visible = true; U.model.prepareDestruction(U.view); }
+    const units = c.units.map(u => ({ model: u.model === 'player' ? R.player : R.wrecks[u.key], view: cr.unitView(u.u), paint: u.paint }));
+    for (const U of units) { U.model.group.visible = true; if (U.model !== R.player && U.paint !== undefined) U.model.setPaint(U.paint); U.model.prepareDestruction(U.view); }
     const cin = Cinematic.fromCrash({ units: res.units.map((u, i) => Object.assign({}, u, { axes: cr.F.unitAxes[i] })), frames: cr.F, T0: res.T0, contact: res.contact }, cr.events);
     replay = { cr, units, cin, t: Math.max(0, res.T0 - 0.15), end: cr.F.t[cr.F.t.length - 1], prevState: state };
     evPending = []; kCur = 0; camAngle = 0.4;
@@ -7566,6 +7700,72 @@ const RaceGame = (() => {
     mini();
   }
 
+  // ---------------------------------------------------------------- car select
+  // The car waits just past the start line, clear of the grid, facing the camera (for the trailer
+  // recorder it stays on the grid). A model is made the first time its car is picked; until
+  // it's ready the start button waits.
+  const show = level.poseAt(level.start.s + 10, 3.5);
+  const DRIVE = { AWD: 'all-wheel', RWD: 'rear-wheel', FWD: 'front-wheel' };
+  const BARS = [   // [label, fill 0-1 from the measured figures, value]
+    ['Top speed', (p) => (p.top - 150) / 150, (p) => `${Math.round(p.top)} km/h`],
+    ['0–100 km/h', (p) => (10 - p.t100) / 7, (p) => `${p.t100.toFixed(1)} s`],
+    ['100–0 km/h', (p) => (50 - p.stop100) / 20, (p) => `${p.stop100.toFixed(1)} m`],
+    ['Cornering', (p) => (p.lateralG - 0.6) / 0.6, (p) => `${p.lateralG.toFixed(2)} g`],
+  ];
+  let perf = null, selRow = 0, selToken = 0, selBusy = false, selT = 0;
+  function placeForSelect() { const p = q.has('director') ? ps : show; car.place(p.x, p.z, p.h, 0); }
+  function buildSelect() {
+    $('#sel-cars').innerHTML = Object.keys(CARS).map((k) => `<button type="button" class="sel-car" role="radio" data-car="${k}"><b>${CARS[k].name}</b><span>${CARS[k].kind} · ${DRIVE[perf[k].drive]} drive</span></button>`).join('');
+    $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
+    $('#sel-bars').innerHTML = BARS.map(([k], i) => `<div class="bar"><span class="k">${k}</span><span class="track"><i id="bar-${i}"></i></span><span class="val" id="bar-v${i}"></span></div>`).join('');
+    document.querySelectorAll('.sel-car').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
+    document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
+    $('#btn-start').addEventListener('click', () => { $('#btn-start').blur(); startRace(); });
+  }
+  function showSelect() {
+    document.querySelectorAll('.sel-car').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    document.querySelectorAll('.swatch').forEach((b, i) => b.setAttribute('aria-checked', String(i === paintIdx)));
+    document.querySelectorAll('.sel-row').forEach((r) => r.classList.toggle('focus', +r.dataset.row === selRow));
+    $('#sel-paint-name').textContent = PAINTS[paintIdx].name;
+    const p = perf[carKey];
+    $('#sel-name').textContent = CARS[carKey].name;
+    BARS.forEach(([, fill, value], i) => { $('#bar-' + i).style.width = `${Math.round(100 * Math.max(0.04, Math.min(1, fill(p))))}%`; $('#bar-v' + i).textContent = value(p); });
+    $('#sel-specs').innerHTML = [['Power', `${Math.round(p.powerKW)} kW · ${Math.round(p.powerKW * 1.341)} hp`], ['Weight', `${Math.round(p.massKg).toLocaleString('en-US')} kg`],
+      ['Drive', DRIVE[p.drive]], ['Gearbox', `${p.gears}-speed automatic`], ['Top speed with boost', `${Math.round(p.topBoost)} km/h`]].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+    $('#btn-start').disabled = selBusy;
+  }
+  async function chooseCar(key) {
+    if (!specs[key] || (key === carKey && !selBusy)) return;
+    const token = ++selToken;
+    carKey = key;
+    car = RaceCar.create(specs[key]);
+    me.car = car;
+    placeForSelect();
+    selBusy = true; showSelect();
+    await R.preparePlayer(key, specs[key], PAINTS[paintIdx].hex);
+    if (token !== selToken) return;   // another car was picked meanwhile
+    R.player.setPaint(PAINTS[paintIdx].hex);
+    selBusy = false; showSelect();
+  }
+  function pickPaint(i) {
+    paintIdx = (i + PAINTS.length) % PAINTS.length;
+    if (!selBusy) R.player.setPaint(PAINTS[paintIdx].hex);   // else chooseCar paints the new model
+    showSelect();
+  }
+  function updateSelect(inp) {
+    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 2) % 2; showSelect(); }
+    if (inp.nav.x && selRow === 0) { const keys = Object.keys(CARS); chooseCar(keys[(keys.indexOf(carKey) + inp.nav.x + keys.length) % keys.length]); }
+    else if (inp.nav.x) pickPaint(paintIdx + inp.nav.x);
+    if (inp.start) startRace();
+  }
+  function startRace() {
+    if (state !== 'select' || selBusy) return;
+    if (!SCRIPTED) { try { localStorage.setItem('race-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not remembered (private window) */ } }
+    car.place(ps.x, ps.z, ps.h, 0);
+    state = 'countdown';
+    $('#select').hidden = true; $('#hud').hidden = false;
+  }
+
   // ---------------------------------------------------------------- loop
   const sparks = new FX.Particles(R.scene, 2500);
   let acc = 0, last = performance.now(), simT = 0, audio = false, prevSpin = 0, paused = false, held = false;
@@ -7591,10 +7791,10 @@ const RaceGame = (() => {
     if (input.any && !audio) { FX.initAudio(); FX.engineStart(); audio = true; }
     if (input.pause && (state === 'race' || state === 'countdown')) { paused = !paused; $('#pause').hidden = !paused; }
     if (state === 'replay') updateReplay(dt, input);
-    if (state === 'intro' && (input.start || input.throttle > 0.5)) { state = 'countdown'; $('#intro').hidden = true; }
-    const hold = state === 'intro' || state === 'countdown';
+    if (state === 'select') updateSelect(input);
+    const hold = state === 'select' || state === 'countdown';
     if (hold !== held) { held = hold; me.frozen = hold && !TEST; for (const r of ai.rivals) r.body.frozen = hold; }
-    if (!paused && state !== 'replay' && state !== 'intro') {
+    if (!paused && state !== 'replay' && state !== 'select') {
       if (state === 'race') {
         if (input.camera) R.cam.mode = R.cam.mode === 'chase' ? 'bumper' : 'chase';
         if (input.reset) resetToTrack();
@@ -7640,7 +7840,9 @@ const RaceGame = (() => {
       const p = car.pose, spinNow = car.wheels[2].spin;
       R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch, roll: car.roll, steer: car.steer }, spinNow - prevSpin);
       prevSpin = spinNow;
-      R.follow({ x: p.x, z: p.z, h: p.heading, speed: car.speed, boost: car.boosting }, dt);
+      // the car faces the camera: a front three-quarter view, swaying 3-37 degrees off the nose
+      if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
+      else R.follow({ x: p.x, z: p.z, h: p.heading, speed: car.speed, boost: car.boosting }, dt);
     }
     // everyone else (instanced): the street as it was during a crash or replay
     const draws = (state === 'crash' || state === 'replay') && frozenDraw ? frozenDraw : drawStates();
@@ -7658,13 +7860,15 @@ const RaceGame = (() => {
   // what to draw for the other cars
   function drawStates() {
     const out = [];
-    const add = (body, key, paint) => { if (body.frozen && state !== 'intro' && state !== 'countdown') return; const c = body.car, p = c.pose; out.push({ key, x: p.x, z: p.z, h: p.heading, pitch: c.pitch, roll: c.roll, steer: c.steer, spins: c.wheels.map(w => w.spin), paint }); };
+    const add = (body, key, paint) => { if (body.frozen && state !== 'select' && state !== 'countdown') return; const c = body.car, p = c.pose; out.push({ key, x: p.x, z: p.z, h: p.heading, pitch: c.pitch, roll: c.roll, steer: c.steer, spins: c.wheels.map(w => w.spin), paint }); };
     for (const r of ai.rivals) add(r.body, r.key, r.paint);
     for (const t of traffic.cars) add(t.body, t.key, t.paint);
     for (const o of extra) add(o.body, o.key, o.paint);
     return out;
   }
   const extra = [];   // scripted test cars
+  // a body's paint: rivals, traffic, scripted cars (the wreck model in a crash takes it)
+  function paintOf(b) { return b.rival ? b.rival.paint : b.traffic ? b.traffic.paint : (extra.find(o => o.body === b) || {}).paint; }
   function handleContact(e) {
     const mine = e.a === me || e.b === me;
     if (TEST && (e.a.rival || (e.b && e.b.rival) || mine && e.vn > 1)) (testOut.contacts = testOut.contacts || []).push([+simT.toFixed(2), e.kind, e.a === me ? 'me' : e.a.rival ? 'rival' : 'x', e.b === me ? 'me' : e.b && e.b.rival ? 'rival' : e.b ? 'x' : 'static', +e.vn.toFixed(1), e.crash]);
@@ -7739,11 +7943,11 @@ const RaceGame = (() => {
   async function start() {
     $('#loading').textContent = 'Building the city…';
     const workerMode = RaceCrash.prepare();
-    await R.preparePlayer(carKey, specs[carKey], PAINT);
+    await R.preparePlayer(carKey, specs[carKey], PAINTS[paintIdx].hex);   // warmed for a crash there
     await R.prepareCars(['lexus', 'mustang'], 48);
     await R.prepareWreck('lexus', specs.lexus);
     await R.prepareWreck('mustang', specs.mustang);
-    for (const m of [R.player, R.wrecks.lexus, R.wrecks.mustang]) m.warm(R.renderer, R.camera);
+    for (const m of [R.wrecks.lexus, R.wrecks.mustang]) m.warm(R.renderer, R.camera);
     R.renderer.compile(R.scene, R.camera);
     // draw the particles once too (they draw nothing until the first crash)
     sparks.spawn(car.x, 1, car.z, 4, 'spark'); sparks.update(1e-3); R.render();
@@ -7751,12 +7955,16 @@ const RaceGame = (() => {
     await workerMode;
     $('#loading').hidden = true;
     if (TEST) setupTest();
-    else { $('#intro').hidden = false; }
+    else {
+      perf = { lexus: RaceCar.measure(specs.lexus), mustang: RaceCar.measure(specs.mustang) };   // about 0.1 s
+      buildSelect(); placeForSelect(); showSelect();
+      $('#hud').hidden = true; $('#select').hidden = false;
+    }
     requestAnimationFrame((t) => { last = t; frame(t); });
   }
   start().catch((err) => { $('#loading').textContent = 'Could not start: ' + err.message; console.error(err); });
 
-  return { level, world, car, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, standings };
+  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return PAINTS[paintIdx]; }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, standings };
 })();
 
 </script>

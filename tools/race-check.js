@@ -4,8 +4,9 @@
  *
  * level:   the circuit's length and smallest radius are in range, no collider reaches into the
  *          road, the same seed gives the same city
- * car:     0-100 km/h, top speed, braking from 100 and cornering grip in plausible bands, for both
- *          cars; a crash is detected head-on into a wall and not in a shallow scrape
+ * car:     the car-select screen's figures (RaceCar.measure): 0-100 km/h, top speed, braking from
+ *          100 and cornering grip in plausible bands, boost faster, for both cars; a crash is
+ *          detected head-on into a wall and not in a shallow scrape
  * nearmiss: passing traffic within a metre counts, 1.5 m doesn't, oncoming is told apart
  * race:    eight AI cars race three laps through the traffic; all must finish, none stuck for more
  *          than 5 s, the winner's time near the 3 minutes the race is laid out for; the lane-bound
@@ -48,13 +49,10 @@ if (want('level')) {
 
 if (want('car')) {
   for (const key of ['lexus', 'mustang']) {
-    const run = (setup, n, inp) => { const car = RaceCar.create(Veh.get(key)); car.place(0, 0, 0, setup); for (let i = 0; i < n; i++) car.step(1 / 240, typeof inp === 'function' ? inp(car, i) : inp); return car; };
-    let t100 = -1; { const car = RaceCar.create(Veh.get(key)); car.place(0, 0, 0, 0); for (let i = 0; i < 240 * 20 && t100 < 0; i++) { car.step(1 / 240, { throttle: 1 }); if (car.forward >= 100 / 3.6) t100 = i / 240; } }
-    const top = run(0, 240 * 60, { throttle: 1 }).forward * 3.6;
-    let stop = 0; { const car = RaceCar.create(Veh.get(key)); car.place(0, 0, 0, 100 / 3.6); while (car.forward > 0.1) { car.step(1 / 240, { brake: 1 }); stop += car.forward / 240; } }
-    let ay = 0; run(25, 240 * 6, (car, i) => { if (i > 240 * 4) ay = Math.max(ay, Math.abs(car.ay)); return { steer: 0.4, throttle: car.forward < 25 ? 0.6 : 0.05 }; });
-    check(`car-${key}`, t100 > 3.5 && t100 < 8 && top > 190 && top < 260 && stop > 30 && stop < 45 && ay / 9.81 > 0.8 && ay / 9.81 < 1.3,
-      `0-100 km/h ${t100.toFixed(1)} s (3.5-8), top ${top.toFixed(0)} km/h (190-260), 100-0 in ${stop.toFixed(1)} m (30-45), cornering ${(ay / 9.81).toFixed(2)} g (0.8-1.3)`);
+    // the figures the car-select screen shows
+    const { t100, top, topBoost, stop100: stop, lateralG } = RaceCar.measure(Veh.get(key));
+    check(`car-${key}`, t100 > 3.5 && t100 < 8 && top > 190 && top < 260 && topBoost > top && stop > 30 && stop < 45 && lateralG > 0.8 && lateralG < 1.3,
+      `0-100 km/h ${t100.toFixed(1)} s (3.5-8), top ${top.toFixed(0)} km/h (190-260), ${topBoost.toFixed(0)} with boost (faster), 100-0 in ${stop.toFixed(1)} m (30-45), cornering ${lateralG.toFixed(2)} g (0.8-1.3)`);
   }
   // crash detection: square into a wall at 120 km/h crashes, a 10 degree scrape at 200 km/h doesn't
   const W1 = RaceWorld.create(level), c1 = RaceCar.create(Veh.get('lexus')), b0 = level.buildings.find(b => b.front === 1), f0 = level.nearest(b0.x, b0.z), p0 = level.poseAt(f0.s, 0);

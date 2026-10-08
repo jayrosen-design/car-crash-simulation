@@ -34,23 +34,48 @@
     <div id="hud-wrong" class="wrong" hidden>Wrong way</div>
   </div>
 
-  <div id="intro" class="overlay" hidden>
-    <div class="panel card">
+  <div id="select" class="overlay select" hidden>
+    <header class="sel-head">
       <p class="eyebrow">Car Crash Simulation · Race</p>
-      <h2>Three laps of the city</h2>
-      <p class="muted">Seven rivals, live traffic both ways. Fill your boost with near misses, the oncoming lanes, drifts and takedowns. Crash, and the full crash physics plays it back in slow motion.</p>
-      <table class="keys">
-        <tr><th></th><th>Keyboard</th><th>Controller</th></tr>
-        <tr><td>Steer</td><td>A / D, ← / →</td><td>Left stick</td></tr>
-        <tr><td>Accelerate / brake</td><td>W / S, ↑ / ↓</td><td>Triggers</td></tr>
-        <tr><td>Boost</td><td>Shift</td><td>A or right bumper</td></tr>
-        <tr><td>Handbrake</td><td>Space</td><td>X</td></tr>
-        <tr><td>Camera · look back</td><td>C · B</td><td>Y · left bumper</td></tr>
-        <tr><td>Back on the road · pause</td><td>R · Esc</td><td>View · Menu</td></tr>
-      </table>
-      <p class="go">Press <b>Enter</b> or <b>A</b> to start</p>
+      <h2>Choose your car</h2>
+      <p class="muted">Three laps of the city against seven rivals, with traffic both ways. Near misses, the oncoming lanes, drifts and takedowns fill your boost. Crash, and the full crash physics plays it back in slow motion.</p>
+    </header>
+
+    <section class="panel sel-garage" aria-label="Car and paint">
+      <div class="sel-row" data-row="0">
+        <h3>Car</h3>
+        <div id="sel-cars" class="sel-cars" role="radiogroup" aria-label="Car"></div>
+      </div>
+      <div class="sel-row" data-row="1">
+        <h3>Paint · <span id="sel-paint-name"></span></h3>
+        <div id="sel-swatches" class="swatches" role="radiogroup" aria-label="Paint"></div>
+      </div>
+      <p class="sel-hint">← → change · ↑ ↓ car or paint · or click</p>
+    </section>
+
+    <section class="panel sel-stats" aria-label="Performance">
+      <h3 id="sel-name"></h3>
+      <div id="sel-bars" class="bars"></div>
+      <dl id="sel-specs" class="specs"></dl>
+      <p class="small muted">Measured by driving each car on an empty road in the game's physics.</p>
+    </section>
+
+    <footer class="sel-foot">
+      <button type="button" id="btn-start" class="btn primary big">Start race <small>Enter · A</small></button>
+      <details class="sel-keys">
+        <summary>Controls</summary>
+        <table class="keys">
+          <tr><th></th><th>Keyboard</th><th>Controller</th></tr>
+          <tr><td>Steer</td><td>A / D, ← / →</td><td>Left stick</td></tr>
+          <tr><td>Accelerate / brake</td><td>W / S, ↑ / ↓</td><td>Triggers</td></tr>
+          <tr><td>Boost</td><td>Shift</td><td>A or right bumper</td></tr>
+          <tr><td>Handbrake</td><td>Space</td><td>X</td></tr>
+          <tr><td>Camera · look back</td><td>C · B</td><td>Y · left bumper</td></tr>
+          <tr><td>Back on the road · pause</td><td>R · Esc</td><td>View · Menu</td></tr>
+        </table>
+      </details>
       <p class="credits">3D car models: “<a href="https://sketchfab.com/3d-models/lexus-rx-350-rigged-rigged-driver-human-6b9a1994b2dd445c8248270c81eead6b" target="_blank" rel="noopener">Lexus RX 350 + rigged (+ rigged driver (human))</a>” by menarzuw and “<a href="https://sketchfab.com/3d-models/ford-mustang-gt-500-with-pro-rig-for-free-f26a29f766844f46910547d6d2cc291d" target="_blank" rel="noopener">Ford Mustang Gt 500 With pro Rig FOR FREE!</a>” by NoOb StUfFs, both CC BY 4.0, split into parts and simplified. Street textures and sky: <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (CC0). 3D graphics by three.js.</p>
-    </div>
+    </footer>
   </div>
 
   <div id="results" class="overlay" hidden>
