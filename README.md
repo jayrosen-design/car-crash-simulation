@@ -168,22 +168,37 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Where the figures come from.** They aren't typed in. `RaceCar.measure` works them out at load by driving each car on an empty road with the game's own physics, about 0.1 s for both. `tools/race-check.js` checks the same figures.
   - **The paint** covers the whole car, parts that break off it in a crash included.
   - **Remembered choice.** The choice is kept in the browser for the next race. `?car=lexus|mustang` sets the car the screen starts on.
-- **The circuit.** A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, street lights, trees and closed side streets. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
+- **The circuit.** A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, street lights, trees and closed side streets, rolling hills on three stretches and three jump ramps across the street. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
 - **Eight cars.** You start sixth on the grid, against seven rivals in Lexus and Mustang models, each with a name, a paint colour and a skill level.
 - **Traffic, both ways.** Cars keep to their lanes and follow the car ahead with the Intelligent Driver Model \[[77](#ref-77)\]: $\dot v = a\big[1 - (v/v_0)^4 - (s^*/s)^2\big]$, $s^* = s_0 + vT + \frac{v\,\Delta v}{2\sqrt{ab}}$. Here $s$ is the gap to the car ahead and $\Delta v$ the closing speed. The game uses $a = 1.6$ m/s², $b = 3$ m/s², $s_0 = 4$ m, a time gap $T = 1.4$ s, and cruising speeds $v_0$ of 13–19 m/s (47–68 km/h). They are added ahead of you and removed behind you, so the street is busy wherever the race is. They move on rails until something hits them, then become free cars that brake to a stop.
 - **Boost.** Hold Shift for 1.65× engine power. It fills from near misses (passing a traffic car within a metre; more for oncoming ones), driving in the oncoming lanes, drifting and takedowns.
 - **Takedowns.** A rival counts as taken down if it wrecks within two seconds of a hit from you: an impact over 7 m/s, or a spin past 60°. Without your help, a rival needs 13 m/s into a wall and 20 m/s into another rival, so the pack can jostle. Wrecked rivals spin out as rigid bodies and rejoin three seconds later.
-- **Crashes.** For you, a hit with a normal speed of 13 m/s or more against a building, barrier, post or tree, or 13.5 m/s against another car, is a crash. It starts the crash camera (below), then you're put back on the road, with the traffic just ahead cleared. The race goes on meanwhile, so the rivals gain time.
+- **Health, then the crash.** Your car has a health bar rather than crashing at the first hard hit.
+  - **Damage.** Each hit takes damage by how hard it is. That is the change of speed it gives the car, $\Delta v = (1+e)\,v_n$ from the approach speed along the contact normal and the bounce. Against another car it is the share $m_o/(m+m_o)$ of that. Damage $= \max(0,\ \Delta v - 2.5)^2/650$ of the bar.
+  - **What hits cost.** Scrapes and nudges are free, and bumping rivals costs little: an 8 m/s nudge is about 1%. A square hit on a wall at 47 km/h takes about a fifth. From about 90 km/h a single hit empties the bar.
+  - **The crash.** When the bar is empty, the crash camera starts (below). Then you're put back on the road with full health, and the traffic just ahead is cleared. The race goes on meanwhile, so the rivals gain time.
+  - **Rivals** have no health bar. They still wreck at fixed impact speeds (13 m/s into a wall, 20 m/s into another rival).
+- **Things to knock over.** Street lights and signal posts break off their bases and topple. Cones, bins, newspaper boxes, hydrants, benches, crates and barrels fly and tumble. They are along the pavements, in roadworks by the kerb and stacked at the side streets' barriers. A burst hydrant sprays water. They cost no health and little speed: a street light about 5 km/h, a cone almost none. Each one you hit adds a little boost. Trees, buildings and the concrete barriers stay solid.
+- **Hills and jumps.** The ramps are 1.3–1.5 m high. From 144 km/h, the first one gives 1.2 s and about 50 m in the air. Taken slowly, you only hop. Over the crest of the steepest hill you stay on the road at 108 km/h and fly at 180 km/h and up. In the air there's no grip, so steer before the lip. A car in the air clears the barriers, the props and the other cars.
 - **Results.** Positions, lap times and takedowns. Rivals still racing get an estimated time from their pace. **Watch your last crash** replays it with the simulator's bullet-time.
 
 ### How it works
 
-- **Driving physics** (`js/race/vehicle.js`). Each car is a rigid body on flat ground, stepped at 240 Hz.
+- **Driving physics** (`js/race/vehicle.js`). Each car is a rigid body moving over the ground, stepped at 240 Hz.
   - **Tyres.** The lateral force follows Pacejka's Magic Formula \[[55](#ref-55)\], $F_y = D\sin\!\big(C\arctan(B\alpha - E(B\alpha - \arctan B\alpha))\big)$ with $D = \mu F_z$. Drive and brake forces share each tyre's grip with it (the friction ellipse), and the loads shift with acceleration and cornering.
   - **Engine and brakes.** The engine is power-limited, with an automatic gearbox for the engine sound. The brakes have ABS, and the handbrake locks the rear wheels.
   - **Assists.** The steering lock narrows with speed. An assist steers into slides, and a stability control limits the yaw rate to what the tyres can hold.
   - **Performance.** Pitch and roll are drawn, not simulated. The Lexus reaches 100 km/h in 5.9 s, tops out at 217 km/h (261 with boost), stops from 100 km/h in 37 m and corners at 0.86 g. The Mustang: 5.7 s, 230 km/h (278 with boost), 36 m and 0.89 g.
-- **Collisions** (`js/race/world.js`). Cars are oriented boxes, tested against each other and the city's buildings, barriers, posts and trees with the separating-axis test \[[78](#ref-78)\]. They're resolved with impulses, with restitution and friction \[[7](#ref-7)\].
+- **Collisions** (`js/race/world.js`). Cars are oriented boxes, tested against each other and the city's buildings, barriers and trees with the separating-axis test \[[78](#ref-78)\]. They're resolved with impulses, with restitution and friction \[[7](#ref-7)\].
+- **Hills and flight** (`js/race/world.js`). The ground is a height field: smooth hills $h(x,z) = \sum A\,e^{-r^2/2\sigma^2}$ plus the ramps' profiles on the street. Everything stands on it: street, pavements, buildings and props.
+  - **On the ground.** A car follows the surface under its centre of gravity. Gravity pulls it along the slope, $\mathbf a = -g\,\nabla h$.
+  - **Taking off.** A car leaves the ground when the surface falls away faster than gravity can pull it down: $(v_y - \dot h)/\Delta t > g$, where $\dot h$ is the vertical speed the ground asks for. That happens at a ramp's lip, or over a crest when $v^2\kappa > g$.
+  - **In the air.** It flies ballistically without grip and lands where it meets the ground again. The nose follows the flight path.
+- **Props** (`js/race/props.js`). Each prop is a rigid box with a position, velocity, orientation (quaternion) and spin, stepped at 120 Hz.
+  - **Contacts.** Its corners meet the ground and the buildings with impulses (bounce and friction), and props push each other apart as spheres.
+  - **Struck by a car.** The two exchange momentum along the contact normal, $J = (1+e)\,v_\text{rel}/(1/M + 1/m)$, turned toward the side the prop was struck on. The prop also gets a kick upward and a spin.
+  - **Poles.** Street lights and signal posts topple away from the car instead.
+  - **Sleep.** A prop at rest sleeps and costs nothing until it is hit again.
 - **Rivals** (`js/race/ai.js`).
   - **Speed.** Each rival follows a speed profile limited by the curve, $v \le \sqrt{\mu g/\kappa}$ with $\mu = 0.78$. A backward pass along the circuit keeps braking within 8 m/s².
   - **Steering.** They steer by pure pursuit \[[53](#ref-53)\] toward a point ahead, with a correction for their sideways offset.
@@ -191,7 +206,8 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Pace.** Their pace is rubber-banded to yours, and they boost on the straights.
 - **The crash camera** (`js/race/crash.js`).
   - **Hand-over.** The world steps back one tick, to just before the cars touched. Each car involved goes to the crash solver with its pose, velocity and yaw rate.
-  - **The street.** Nearby buildings, barriers, posts and trees become a `world` barrier: boxes and cylinders combined into one distance field, with horizontal normals.
+  - **The street.** Nearby buildings, barriers and trees become a `world` barrier: boxes and cylinders combined into one distance field, with horizontal normals.
+  - **On a hill.** The solver's ground is flat, so a crash on a hill runs at height 0 and is drawn raised to the ground's height at the impact. That applies to the cars, the parts that come off and the sparks.
   - **The worker.** The solver runs in a Web Worker built from the physics scripts' own text, so it also works from a file opened from disk. Without a worker, it runs on the main thread a few milliseconds per frame.
   - **Streaming.** The worker sends what it has computed so far: node positions, plastic strain, parts that came off and glass as it breaks. A pane is published only once the next frame confirms it, so the list matches the full run's.
   - **Playback** never gets ahead of the newest frame. It runs at 1/4× before contact and 0.08× just after, then speeds up to real time by 0.8 s. It ends 1.25 s after contact (accelerate to skip).
@@ -215,7 +231,10 @@ node tools/headless-check.js world      the crash solver's world barrier
   - **the level:** the circuit's length and tightest radius, that no building or post reaches into the road, and that the same seed gives the same city;
   - **the cars:** the car-select screen's figures (`RaceCar.measure`): 0–100 km/h, top speed, braking and cornering grip are in plausible bands, and boost raises the top speed. A head-on into a wall is a crash and a shallow scrape isn't;
   - **near misses:** passing within a metre counts and 1.5 m doesn't;
-  - **a full race:** eight AI cars race three laps through traffic, all finish, the winner takes 150–210 s (about 3 minutes), none is stuck for more than 5 s, and lane-bound traffic never overlaps.
+  - **props:** each kind is driven into on its own. It must be knocked more than 3 m (the poles past 45°), with no crash, the car less than 8 km/h slower, and the prop settled again within 12 s;
+  - **jump:** airtime off the first ramp from 144 km/h (0.8–1.6 s, and it lands), less from 43 km/h; over the steepest crest none at 108 km/h, but a take-off at 216 km/h;
+  - **damage:** a scrape is free, an 8 m/s nudge into a car costs under 3%, a 13 m/s wall 12–35%, and 28 m/s is a wreck;
+  - **a full race:** eight AI cars race three laps through traffic and the props, all finish, the winner takes 150–210 s (about 3 minutes), none is stuck for more than 5 s, and lane-bound traffic never overlaps.
 - **The `world` checks** in `headless-check.js`:
   - a one-cylinder world reproduces the pole barrier exactly;
   - a box wall agrees with the rigid barrier (peak deceleration and crush), also when turned 30°;
@@ -2148,7 +2167,8 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
   - Emergency braking is a rule-based model of one system, not a particular product.
 - **The GPU solver doesn't cover everything.** It covers every crash the labs set up, but not the brick wall. Parts don't come off and tyres don't burst, and friction heat isn't in its energy books. At today's lattice size it is slower than the CPU.
 - **Race.**
-  - The city is flat: the kerbs are only drawn, because the crash solver and the debris assume level ground.
+  - The crash solver works on flat ground, so a crash on a hill is drawn at the ground's height where it happened. On a slope or a ramp the wreck can sit a little into or above the surface. The kerbs are only drawn, not raised.
+  - Props touch each other only as spheres, and they don't land on cars: a falling street light can pass through a roof.
   - Only your crashes run the lattice solver. Rivals and traffic wreck as rigid bodies, because the solver runs slower than real time during an impact, which is also why the crash camera is in slow motion.
   - Very hard head-on hits (about 150 km/h and up, square into a wall) can tip the car onto its nose. That is the solver's own behaviour, also seen in the simulator's rigid-barrier test.
   - Opponent driving is a set of rules (speed profile, pure pursuit, lane choice), not a learned driver.
@@ -2194,9 +2214,10 @@ js/
   app.js          controller for the barrier tests
   labs.js         controller for the six crash labs (runs instead of app.js with ?lab=)
   race/
-    level.js      the city: circuit, lanes, buildings, street furniture, colliders (seeded)
+    level.js      the city: circuit, lanes, hills and ramps, buildings, street furniture, props, colliders
     vehicle.js    driving physics: rigid body, Magic Formula tyres, engine, brakes, assists
-    world.js      collisions between cars and with the city, crash detection, step history
+    world.js      collisions between cars and with the city, hills, jumps and flight, damage, step history
+    props.js      street lights, cones, bins, hydrants, benches, crates ...: rigid bodies to knock over
     ai.js         traffic (Intelligent Driver Model) and the rivals
     input.js      keyboard and gamepad, rumble
     crash.js      the crash solver in a Web Worker, streaming frames to the crash camera

@@ -3,7 +3,9 @@
  * The city comes from the level (level.js): the street as a ribbon along the circuit with its lane
  * markings, kerbs and pavements; side-street stubs and their barriers; buildings merged into a few
  * meshes whose facades are drawn by a shader (floors, window bays, a shop front at street level,
- * some windows lit), plus street lights, trees and traffic signals as instanced meshes.
+ * some windows lit), plus trees and barriers as instanced meshes. All of it follows the hills
+ * (level.terrain); the jump ramps are meshes of their own. Street lights, signal posts and the other
+ * props (props.js) are instanced per kind and redrawn when they move.
  *
  * Cars: the player's car is a CarModels instance (carmodel.js), skinned to its crash lattice, so it
  * can show the crash solver's damage without swapping models. Rivals and traffic share one merged
@@ -74,11 +76,17 @@ const RaceRender = (() => {
 
     const city = new T.Group();
     scene.add(city);
-    buildGround(city);
+    buildGround(city, level);
     buildStreet(city, level);
     buildBuildings(city, level);
     buildFurniture(city, level);
     buildStart(city, level);
+    buildRamps(city, level);
+    // the deformable car models (player, wrecks) and what breaks off them: raised to the ground's
+    // height for a crash on a hill (the crash solver works at height 0), else at 0
+    const crashRoot = new T.Group();
+    scene.add(crashRoot);
+    function setCrashLift(h) { crashRoot.position.y = h || 0; crashRoot.updateMatrixWorld(true); }
 
     // ------------------------------------------------ cars
     const carMeshes = {};   // key -> instanced set
@@ -131,7 +139,7 @@ const RaceRender = (() => {
         m.lat = lat;
         useEnv(m.group, env);
         m.group.visible = false;
-        scene.add(m.group);
+        crashRoot.add(m.group);
         m.warm(renderer, camera);
         return (made[key] = m);
       })();
@@ -146,7 +154,7 @@ const RaceRender = (() => {
     const PM = new T.Matrix4();
     function drawPlayer(st, spinDelta) {
       if (!player) return;
-      carMatrix(PM, st.x, st.z, st.h, st.pitch, st.roll);
+      carMatrix(PM, st.x, st.z, st.h, st.pitch, st.roll, st.lift);
       player.setRigid(PM, st.steer || 0, spinDelta || 0, UP, ZAXIS);
     }
     // a hidden deformable copy of a model, for the other car in a crash (made at load, so a crash
@@ -157,7 +165,7 @@ const RaceRender = (() => {
       const m = await CarModels.create(key, spec, lat, renderer);
       m.lat = lat;
       useEnv(m.group, env);
-      scene.add(m.group);
+      crashRoot.add(m.group);
       m.group.visible = false;
       wrecks[key] = m;
       return m;
@@ -173,16 +181,17 @@ const RaceRender = (() => {
       model.syncDestruction(view, t + 0.03, 2);   // what's about to break, two pieces a frame at most
       model.updateDestruction(t, k, k2, s);
     }
-    // crash camera: orbit a point, kept out of the buildings
+    // crash camera: orbit a point (at target.y, the ground's height there), kept out of the buildings
     function orbit(target, angle, radius, height, level) {
       let a = angle;
+      const y0 = target.y || 0;
       for (let tries = 0; tries < 12; tries++) {
         const x = target.x + Math.cos(a) * radius, z = target.z + Math.sin(a) * radius;
-        if (!level || !level.collidersNear(x, z, 0.5).some(o => o.box && insideBox(o, x, z, 0.6))) { camera.position.set(x, height, z); break; }
+        if (!level || !level.collidersNear(x, z, 0.5).some(o => o.box && insideBox(o, x, z, 0.6))) { camera.position.set(x, y0 + height, z); break; }
         a += 0.5;
-        camera.position.set(target.x + Math.cos(a) * radius, height, target.z + Math.sin(a) * radius);
+        camera.position.set(target.x + Math.cos(a) * radius, y0 + height, target.z + Math.sin(a) * radius);
       }
-      camera.lookAt(target.x, 0.7, target.z);
+      camera.lookAt(target.x, y0 + 0.7, target.z);
       if (Math.abs(camera.fov - 52) > 0.01) { camera.fov = cam.fov = 52; camera.updateProjectionMatrix(); }
       sun.position.set(target.x, 0, target.z).addScaledVector(SUN_DIR, 200);
       sun.target.position.set(target.x, 0, target.z); sun.target.updateMatrixWorld();
@@ -195,21 +204,24 @@ const RaceRender = (() => {
     }
 
     // ------------------------------------------------ camera
-    const cam = { mode: 'chase', pos: new T.Vector3(), look: new T.Vector3(), fov: 62, init: false, back: false };
+    const cam = { mode: 'chase', pos: new T.Vector3(), look: new T.Vector3(), fov: 62, init: false, back: false, y: 0 };
     const tmp = new T.Vector3(), tgt = new T.Vector3();
-    /* st: the followed car { x, z, h, speed, boost, yawRate }; dt: s */
+    /* st: the followed car { x, z, h, y (its height over hills and in the air), speed, boost }; dt: s */
     function follow(st, dt) {
       const c = Math.cos(st.h), s = Math.sin(st.h), sp = st.speed || 0;
+      // the camera's height follows the car's smoothly (a jump lifts it a moment later)
+      cam.y = cam.init ? cam.y + ((st.y || 0) - cam.y) * (1 - Math.exp(-dt * 6)) : (st.y || 0);
       if (cam.mode === 'chase') {
         const back = cam.back ? -1 : 1, dist = 6.4 + Math.min(1.6, sp / 40), height = 2.15 + Math.min(0.5, sp / 120);
-        tgt.set(st.x - c * dist * back, height, st.z - s * dist * back);
+        tgt.set(st.x - c * dist * back, cam.y + height, st.z - s * dist * back);
         if (!cam.init) { cam.pos.copy(tgt); cam.init = true; }
         const k = 1 - Math.exp(-dt * (cam.back ? 30 : 9));
         cam.pos.lerp(tgt, k);
-        cam.look.set(st.x + c * 4 * back, 1.1, st.z + s * 4 * back);
+        cam.pos.y = tgt.y;
+        cam.look.set(st.x + c * 4 * back, (st.y || 0) * 0.5 + cam.y * 0.5 + 1.1, st.z + s * 4 * back);
       } else {   // bumper
-        cam.pos.set(st.x + c * 1.2, 1.05, st.z + s * 1.2);
-        cam.look.set(st.x + c * 30, 0.9, st.z + s * 30);
+        cam.pos.set(st.x + c * 1.2, (st.y || 0) + 1.05, st.z + s * 1.2);
+        cam.look.set(st.x + c * 30, (st.y || 0) + 0.9, st.z + s * 30);
         cam.init = false;
       }
       camera.position.copy(cam.pos);
@@ -232,7 +244,41 @@ const RaceRender = (() => {
     window.addEventListener('resize', resize);
     function render() { renderer.render(scene, camera); }
 
-    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize };
+    // ------------------------------------------------ props (props.js): one instanced set per kind
+    const propSets = {}, PQ = new T.Quaternion(), PP = new T.Vector3(), PO = new T.Matrix4();
+    function prepareProps(props) {
+      const byType = {};
+      for (const pr of props.list) (byType[pr.type] = byType[pr.type] || []).push(pr);
+      for (const [type, list] of Object.entries(byType)) {
+        const meshes = propParts(type).map(([g, mat]) => {
+          const im = new T.InstancedMesh(g, mat, list.length);
+          im.castShadow = mat !== PROP_MATS.lamp; im.receiveShadow = true; im.frustumCulled = false;
+          im.instanceMatrix.setUsage(T.DynamicDrawUsage);
+          scene.add(im);
+          return im;
+        });
+        list.forEach((pr, i) => { pr.slot = i; });
+        propSets[type] = { meshes, list };
+      }
+      drawProps(true);
+    }
+    // the props that moved since the last call (all: every one)
+    function drawProps(all) {
+      for (const type in propSets) {
+        const set = propSets[type];
+        let any = false;
+        for (const pr of set.list) {
+          if (!all && !pr.dirty) continue;
+          pr.dirty = false; any = true;
+          PQ.set(pr.q[0], pr.q[1], pr.q[2], pr.q[3]);
+          M.compose(PP.set(pr.p[0], pr.p[1], pr.p[2]), PQ, S1).multiply(PO.makeTranslation(0, -pr.T.hy, 0));
+          for (const im of set.meshes) im.setMatrixAt(pr.slot, M);
+        }
+        if (any) for (const im of set.meshes) im.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift };
   }
 
   const MIRROR = new T.Matrix4().makeScale(1, 1, -1);
@@ -323,32 +369,62 @@ const RaceRender = (() => {
   function concrete() { return TEX.concrete || (TEX.concrete = canvasTex(256, 256, (c, w, h) => noise(c, w, h, '#8f8c86', 20, 20))); }
 
   // ---------------------------------------------------------------- ground
-  function buildGround(group) {
+  // the height of the hills (level.terrain), and the ground's up direction there
+  const groundY = (level, x, z) => (level.terrain ? level.terrain(x, z) : 0);
+  function groundN(level, x, z) {
+    if (!level.terrain) return [0, 1, 0];
+    const e = 0.5, gx = (level.terrain(x + e, z) - level.terrain(x - e, z)) / (2 * e), gz = (level.terrain(x, z + e) - level.terrain(x, z - e)) / (2 * e), n = Math.hypot(gx, 1, gz);
+    return [-gx / n, 1 / n, -gz / n];
+  }
+  function buildGround(group, level) {
     const g = new T.PlaneGeometry(6000, 6000);
     g.rotateX(-Math.PI / 2);
     let maps = surface('concrete', 6000);
     if (!maps) { const tex = concrete().clone(); tex.needsUpdate = true; tex.repeat.set(600, 600); maps = { map: tex }; }
     const m = new T.Mesh(g, new T.MeshStandardMaterial({ ...maps, color: 0x9a958c, roughness: 0.95 }));
-    m.position.y = -0.02; m.receiveShadow = true;
+    m.position.y = -0.15; m.receiveShadow = true;
     group.add(m);
+    // over the hills, a grid that follows the ground (the flat plane lies just below it elsewhere)
+    if (!level.hills || !level.hills.length) return;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [cx, cz, , sg] of level.hills) { x0 = Math.min(x0, cx - 3.6 * sg); x1 = Math.max(x1, cx + 3.6 * sg); z0 = Math.min(z0, cz - 3.6 * sg); z1 = Math.max(z1, cz + 3.6 * sg); }
+    const STEP = 4, nx = Math.ceil((x1 - x0) / STEP), nz = Math.ceil((z1 - z0) / STEP);
+    const tg = new T.PlaneGeometry(nx * STEP, nz * STEP, nx, nz);
+    tg.rotateX(-Math.PI / 2); tg.translate(x0 + nx * STEP / 2, 0, z0 + nz * STEP / 2);
+    const p = tg.attributes.position, uv = tg.attributes.uv;
+    // under the street and pavements (where it's hidden) it lies a little lower, so a coarse cell
+    // never shows through them
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i), under = Math.abs(level.nearest(x, z).l) < level.walkOut + 2;
+      p.setY(i, groundY(level, x, z) - (under ? 0.3 : 0.03)); uv.setXY(i, x / 10, z / 10);
+    }
+    tg.computeVertexNormals();
+    let hm = surface('concrete', 10);
+    if (!hm) { const tex = concrete().clone(); tex.needsUpdate = true; hm = { map: tex }; }
+    const hills = new T.Mesh(tg, new T.MeshStandardMaterial({ ...hm, color: 0x9a958c, roughness: 0.95 }));
+    hills.receiveShadow = true;
+    group.add(hills);
   }
 
-  // ribbon along the circuit between lateral offsets l0..l1, at height y; u across, v along (metres)
+  // ribbon along the circuit between lateral offsets l0..l1, at height y over the ground; u across,
+  // v along (metres). Vertices every `step` m along and about every 2.5 m across, so it follows the
+  // hills both ways.
   function ribbon(level, l0, l1, y, vScale, step = 2) {
-    const C = level.circuit, N = Math.ceil(level.length / step), pos = [], uv = [], idx = [];
+    const N = Math.ceil(level.length / step), A = Math.max(1, Math.ceil(Math.abs(l1 - l0) / 2.5)), pos = [], nrm = [], uv = [], idx = [];
     for (let i = 0; i <= N; i++) {
-      const s = Math.min(i * step, level.length), a = level.poseAt(s, l0), b = level.poseAt(s, l1);
-      pos.push(a.x, y, a.z, b.x, y, b.z);
-      uv.push(0, s / vScale, (l1 - l0) / vScale, s / vScale);
-      if (i < N) { const k = 2 * i; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+      const s = Math.min(i * step, level.length);
+      for (let j = 0; j <= A; j++) {
+        const l = l0 + (l1 - l0) * j / A, p = level.poseAt(s, l);
+        pos.push(p.x, groundY(level, p.x, p.z) + y, p.z); nrm.push(...groundN(level, p.x, p.z));
+        uv.push((l - l0) / vScale, s / vScale);
+      }
+      if (i < N) for (let j = 0; j < A; j++) { const k = i * (A + 1) + j, n = k + A + 1; idx.push(k, k + 1, n, k + 1, n + 1, n); }
     }
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
     g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
-    g.computeVertexNormals();
-    // make sure normals point up whatever the winding
-    const n = g.attributes.normal; for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0);
     return g;
   }
 
@@ -364,7 +440,7 @@ const RaceRender = (() => {
     for (const l of [-0.12, 0.12]) group.add(shadowed(new T.Mesh(ribbon(level, l - 0.06, l + 0.06, 0.004, 1), yellow)));
     for (const l of [-RH + 0.25, RH - 0.25]) group.add(shadowed(new T.Mesh(ribbon(level, l - 0.08, l + 0.08, 0.004, 1), white)));
     for (const l of [-3.5, 3.5]) group.add(shadowed(new T.Mesh(dashes(level, l, 0.07, 3, 9), white)));
-    // kerbs and pavements (flush: the cars and the crash solver keep to flat ground)
+    // kerbs and pavements (flush: the cars drive over them)
     const kerb = new T.MeshStandardMaterial({ ...(surface('concrete', 1) || { map: concrete() }), color: 0xc9c5bd, roughness: 0.85 });
     const walk = new T.MeshStandardMaterial({ ...(surface('pavers', 4) || { map: pavers() }), color: 0xffffff, roughness: 0.9 });
     for (const sg of [-1, 1]) {
@@ -377,26 +453,27 @@ const RaceRender = (() => {
     const stubMat = new T.MeshStandardMaterial({ ...(surface('asphalt', 8) || { map: asphalt() }), roughness: 0.92 });
     for (const q of level.sideStreets) {
       const p = level.poseAt(q.s, q.side * RH), hs = p.h + (q.side > 0 ? Math.PI / 2 : -Math.PI / 2);
-      const g = new T.PlaneGeometry(q.width, 26); g.rotateX(-Math.PI / 2);
+      const g = new T.PlaneGeometry(q.width, 26, 4, 13); g.rotateX(-Math.PI / 2);
       const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * q.width / 8, uv.getY(i) * 26 / 8);   // in 8 m, like the road
+      g.rotateY(-hs + Math.PI / 2); g.translate(p.x + Math.cos(hs) * 13, 0, p.z + Math.sin(hs) * 13);
+      const gp = g.attributes.position; for (let i = 0; i < gp.count; i++) gp.setY(i, groundY(level, gp.getX(i), gp.getZ(i)) + 0.01);
+      g.computeVertexNormals();
       const m = new T.Mesh(g, stubMat);
-      m.position.set(p.x + Math.cos(hs) * 13, 0.01, p.z + Math.sin(hs) * 13);
-      m.rotation.y = -hs + Math.PI / 2;
       m.receiveShadow = true;
       group.add(m);
     }
   }
   const shadowed = (m) => { m.receiveShadow = true; return m; };
   function dashes(level, l, half, len, gap) {
-    const pos = [], idx = [];
+    const pos = [], nrm = [], idx = [];
     for (let s = 0; s < level.length - len; s += len + gap) {
-      const a0 = level.poseAt(s, l - half), a1 = level.poseAt(s, l + half), b0 = level.poseAt(s + len, l - half), b1 = level.poseAt(s + len, l + half), k = pos.length / 3;
-      pos.push(a0.x, 0.004, a0.z, a1.x, 0.004, a1.z, b0.x, 0.004, b0.z, b1.x, 0.004, b1.z);
+      const k = pos.length / 3;
+      for (const p of [level.poseAt(s, l - half), level.poseAt(s, l + half), level.poseAt(s + len, l - half), level.poseAt(s + len, l + half)]) { pos.push(p.x, groundY(level, p.x, p.z) + 0.004, p.z); nrm.push(...groundN(level, p.x, p.z)); }
       idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
     }
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-    g.setAttribute('normal', new T.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => i % 3 === 1 ? 1 : 0), 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
     g.setIndex(idx);
     return g;
   }
@@ -463,18 +540,20 @@ float winMask; float frameMask; float litMask;`)
       const A = byStyle[b.style % STYLES.length], c = Math.cos(b.angle), s = Math.sin(b.angle), sd = (n++ * 0.6180339) % 1;
       const corner = (u, w) => [b.x + c * u * b.hx - s * w * b.hz, b.z + s * u * b.hx + c * w * b.hz];
       const P = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+      // on a hill: the walls go 4 m below the ground at the middle; the facade counts from there
+      const base = groundY(level, b.x, b.z), y0 = base - (base > 0.01 ? 4 : 0), top = base + b.height, d0 = y0 - base;
       for (let e = 0; e < 4; e++) {
         const a = P[e], d = P[(e + 1) % 4], len = Math.hypot(d[0] - a[0], d[1] - a[1]);
         const nx = (d[1] - a[1]) / len, nz = -(d[0] - a[0]) / len;   // outward for this winding
         const k = A.pos.length / 3;
-        A.pos.push(a[0], 0, a[1], d[0], 0, d[1], d[0], b.height, d[1], a[0], b.height, a[1]);
+        A.pos.push(a[0], y0, a[1], d[0], y0, d[1], d[0], top, d[1], a[0], top, a[1]);
         for (let v = 0; v < 4; v++) { A.nrm.push(nx, 0, nz); A.seed.push(sd); }
-        A.uv.push(0, 0, len / 6, 0, len / 6, b.height / 6, 0, b.height / 6);
-        A.uvM.push(0, 0, len, 0, len, b.height, 0, b.height);
+        A.uv.push(0, d0 / 6, len / 6, d0 / 6, len / 6, b.height / 6, 0, b.height / 6);
+        A.uvM.push(0, d0, len, d0, len, b.height, 0, b.height);
         A.idx.push(k, k + 2, k + 1, k, k + 3, k + 2);
       }
       const k = roof.pos.length / 3;
-      for (const p of P) { roof.pos.push(p[0], b.height, p[1]); roof.nrm.push(0, 1, 0); }
+      for (const p of P) { roof.pos.push(p[0], top, p[1]); roof.nrm.push(0, 1, 0); }
       roof.idx.push(k, k + 2, k + 1, k, k + 3, k + 2);
     }
     STYLES.forEach((st, i) => {
@@ -511,15 +590,8 @@ float winMask; float frameMask; float litMask;`)
     return im;
   }
   function buildFurniture(group, level) {
-    const metal = new T.MeshStandardMaterial({ color: 0x3c4146, metalness: 0.6, roughness: 0.45 });
-    const at = (x, z, h, y = 0) => new T.Matrix4().makeRotationY(-h).setPosition(x, y, z);
-    // street lights: a pole, an arm over the road, a lamp
-    const pole = new T.CylinderGeometry(0.09, 0.13, 8, 10); pole.translate(0, 4, 0);
-    const arm = new T.BoxGeometry(2.2, 0.08, 0.08); arm.translate(1.1, 7.9, 0);
-    const head = new T.BoxGeometry(0.7, 0.14, 0.32); head.translate(2.1, 7.82, 0);
-    group.add(instanced(pole, metal, level.lamps, (o, m) => m.copy(at(o.x, o.z, o.h))));
-    group.add(instanced(arm, metal, level.lamps, (o, m) => m.copy(at(o.x, o.z, o.h))));
-    group.add(instanced(head, new T.MeshStandardMaterial({ color: 0x222222, emissive: 0xfff1d6, emissiveIntensity: 0.6 }), level.lamps, (o, m) => m.copy(at(o.x, o.z, o.h)), false));
+    // on the ground at (x, z) facing h (street lights and signal posts are props: see prepareProps)
+    const at = (x, z, h) => new T.Matrix4().makeRotationY(-h).setPosition(x, groundY(level, x, z), z);
     // trees: trunk and a cluster of leafy blobs
     const bark = new T.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.95 });
     const leaf = leafMaterial();
@@ -529,11 +601,6 @@ float winMask; float frameMask; float litMask;`)
     const crowns = instanced(crown, leaf, level.trees, (o, m) => m.copy(at(o.x, o.z, o.seed)).scale(new T.Vector3(o.size, o.size, o.size)));
     level.trees.forEach((o, i) => crowns.setColorAt(i, new T.Color().setHSL(0.26 + 0.03 * Math.sin(o.seed * 7.1), 0.5, 0.26 + 0.04 * Math.cos(o.seed * 3.3))));
     group.add(crowns);
-    // traffic signals at the side streets: post, arm, head (lights red: the side streets are closed)
-    const spost = new T.CylinderGeometry(0.1, 0.12, 6, 8); spost.translate(0, 3, 0);
-    const shead = new T.BoxGeometry(0.35, 1.0, 0.35); shead.translate(0, 4.3, 0);
-    group.add(instanced(spost, metal, level.signals, (o, m) => m.copy(at(o.x, o.z, o.h))));
-    group.add(instanced(shead, new T.MeshStandardMaterial({ color: 0x1b1d1f, emissive: 0x401010, roughness: 0.5 }), level.signals, (o, m) => m.copy(at(o.x, o.z, o.h))));
     // barriers across the side streets: red and white concrete blocks
     const block = new T.BoxGeometry(1.9, 1.0, 0.6); block.translate(0, 0.5, 0);
     const blocks = [];
@@ -597,7 +664,7 @@ float lnoise(vec3 p) {
     line.wrapS = T.RepeatWrapping; line.repeat.set(1.25, 1);   // 20 squares across the street, 2 along it
     const g = new T.PlaneGeometry(level.roadHalf * 2, 1.6); g.rotateX(-Math.PI / 2);   // across the street, 1.6 m deep
     const m = new T.Mesh(g, new T.MeshStandardMaterial({ map: line, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -3 }));
-    m.position.set(p.x, 0.006, p.z); m.rotation.y = -p.h + Math.PI / 2;
+    m.position.set(p.x, groundY(level, p.x, p.z) + 0.006, p.z); m.rotation.y = -p.h + Math.PI / 2;
     m.receiveShadow = true;
     group.add(m);
     // gantry over the street
@@ -606,9 +673,83 @@ float lnoise(vec3 p) {
     for (const sg of [-1, 1]) { const leg = new T.Mesh(new T.BoxGeometry(0.4, 7, 0.4), steel); leg.position.set(0, 3.5, sg * (level.roadHalf + 1)); leg.castShadow = true; legs.add(leg); }
     const beam = new T.Mesh(new T.BoxGeometry(0.6, 1.2, level.roadHalf * 2 + 2.4), new T.MeshStandardMaterial({ color: 0x1d2024, emissive: 0x0c2a4a, roughness: 0.5 }));
     beam.position.y = 7; beam.castShadow = true; legs.add(beam);
-    legs.position.set(p.x, 0, p.z); legs.rotation.y = -p.h;
+    legs.position.set(p.x, groundY(level, p.x, p.z), p.z); legs.rotation.y = -p.h;
     group.add(legs);
     // tell CarModels / colliders nothing: the gantry legs stand beyond the kerbs
+  }
+
+  // ---------------------------------------------------------------- jump ramps
+  // across the street: a concrete top with yellow chevrons pointing the way, hazard-striped sides
+  function buildRamps(group, level) {
+    if (!level.ramps || !level.ramps.length) return;
+    const topTex = canvasTex(512, 256, (c, w, h) => {
+      noise(c, w, h, '#77746e', 22, 30);
+      c.fillStyle = '#e6b31e';
+      for (let i = 0; i < 4; i++) {   // chevrons along u (x), each spanning the width
+        const x0 = 40 + i * 120;
+        c.beginPath(); c.moveTo(x0, 0); c.lineTo(x0 + 60, h / 2); c.lineTo(x0, h); c.lineTo(x0 + 28, h); c.lineTo(x0 + 88, h / 2); c.lineTo(x0 + 28, 0); c.closePath(); c.fill();
+      }
+    });
+    const sideTex = canvasTex(256, 64, (c, w, h) => { c.fillStyle = '#e6b31e'; c.fillRect(0, 0, w, h); c.fillStyle = '#16171a'; for (let x = -h; x < w; x += 32) { c.beginPath(); c.moveTo(x, h); c.lineTo(x + 16, h); c.lineTo(x + 16 + h, 0); c.lineTo(x + h, 0); c.closePath(); c.fill(); } });
+    sideTex.wrapS = T.RepeatWrapping; topTex.wrapT = T.RepeatWrapping;
+    const topMat = new T.MeshStandardMaterial({ map: topTex, roughness: 0.85, side: T.DoubleSide });
+    const sideMat = new T.MeshStandardMaterial({ map: sideTex, roughness: 0.7, side: T.DoubleSide });
+    const RH = level.roadHalf;
+    for (const r of level.ramps) {
+      const ch = Math.cos(r.h), sh = Math.sin(r.h), N = Math.ceil(r.len / 0.5);
+      const at = (u, l) => [r.x + ch * u - sh * l, r.z + sh * u + ch * l];
+      const tp = [], tuv = [], tidx = [], sp = [], suv = [], sidx = [];
+      for (let i = 0; i <= N; i++) {
+        const u = Math.min(r.len, i * 0.5), hh = level.rampProfile(r, Math.min(u, r.len - 1e-6))[0];
+        for (const l of [-RH, RH]) {
+          const [x, z] = at(u, l), g = groundY(level, x, z);
+          tp.push(x, g + hh + 0.01, z); tuv.push(u / r.len, (l + RH) / (2 * RH) * 4);   // four rows of chevrons across
+          sp.push(x, g, z, x, g + hh + 0.01, z); suv.push(u / 4, 0, u / 4, Math.max(0.05, hh) / 1.6);
+        }
+        if (i < N) {
+          const k = 2 * i; tidx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
+          for (const side of [0, 1]) { const a = 4 * i + 2 * side, b = a + 4; sidx.push(a, b, a + 1, a + 1, b, b + 1); }
+        }
+      }
+      const mk = (pos, uv, idx, mat) => {
+        const g = new T.BufferGeometry();
+        g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+        g.computeVertexNormals();
+        const m = new T.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; group.add(m);
+        return g;
+      };
+      const tg = mk(tp, tuv, tidx, topMat);
+      const n = tg.attributes.normal; if (n.getY(0) < 0) for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));   // facing up
+      mk(sp, suv, sidx, sideMat);
+    }
+  }
+
+  // ---------------------------------------------------------------- props' meshes
+  // each kind's meshes with its base at y = 0 (props.js puts its box's centre hy above that):
+  // [[geometry, material], ...]; colours per vertex
+  const PROP_MATS = {};
+  function propParts(type) {
+    const M = PROP_MATS;
+    M.paint = M.paint || new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.15 });
+    M.metal = M.metal || new T.MeshStandardMaterial({ color: 0x3c4146, metalness: 0.6, roughness: 0.45 });
+    M.lamp = M.lamp || new T.MeshStandardMaterial({ color: 0x222222, emissive: 0xfff1d6, emissiveIntensity: 0.6 });
+    M.signal = M.signal || new T.MeshStandardMaterial({ color: 0x1b1d1f, emissive: 0x401010, roughness: 0.5 });
+    const box = (w, h, d, x, y, z) => { const g = new T.BoxGeometry(w, h, d); g.translate(x, y, z); return g; };
+    const cyl = (r0, r1, h, y, seg = 14) => { const g = new T.CylinderGeometry(r0, r1, h, seg); g.translate(0, y, 0); return g; };
+    const colour = (g, hex) => { const c = new T.Color(hex), n = g.attributes.position.count, a = new Float32Array(3 * n); for (let i = 0; i < n; i++) { a[3 * i] = c.r; a[3 * i + 1] = c.g; a[3 * i + 2] = c.b; } g.setAttribute('color', new T.BufferAttribute(a, 3)); return g; };
+    const painted = (parts) => [[window.mergeGeometries(parts.map(([g, hex]) => colour(g, hex))), M.paint]];
+    switch (type) {
+      case 'lamp': return [[window.mergeGeometries([cyl(0.09, 0.13, 8, 4, 10), box(2.2, 0.08, 0.08, 1.1, 7.9, 0)]), M.metal], [box(0.7, 0.14, 0.32, 2.1, 7.82, 0), M.lamp]];
+      case 'signal': return [[cyl(0.1, 0.12, 6, 3, 8), M.metal], [box(0.35, 1.0, 0.35, 0, 4.3, 0), M.signal]];
+      case 'cone': return painted([[cyl(0.03, 0.2, 0.66, 0.37), 0xf26a1b], [cyl(0.11, 0.14, 0.12, 0.35), 0xf2f2ee], [box(0.42, 0.04, 0.42, 0, 0.02, 0), 0x1d1e20]]);
+      case 'bin': return painted([[cyl(0.3, 0.27, 0.92, 0.46), 0x2f4a36], [cyl(0.32, 0.32, 0.06, 0.95), 0x22352a]]);
+      case 'newsbox': return painted([[box(0.5, 0.75, 0.45, 0, 0.62, 0), 0x1f4fa0], [box(0.3, 0.25, 0.3, 0, 0.125, 0), 0x2a2c30], [box(0.36, 0.22, 0.03, 0, 0.78, 0.23), 0xd9dde2]]);
+      case 'hydrant': return painted([[cyl(0.13, 0.15, 0.6, 0.3), 0xb3201b], [cyl(0.06, 0.16, 0.14, 0.67), 0xb3201b], [box(0.42, 0.1, 0.1, 0, 0.42, 0), 0xc8a32a], [cyl(0.18, 0.18, 0.06, 0.03), 0x2a2c30]]);
+      case 'bench': return painted([[box(1.8, 0.06, 0.45, 0, 0.45, 0), 0x8a5a33], [box(1.8, 0.38, 0.05, 0, 0.76, -0.2), 0x8a5a33], [box(0.06, 0.45, 0.45, -0.8, 0.225, 0), 0x1d1e20], [box(0.06, 0.45, 0.45, 0.8, 0.225, 0), 0x1d1e20]]);
+      case 'crate': return painted([[box(0.8, 0.8, 0.8, 0, 0.4, 0), 0xa8794a], [box(0.82, 0.08, 0.82, 0, 0.1, 0), 0x7d5733], [box(0.82, 0.08, 0.82, 0, 0.7, 0), 0x7d5733]]);
+      case 'barrel': return painted([[cyl(0.29, 0.29, 0.88, 0.44, 16), 0xb5361f], [cyl(0.3, 0.3, 0.04, 0.3, 16), 0x5a1a10], [cyl(0.3, 0.3, 0.04, 0.6, 16), 0x5a1a10]]);
+    }
+    return painted([[box(0.5, 0.5, 0.5, 0, 0.25, 0), 0x888888]]);
   }
 
   // ---------------------------------------------------------------- instanced cars

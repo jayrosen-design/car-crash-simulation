@@ -46,6 +46,14 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .boost-bar { width: 220px; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.12); overflow: hidden; border: 1px solid var(--line); }
 .boost-bar i { display: block; height: 100%; width: 30%; background: linear-gradient(90deg, #f2b233, #ff6a2b); transition: width 0.12s; }
 .boost.on .boost-bar i { background: linear-gradient(90deg, #ffd36b, #ff3b1f); box-shadow: 0 0 12px #ff6a2b; }
+.health { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-bottom: 6px; }
+.health .k { color: var(--muted); text-transform: uppercase; font-size: 12px; letter-spacing: 0.08em; }
+.health-bar { position: relative; width: 220px; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.12); overflow: hidden; border: 1px solid var(--line); }
+.health-bar b { position: absolute; inset: 0; background: #ff3b1f; opacity: 0; }   /* the flash on a hit (faded by script) */
+.health-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3fbf6a, #8fe08a); transition: width 0.2s; }
+.health.low .health-bar i { background: linear-gradient(90deg, #e0a526, #f2cf5b); }
+.health.critical .health-bar i { background: linear-gradient(90deg, #d8322a, #ff6a4d); }
+.hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(200, 20, 10, 0) 55%, rgba(200, 20, 10, 0.55) 100%); }
 .chip { position: absolute; bottom: 120px; right: 24px; padding: 6px 12px; border-radius: 8px; background: rgba(242, 178, 51, 0.92); color: #1a1205; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; }
 .eyebrow { margin: 0 0 6px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
 .credits { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.45; }
@@ -111,7 +119,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .replay-bar { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 8px 14px; border-radius: 10px; background: rgba(10, 12, 16, 0.75); border: 1px solid var(--line); font-size: 14px; }
 .replay-bar .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ff3b1f; margin-right: 8px; vertical-align: 1px; }
 .overlay .panel { pointer-events: auto; }
-@media (max-width: 760px) { .minimap { display: none; } .boost-bar { width: 140px; } }
+@media (max-width: 760px) { .minimap { display: none; } .boost-bar, .health-bar { width: 140px; } }
 .speedo { display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 8px; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
 .speedo #hud-speed { font-size: 64px; font-weight: 800; font-family: var(--mono); line-height: 1; }
 .speedo .unit { font-size: 16px; color: var(--muted); }
@@ -159,7 +167,9 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
       <div class="hud-row"><span class="k">Takedowns</span><span id="hud-td" class="v">0</span></div>
     </div>
     <canvas id="minimap" class="minimap panel" width="200" height="170"></canvas>
+    <div id="hurt" class="hurt"></div>
     <div class="hud-br">
+      <div id="health" class="health"><span class="k">Health</span><div class="health-bar"><i id="health-fill"></i><b id="health-flash"></b></div></div>
       <div id="boost" class="boost"><span class="k">Boost</span><div class="boost-bar"><i id="boost-fill"></i></div></div>
       <div class="speedo"><span id="hud-speed">0</span><span class="unit">km/h</span><span class="gear">gear <b id="hud-gear">1</b></span></div>
     </div>
@@ -172,7 +182,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     <header class="sel-head">
       <p class="eyebrow">Car Crash Simulation · Race</p>
       <h2>Choose your car</h2>
-      <p class="muted">Three laps of the city against seven rivals, with traffic both ways. Near misses, the oncoming lanes, drifts and takedowns fill your boost. Crash, and the full crash physics plays it back in slow motion.</p>
+      <p class="muted">Three laps of the city against seven rivals, with traffic both ways. Jump the ramps and knock things over. Near misses, the oncoming lanes, drifts and takedowns fill your boost. Hits wear your health down; when it's gone, the full crash physics plays the crash back in slow motion.</p>
     </header>
 
     <section class="panel sel-garage" aria-label="Car and paint">
@@ -4009,8 +4019,10 @@ if (typeof module === 'object' && module.exports) module.exports = api;
  * The circuit is a polygon of street corners, each rounded with its own radius (tight city corners,
  * one sweeping bend), sampled every metre. Along it: a four-lane two-way street (two lanes each
  * way), pavements, side streets closed off with barriers, street lights, trees and traffic lights,
- * buildings set back from the pavement, and more buildings filling the blocks behind them. The
- * ground is flat (y = 0), as the crash solver and the damage renderer assume.
+ * buildings set back from the pavement, and more buildings filling the blocks behind them. Rolling
+ * hills on some straights (terrain), jump ramps across the street (groundAt adds them), and props to
+ * knock over (props.js). The crash solver works on flat ground: the game runs a crash at the local
+ * ground height (see game.js).
  *
  * Conventions (as js/physics.js): x and z on the ground, y up; a heading h points along
  * (cos h, sin h); a lateral offset l is measured to the right of the circuit's direction, along
@@ -4141,6 +4153,51 @@ const CrashLevel = (() => {
     }
     const sampleAt = (s) => Math.floor((((s % L) + L) % L) / DS) % C.N;
 
+    // ------------------------------------------------ the lie of the land
+    // Rolling hills: smooth bumps on the second and last straights and over the sweeping bend; the
+    // first straight, its start and grid stay flat. Everything stands on this ground (street,
+    // pavements, buildings, props); the height is never below 0. [x, z, height, spread] (m)
+    const HILLS = [[480, 112, 6, 36], [416, 300, 4, 40], [0, 112, 5, 34]];
+    // Jump ramps across the street on three straights (the first, the bottom one and the long
+    // diagonal; none on a hill): from s, up `up` m to `height`, a short top, down `down` m.
+    const ramps = [];
+    for (const [s0, up, top, down, height] of [[215, 12, 2, 8, 1.4], [998, 11, 2, 8, 1.3], [1215, 12, 2, 8, 1.5]]) {
+      const p = poseAt(s0, 0), len = up + top + down;
+      ramps.push({ s: s0, up, top, down, height, len, x: p.x, z: p.z, h: p.h, cx: p.x + Math.cos(p.h) * len / 2, cz: p.z + Math.sin(p.h) * len / 2, rad: Math.hypot(len / 2, ROAD_HALF) + 1 });
+    }
+    // a ramp's surface height and its slope along the street, u m past its start
+    function rampProfile(r, u) {
+      if (u < 0 || u >= r.len) return [0, 0];
+      if (u < r.up) return [r.height * u / r.up, r.height / r.up];
+      if (u < r.up + r.top) return [r.height, 0];
+      return [r.height * (1 - (u - r.up - r.top) / r.down), -r.height / r.down];
+    }
+    // the ground's height (hills only, without the ramps) at (x, z)
+    function terrain(x, z) {
+      let h = 0;
+      for (const [cx, cz, A, sg] of HILLS) h += A * Math.exp(-((x - cx) ** 2 + (z - cz) ** 2) / (2 * sg * sg));
+      return h;
+    }
+    // the surface cars and props stand on: hills plus the ramps on the street -> out { h, gx, gz }
+    // (height and its gradient)
+    function groundAt(x, z, out = {}) {
+      let h = 0, gx = 0, gz = 0;
+      for (const [cx, cz, A, sg] of HILLS) {
+        const dx = x - cx, dz = z - cz, e = A * Math.exp(-(dx * dx + dz * dz) / (2 * sg * sg));
+        h += e; gx -= e * dx / (sg * sg); gz -= e * dz / (sg * sg);
+      }
+      for (const r of ramps) {
+        if ((x - r.cx) ** 2 + (z - r.cz) ** 2 > r.rad * r.rad) continue;
+        const c = Math.cos(r.h), s = Math.sin(r.h), dx = x - r.x, dz = z - r.z;
+        const u = dx * c + dz * s, l = -dx * s + dz * c;
+        if (Math.abs(l) > ROAD_HALF) continue;
+        const [rh, sl] = rampProfile(r, u);
+        h += rh; gx += sl * c; gz += sl * s;
+      }
+      out.h = h; out.gx = gx; out.gz = gz;
+      return out;
+    }
+
     // ------------------------------------------------ side streets, buildings, street furniture
     const boxes = [], cyls = [];           // colliders (as the crash solver takes them)
     const buildings = [], sideStreets = [], lamps = [], trees = [], signals = [], barriers = [], stops = [];
@@ -4231,13 +4288,13 @@ const CrashLevel = (() => {
       skyline.push({ x: cx, z: cz, hx: 15 + R() * 25, hz: 15 + R() * 25, angle: R() * 0.4, height: 30 + R() * R() * 160, style: Math.floor(R() * 4) });
     }
 
-    // street furniture along the pavements (colliders: posts, trunks)
+    // street furniture along the pavements (colliders: tree trunks; the street lights are props that
+    // break off their bases when hit, see below)
     for (const side of [-1, 1]) {
       for (let s = 12; s < L - 6; s += 32) {
         if (nearSide(s, side, 4)) continue;
         const p = poseAt(s, side * (ROAD_HALF + 0.7));
-        lamps.push({ x: p.x, z: p.z, h: p.h + (side > 0 ? -Math.PI / 2 : Math.PI / 2), side });
-        cyls.push({ x: p.x, z: p.z, r: 0.13, height: 8 });
+        lamps.push({ x: p.x, z: p.z, h: p.h + (side > 0 ? -Math.PI / 2 : Math.PI / 2), side, s });
         const ts = s + 16;
         if (!nearSide(ts, side, 5) && Math.abs(C.k[sampleAt(ts)]) < 0.012) {
           const q = poseAt(ts, side * (ROAD_HALF + 2.2));
@@ -4255,7 +4312,46 @@ const CrashLevel = (() => {
       for (const e of [-1, 1]) {
         const c = poseAt(q.s + e * (q.width / 2 + 1.2), q.side * (ROAD_HALF + 0.9));
         signals.push({ x: c.x, z: c.z, h: c.h + (q.side > 0 ? -Math.PI / 2 : Math.PI / 2), arm: e < 0 });
-        cyls.push({ x: c.x, z: c.z, r: 0.12, height: 6 });
+      }
+    }
+
+    // ------------------------------------------------ things to knock over (props.js moves them)
+    // { type, x, z, h (yaw), y (stacked on another, m) }. The street lights and signal posts; along
+    // the outer pavement bins, newspaper boxes, hydrants and benches; cones and barrels at roadworks
+    // by the kerb (clear of the outer lane's traffic); crates and barrels in front of the side
+    // streets' barriers. Kept clear of the ramps.
+    const props = [];
+    const nearRamp = (s, m) => ramps.some(r => { const u = wrapDiff(s, r.s); return u > -m && u < r.len + m; });
+    for (const o of lamps) props.push({ type: 'lamp', x: o.x, z: o.z, h: o.h, y: 0 });
+    for (const o of signals) props.push({ type: 'signal', x: o.x, z: o.z, h: o.h, y: 0 });
+    const KINDS = [['bin', 0.3], ['newsbox', 0.2], ['hydrant', 0.2], ['bench', 0.3]];
+    for (const side of [-1, 1]) {
+      for (let s = 20; s < L - 10; s += 22 + R() * 12) {
+        let u = R(), type = KINDS[0][0];
+        for (const [k, w] of KINDS) { if (u < w) { type = k; break; } u -= w; }
+        if (nearSide(s, side, 6) || Math.abs(C.k[sampleAt(s)]) > 0.02) continue;
+        if (lamps.some(o => o.side === side && Math.abs(wrapDiff(o.s, s)) < 2.5)) continue;
+        const l = type === 'hydrant' ? ROAD_HALF + 1.0 : type === 'bench' ? ROAD_HALF + 3.4 : ROAD_HALF + 3.6;
+        const p = poseAt(s, side * l);
+        props.push({ type, x: p.x, z: p.z, h: type === 'bench' ? p.h + (side > 0 ? 0 : Math.PI) : p.h + R() * 6.28, y: 0 });
+      }
+    }
+    // roadworks: a row of cones along the kerb, a barrel at each end
+    for (const f of [0.3, 0.45, 0.66, 0.93]) {
+      const s0 = f * L, side = R() < 0.5 ? -1 : 1;
+      if (nearRamp(s0, 30) || nearSide(s0 + 12, side, 20) || Math.abs(wrapDiff(s0, START_S)) < 80) continue;
+      for (let i = 0; i <= 8; i++) {
+        const p = poseAt(s0 + i * 3.2, side * 6.95);
+        props.push({ type: i === 0 || i === 8 ? 'barrel' : 'cone', x: p.x, z: p.z, h: R() * 6.28, y: 0 });
+      }
+    }
+    // the side streets: crates (some stacked) and barrels in front of the barriers
+    for (const q of sideStreets) {
+      const p0 = poseAt(q.s, q.side * ROAD_HALF), hs = p0.h + (q.side > 0 ? Math.PI / 2 : -Math.PI / 2), c = Math.cos(hs), s = Math.sin(hs);
+      const at = (along, across) => ({ x: p0.x + c * along - s * across, z: p0.z + s * along + c * across });
+      for (const [along, across, type, y] of [[6.2, -2.4, 'crate', 0], [6.2, -1.5, 'crate', 0], [6.2, -1.95, 'crate', 0.8], [7.0, 2.2, 'barrel', 0], [6.4, 2.9, 'barrel', 0], [6.6, -3.4, 'crate', 0]]) {
+        const p = at(along, across);
+        props.push({ type, x: p.x, z: p.z, h: hs + (R() - 0.5) * 0.3, y });
       }
     }
 
@@ -4276,8 +4372,8 @@ const CrashLevel = (() => {
     return {
       seed: opts.seed || 20261007, circuit: C, length: L, laps: 3, lanes: LANES, laneWidth: LANE_W, roadHalf: ROAD_HALF, walkOut: WALK_OUT,
       start: { s: START_S }, corners,
-      buildings, skyline, sideStreets, lamps, trees, signals, barriers, stops,
-      colliders: { boxes, cyls }, collidersNear, nearest, poseAt, sampleAt, wrapDiff,
+      buildings, skyline, sideStreets, lamps, trees, signals, barriers, stops, props, ramps, hills: HILLS,
+      colliders: { boxes, cyls }, collidersNear, nearest, poseAt, sampleAt, wrapDiff, terrain, groundAt, rampProfile,
       bounds: { x0, x1, z0, z1 },
     };
   }
@@ -4350,6 +4446,10 @@ const RaceCar = (() => {
       gear: 1, rpm: 900, reverse: false, odometer: 0,
       drift: 0,                // 0..1: how much the car is sliding (for boost and sound)
       sideSlip: 0,             // body slip angle (rad)
+      // height over hills and ramps (world.js keeps these): height of the centre of gravity's
+      // ground point, vertical speed, in the air?, put back on the ground next step?, the ground's
+      // (or the flight's) pitch and roll for drawing
+      y: 0, vy: 0, air: false, snap: true, gPitch: 0, gRoll: 0,
       // the model's origin (the pose the renderer and the crash solver use)
       get pose() { const c = Math.cos(car.h), s = Math.sin(car.h); return { x: car.x - c * cgX, z: car.z - s * cgX, heading: car.h }; },
       get speed() { return Math.hypot(car.vx, car.vz); },
@@ -4359,6 +4459,7 @@ const RaceCar = (() => {
         car.x = x + c * cgX; car.z = z + s * cgX; car.h = h;
         car.vx = c * (speed || 0); car.vz = s * (speed || 0); car.yaw = 0; car.ax = car.ay = 0;
         car.pitch = car.roll = car.pv = car.rv = 0; car.steer = 0;
+        car.air = false; car.vy = 0; car.snap = true;
       },
       // driven along a path by someone else (traffic): place the model's origin and set the motion
       setKinematic(x, z, h, speed, yaw) {
@@ -4409,7 +4510,7 @@ const RaceCar = (() => {
         const vl = cd * wvx + sd * wvz, vs = -sd * wvx + cd * wvz;      // along and across the wheel
         const tyre = w.front ? MF.front : MF.rear;
         const mu = tune.grip * tyre.mu * (w.front ? 1 : (car.handbrake > 0.5 ? 0.42 : 1));
-        const Fmax = mu * w.Fz;
+        const Fmax = car.air ? 0 : mu * w.Fz;   // no grip in the air
         // longitudinal: drive, brakes (ABS: up to the grip), rolling resistance, handbrake
         let fl = drive * (w.front ? tune.drive[0] : tune.drive[1]) / 2;
         const sgn = vl > 0.05 ? 1 : vl < -0.05 ? -1 : 0;
@@ -4426,7 +4527,7 @@ const RaceCar = (() => {
         const cap = (w.Fz / G) * Math.abs(vs) / dt;
         if (Math.abs(fs) > cap) fs = Math.sign(fs) * cap;
         w.slip = alpha; w.Fx = fl; w.Fy = fs;
-        w.skid = Math.min(1, Math.max(Math.abs(alpha) > 0.12 ? (Math.abs(alpha) - 0.12) * 4 : 0, Math.abs(fl) / (Fmax || 1) > 0.95 && brk > 0.3 ? 0.6 : 0));
+        w.skid = car.air ? 0 : Math.min(1, Math.max(Math.abs(alpha) > 0.12 ? (Math.abs(alpha) - 0.12) * 4 : 0, Math.abs(fl) / (Fmax || 1) > 0.95 && brk > 0.3 ? 0.6 : 0));
         slideSum += w.skid;
         // to the car's frame, and the yaw moment about the centre of gravity
         const fx = cd * fl - sd * fs, fz = sd * fl + cd * fs;
@@ -4444,7 +4545,7 @@ const RaceCar = (() => {
       car.yaw += Tq / Izz * dt;
       // arcade stability control: hold the yaw rate near what the steering asks for (plus a margin), and
       // damp it a little when not steering, so the car tracks straight; off under the handbrake
-      if (car.handbrake < 0.5) {
+      if (car.handbrake < 0.5 && !car.air) {
         const want = vx * Math.tan(car.steer) / car.L;
         const lim = Math.min(Math.abs(want) * 1.25 + 0.15, 0.95 * tune.grip * G / Math.max(3, v) + 0.05);   // no tighter than the grip allows
         if (Math.abs(car.yaw) > lim) car.yaw += (Math.sign(car.yaw) * lim - car.yaw) * (1 - Math.exp(-6 * dt));
@@ -4511,15 +4612,19 @@ if (typeof module === 'object' && module.exports) module.exports = RaceCar;
 /* The Race game's world: cars on the level, their collisions, and when a hit is a crash.
  *
  * Each car is an oriented box of its length and width (the crash solver's lattice has exactly that
- * envelope). Against the level's boxes (buildings, barriers) and cylinders (street lights, trees,
- * signal posts), and against each other, contacts are found by the separating-axis test and
+ * envelope). Against the level's boxes (buildings, barriers) and cylinders (trees), and against
+ * each other, contacts are found by the separating-axis test and
  * resolved with impulses: restitution and Coulomb friction at the contact point, so a glancing hit
  * scrapes and turns the car and a square one stops it. A hit is a crash when the approach speed
  * along the contact normal passes a limit (CRASH); then the game hands the cars over to the full
  * crash solver from their state one step earlier, just before they touched (history()).
  *
  * Cars are RaceCar bodies (vehicle.js). Traffic can be kinematic (set by its driver each step)
- * until something hits it; then it becomes a free body.
+ * until something hits it; then it becomes a free body. Cars follow the level's hills and ramps and
+ * can fly off them (vertical()); a car in the air clears low colliders and other cars.
+ *
+ * Rivals still crash at the CRASH limits; the player has a health bar instead (game.js), and
+ * damage() turns a hit's change of speed into a share of it.
  *
  * DOM-free: global RaceWorld in the browser, module.exports in Node.
  */
@@ -4529,6 +4634,19 @@ const RaceWorld = (() => {
   const CRASH = { wall: 13, car: 13.5, pack: 20 };
   const E_WALL = 0.12, E_CAR = 0.2, MU_WALL = 0.35, MU_CAR = 0.3;
   const HISTORY = 12;                       // steps kept for the crash hand-over
+  const G = 9.81, FLAT = { h: 0, gx: 0, gz: 0 };
+  // the player's damage (a share of the health bar) from a hit that changes the car's speed by dv
+  // m/s: nothing for scrapes and nudges under 2.5 m/s, about a fifth for a square hit on a wall at
+  // 13 m/s (47 km/h), all of it from about 25 m/s (90 km/h)
+  const damage = (dv) => Math.max(0, dv - 2.5) ** 2 / 650;
+  // ... from a contact event, at its first touch: the approach speed along the normal, with the
+  // bounce; against another car, the share of the change of speed this car takes (by mass)
+  function hitDamage(e, b) {
+    if (e.kind === 'land') return 0;
+    let dv = e.vn * (e.kind === 'car' ? 1 + E_CAR : 1 + E_WALL);
+    if (e.kind === 'car') { const o = e.a === b ? e.b : e.a; dv *= o.car.m / (o.car.m + b.car.m); }
+    return damage(dv);
+  }
 
   function create(level) {
     const bodies = [];
@@ -4645,22 +4763,58 @@ const RaceWorld = (() => {
       events.push({ a, b, kind: 'car', vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, crash: -vn > lim && !a.ghost && !b.ghost, J });
     }
 
+    // ---------------------------------------------------------------- over hills and ramps
+    // A car follows the ground under its centre of gravity until the ground falls away faster than
+    // gravity can pull it down (a ramp's lip, a crest taken fast); then it flies, without grip
+    // (vehicle.js), and lands. On the ground gravity pulls it along the slope. Kinematic traffic
+    // keeps to the ground.
+    const GR = {};
+    function vertical(b, dt) {
+      const c = b.car, g = level.groundAt ? level.groundAt(c.x, c.z, GR) : FLAT;
+      if (c.snap || b.kinematic) { c.y = g.h; c.vy = 0; c.air = false; c.snap = false; }
+      else if (!c.air) {
+        c.vx -= G * g.gx * dt; c.vz -= G * g.gz * dt;
+        const vyG = (g.h - c.y) / dt;
+        if ((c.vy - vyG) / dt > G * 1.05) { c.air = true; c.vy -= G * dt; c.y += c.vy * dt; }   // takes off
+        else { c.vy = vyG; c.y = g.h; }
+      } else {
+        c.vy -= G * dt; c.y += c.vy * dt;
+        if (c.y <= g.h) {
+          const vyG = g.gx * c.vx + g.gz * c.vz, impact = vyG - c.vy;   // how fast it meets the ground
+          c.y = g.h; c.vy = vyG; c.air = false;
+          events.push({ a: b, b: null, kind: 'land', vn: impact, x: c.x, z: c.z, nx: 0, nz: 0, crash: false, J: 0 });
+        }
+      }
+      // pitch and roll to draw: the ground's; in the air, the nose along the flight path
+      const ch = Math.cos(c.h), sh = Math.sin(c.h);
+      let tp = 0, tr = 0;
+      if (c.air) tp = Math.max(-0.45, Math.min(0.45, Math.atan2(c.vy, Math.max(5, Math.abs(c.vx * ch + c.vz * sh)))));
+      else { tp = Math.atan(g.gx * ch + g.gz * sh); tr = -Math.atan(-g.gx * sh + g.gz * ch); }
+      const k = 1 - Math.exp(-dt * (c.air ? 3 : 14));
+      c.gPitch += (tp - c.gPitch) * k; c.gRoll += (tr - c.gRoll) * k;
+    }
+    // how high a car is above the ground it would hit a collider on (terrain only: no ramps there)
+    const above = (c) => c.y - (level.terrain ? level.terrain(c.x, c.z) : 0);
+
     // ---------------------------------------------------------------- the step
     /* inputs(body) -> the driving input for a non-kinematic body this step */
     function step(dt, inputs) {
       events.length = 0;
       snapshot();
       for (const b of bodies) {
-        if (b.kinematic || b.frozen) continue;
-        b.car.step(dt, inputs(b) || {});
+        if (b.frozen) continue;
+        if (!b.kinematic) b.car.step(dt, inputs(b) || {});
+        vertical(b, dt);
         if (b.ghost > 0) b.ghost = Math.max(0, b.ghost - dt);
       }
-      // static contacts (twice: a corner can be pushed into a neighbouring shape)
+      // static contacts (twice: a corner can be pushed into a neighbouring shape); a car in the air
+      // clears the low ones
       for (const b of bodies) {
         if (b.kinematic || b.frozen) continue;
         for (let pass = 0; pass < 2; pass++) {
           const A = box(b, BA);
           for (const o of level.collidersNear(A.x, A.z, A.hx + 1)) {
+            if (b.car.air && above(b.car) > o.height - 0.3) continue;
             const hit = o.box ? vsBox(b, A, o) : vsCyl(b, A, o);
             if (hit) { resolveStatic(b, hit, o.box ? 'wall' : 'post'); box(b, A); }
           }
@@ -4676,6 +4830,7 @@ const RaceWorld = (() => {
           if (a.ghost || b.ghost) continue;
           const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z;
           if (dx * dx + dz * dz > 49) continue;
+          if (Math.abs(a.car.y - b.car.y) > 1.2) continue;   // one flying over the other
           const A = box(a, BA), B = box(b, BB), hit = vsCar(A, B);
           if (!hit) continue;
           // a hit traffic car becomes a free body
@@ -4711,7 +4866,7 @@ const RaceWorld = (() => {
   }
 
   // the box of a car spec at a pose (for spawning clear of other cars)
-  return { create, CRASH };
+  return { create, CRASH, damage, hitDamage };
 })();
 if (typeof module === 'object' && module.exports) module.exports = RaceWorld;
 
@@ -5001,6 +5156,313 @@ const RaceAI = (() => {
   return { createTraffic, createRivals, speedProfile, nearMiss, NEAR_GAP, PALETTE };
 })();
 if (typeof module === 'object' && module.exports) module.exports = RaceAI;
+
+</script>
+<script>/* js/race/props.js */
+/* The Race game's props: things in the street that cars knock over instead of crashing into.
+ *
+ * Street lights and signal posts break off their bases and topple away from the car; cones, bins,
+ * newspaper boxes, hydrants, benches, crates and barrels fly, tumble and roll. Each prop is a box
+ * (its kind's half sizes, centre hy above its base) and a rigid body: position, velocity,
+ * orientation (quaternion) and angular velocity, under gravity, at 120 Hz. Its corners meet the
+ * ground (hills and ramps, level.groundAt) and the buildings, barriers and trees with impulses
+ * (restitution, friction); props push each other apart as spheres. A prop at rest goes to sleep
+ * and costs nothing until something hits it.
+ *
+ * A car hitting a prop: the two exchange momentum along the contact normal (the prop also gets a
+ * kick upward and a spin), so a cone flies off at about the car's speed and a 140 kg street light
+ * takes a few km/h off a 2 t car. No crash; step() reports the hits (for sound, sparks, boost, and
+ * the change of speed, for damage).
+ *
+ * DOM-free: global RaceProps in the browser, module.exports in Node.
+ */
+const RaceProps = (() => {
+  'use strict';
+  const G = 9.81, DT = 1 / 120, CELL = 6;
+  // half sizes (m) of each kind's collision box, mass (kg), restitution and friction on the ground
+  const TYPES = {
+    lamp: { hx: 0.14, hy: 4.0, hz: 0.14, m: 140, e: 0.05, mu: 0.6, pole: true, metal: true },
+    signal: { hx: 0.15, hy: 3.0, hz: 0.15, m: 110, e: 0.05, mu: 0.6, pole: true, metal: true },
+    cone: { hx: 0.21, hy: 0.36, hz: 0.21, m: 4, e: 0.35, mu: 0.7 },
+    bin: { hx: 0.3, hy: 0.5, hz: 0.3, m: 28, e: 0.3, mu: 0.5, metal: true },
+    newsbox: { hx: 0.26, hy: 0.55, hz: 0.24, m: 35, e: 0.25, mu: 0.5, metal: true },
+    hydrant: { hx: 0.2, hy: 0.4, hz: 0.2, m: 90, e: 0.2, mu: 0.6, metal: true },
+    bench: { hx: 0.9, hy: 0.42, hz: 0.3, m: 45, e: 0.25, mu: 0.6 },
+    crate: { hx: 0.4, hy: 0.4, hz: 0.4, m: 16, e: 0.3, mu: 0.6 },
+    barrel: { hx: 0.3, hy: 0.45, hz: 0.3, m: 24, e: 0.35, mu: 0.4, metal: true },
+  };
+  const CORNERS = [];
+  for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) CORNERS.push([a, b, c]);
+
+  // ---------------------------------------------------------------- small vector and quaternion maths
+  // rotate v by the unit quaternion q = [x, y, z, w] into out
+  function rot(q, v, out) {
+    const [x, y, z, w] = q, [vx, vy, vz] = v;
+    const tx = 2 * (y * vz - z * vy), ty = 2 * (z * vx - x * vz), tz = 2 * (x * vy - y * vx);
+    out[0] = vx + w * tx + y * tz - z * ty; out[1] = vy + w * ty + z * tx - x * tz; out[2] = vz + w * tz + x * ty - y * tx;
+    return out;
+  }
+  const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+  function create(level, opts = {}) {
+    const list = [];
+    const grid = new Map(), key = (i, j) => i * 100003 + j;
+    const cellOf = (pr) => key(Math.floor(pr.p[0] / CELL), Math.floor(pr.p[2] / CELL));
+    function file(pr) {
+      const k = cellOf(pr);
+      if (k === pr.cell) return;
+      if (pr.cell !== undefined) { const a = grid.get(pr.cell); a.splice(a.indexOf(pr), 1); }
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(pr); pr.cell = k;
+    }
+    const G0 = {};
+    for (const o of level.props || []) {
+      const T = TYPES[o.type];
+      if (!T) continue;
+      const base = level.groundAt ? level.groundAt(o.x, o.z, G0).h : 0, a = -o.h / 2;
+      // inverse inertia of a box about its own axes
+      const I = [3 / (T.m * (T.hy * T.hy + T.hz * T.hz)), 3 / (T.m * (T.hx * T.hx + T.hz * T.hz)), 3 / (T.m * (T.hx * T.hx + T.hy * T.hy))];
+      const pr = { id: list.length, type: o.type, T, Iinv: I, p: [o.x, base + o.y + T.hy, o.z], q: [0, Math.sin(a), 0, Math.cos(a)], v: [0, 0, 0], w: [0, 0, 0],
+        awake: false, still: 0, awakeT: 0, moved: false, dirty: true, hit: 0, cell: undefined };
+      list.push(pr);
+      file(pr);
+    }
+    function near(x, z, r, out) {
+      out.length = 0;
+      for (let i = Math.floor((x - r) / CELL); i <= Math.floor((x + r) / CELL); i++) for (let j = Math.floor((z - r) / CELL); j <= Math.floor((z + r) / CELL); j++) {
+        const a = grid.get(key(i, j));
+        if (a) for (const pr of a) out.push(pr);
+      }
+      return out;
+    }
+    // inverse inertia (world) applied to a vector
+    const T1 = [0, 0, 0], T2 = [0, 0, 0];
+    function invI(pr, v) {
+      const qc = conj(pr.q);
+      rot(qc, v, T1);
+      T1[0] *= pr.Iinv[0]; T1[1] *= pr.Iinv[1]; T1[2] *= pr.Iinv[2];
+      return rot(pr.q, T1, [0, 0, 0]);
+    }
+    // an impulse J (world vector) at offset r from the centre
+    function impulse(pr, r, J) {
+      const im = 1 / pr.T.m;
+      pr.v[0] += J[0] * im; pr.v[1] += J[1] * im; pr.v[2] += J[2] * im;
+      const dw = invI(pr, cross(r, J));
+      pr.w[0] += dw[0]; pr.w[1] += dw[1]; pr.w[2] += dw[2];
+    }
+    function wake(pr) { if (!pr.awake) { pr.awake = true; pr.still = 0; pr.awakeT = 0; } pr.moved = true; }
+
+    // ---------------------------------------------------------------- one step of the awake props
+    const R = [0, 0, 0], GA = {}, NB = [];
+    function integrate(pr, dt) {
+      const T = pr.T, v = pr.v, w = pr.w;
+      v[1] -= G * dt;
+      pr.p[0] += v[0] * dt; pr.p[1] += v[1] * dt; pr.p[2] += v[2] * dt;
+      // q += 1/2 (w, 0) q dt
+      const [qx, qy, qz, qw] = pr.q, h = dt / 2;
+      pr.q[0] = qx + h * (w[0] * qw + w[1] * qz - w[2] * qy);
+      pr.q[1] = qy + h * (w[1] * qw + w[2] * qx - w[0] * qz);
+      pr.q[2] = qz + h * (w[2] * qw + w[0] * qy - w[1] * qx);
+      pr.q[3] = qw - h * (w[0] * qx + w[1] * qy + w[2] * qz);
+      const n = Math.hypot(pr.q[0], pr.q[1], pr.q[2], pr.q[3]);
+      pr.q[0] /= n; pr.q[1] /= n; pr.q[2] /= n; pr.q[3] /= n;
+      // the ground: each corner below it gets an impulse (bounce and friction); the deepest pushes it out
+      let deepest = 0, onGround = false;
+      for (const c of CORNERS) {
+        rot(pr.q, [c[0] * T.hx, c[1] * T.hy, c[2] * T.hz], R);
+        const px = pr.p[0] + R[0], py = pr.p[1] + R[1], pz = pr.p[2] + R[2];
+        const g = level.groundAt ? level.groundAt(px, pz, GA) : { h: 0, gx: 0, gz: 0 };
+        const depth = g.h - py;
+        if (depth <= 0) continue;
+        onGround = true;
+        deepest = Math.max(deepest, depth);
+        const nl = Math.hypot(g.gx, 1, g.gz), nrm = [-g.gx / nl, 1 / nl, -g.gz / nl], r = [R[0], R[1], R[2]];
+        const wr = cross(w, r), vc = [v[0] + wr[0], v[1] + wr[1], v[2] + wr[2]], vn = dot(vc, nrm);
+        if (vn >= 0) continue;
+        const rn = cross(r, nrm), k = 1 / T.m + dot(nrm, cross(invI(pr, rn), r));
+        const J = -(1 + (vn < -1 ? T.e : 0)) * vn / k;
+        impulse(pr, r, [nrm[0] * J, nrm[1] * J, nrm[2] * J]);
+        // friction against what's left of the sliding
+        const w2 = cross(w, r), vc2 = [v[0] + w2[0], v[1] + w2[1], v[2] + w2[2]], vn2 = dot(vc2, nrm);
+        const vt = [vc2[0] - vn2 * nrm[0], vc2[1] - vn2 * nrm[1], vc2[2] - vn2 * nrm[2]], st = Math.hypot(vt[0], vt[1], vt[2]);
+        if (st > 1e-4) {
+          const t = [vt[0] / st, vt[1] / st, vt[2] / st], rt = cross(r, t), kt = 1 / T.m + dot(t, cross(invI(pr, rt), r));
+          const Jt = Math.min(T.mu * J, st / kt);
+          impulse(pr, r, [-t[0] * Jt, -t[1] * Jt, -t[2] * Jt]);
+        }
+      }
+      if (deepest > 0) pr.p[1] += deepest * 0.8;
+      // buildings, barriers and trees: corners pushed out sideways, the velocity into them reflected
+      if (level.collidersNear) {
+        const base = level.terrain ? level.terrain(pr.p[0], pr.p[2]) : 0;
+        for (const o of level.collidersNear(pr.p[0], pr.p[2], T.hy + 1)) {
+          for (const c of CORNERS) {
+            rot(pr.q, [c[0] * T.hx, c[1] * T.hy, c[2] * T.hz], R);
+            const px = pr.p[0] + R[0], py = pr.p[1] + R[1], pz = pr.p[2] + R[2];
+            if (py - base > o.height) continue;
+            let nx = 0, nz = 0, pen = 0;
+            if (o.box) {
+              const oc = Math.cos(o.angle), os = Math.sin(o.angle), dx = px - o.x, dz = pz - o.z, u = dx * oc + dz * os, ww = -dx * os + dz * oc;
+              const pu = o.hx - Math.abs(u), pw = o.hz - Math.abs(ww);
+              if (pu <= 0 || pw <= 0) continue;
+              if (pu < pw) { pen = pu; nx = oc * Math.sign(u); nz = os * Math.sign(u); } else { pen = pw; nx = -os * Math.sign(ww); nz = oc * Math.sign(ww); }
+            } else {
+              const dx = px - o.x, dz = pz - o.z, d = Math.hypot(dx, dz);
+              if (d >= o.r || d < 1e-6) continue;
+              pen = o.r - d; nx = dx / d; nz = dz / d;
+            }
+            pr.p[0] += nx * pen; pr.p[2] += nz * pen;
+            const vn = v[0] * nx + v[2] * nz;
+            if (vn < 0) { v[0] -= 1.3 * vn * nx; v[2] -= 1.3 * vn * nz; w[0] *= 0.8; w[1] *= 0.8; w[2] *= 0.8; }
+          }
+        }
+      }
+      // air and rolling drag; asleep once it has stayed still for half a second on the ground
+      const da = Math.exp(-(onGround ? 4 : 0.05) * dt), wa = Math.exp(-(onGround ? 4 : 0.3) * dt);
+      if (onGround) { v[0] *= da; v[2] *= da; }
+      w[0] *= wa; w[1] *= wa; w[2] *= wa;
+      // (or after 8 s awake, crawling: settling against a wall it can jitter for ever)
+      pr.awakeT += dt;
+      const speed = Math.hypot(v[0], v[1], v[2]);
+      if (onGround && speed < 0.15 && Math.hypot(w[0], w[1], w[2]) < 0.3) pr.still += dt;
+      else pr.still = 0;
+      if (pr.still > 0.5 || (pr.awakeT > 8 && speed < 0.6)) { pr.awake = false; v[0] = v[1] = v[2] = w[0] = w[1] = w[2] = 0; }
+      pr.dirty = true;
+      file(pr);
+    }
+    // props touching each other: pushed apart as spheres, a sleeping one woken by a hard knock
+    function between(pr) {
+      const r1 = Math.min(pr.T.hx, pr.T.hy, pr.T.hz) + 0.05;
+      for (const o of near(pr.p[0], pr.p[2], 2, NB)) {
+        if (o === pr) continue;
+        const r2 = Math.min(o.T.hx, o.T.hy, o.T.hz) + 0.05;
+        const dx = o.p[0] - pr.p[0], dy = o.p[1] - pr.p[1], dz = o.p[2] - pr.p[2], d = Math.hypot(dx, dy, dz);
+        if (d >= r1 + r2 || d < 1e-6) continue;
+        const n = [dx / d, dy / d, dz / d], pen = r1 + r2 - d, ma = pr.T.m, mb = o.T.m;
+        const rv = (o.v[0] - pr.v[0]) * n[0] + (o.v[1] - pr.v[1]) * n[1] + (o.v[2] - pr.v[2]) * n[2];
+        if (!o.awake && rv > -1) {   // a gentle touch on a sleeping prop (resting on it): only this one moves
+          for (let i = 0; i < 3; i++) pr.p[i] -= n[i] * pen;
+          const vn = pr.v[0] * n[0] + pr.v[1] * n[1] + pr.v[2] * n[2];
+          if (vn > 0) for (let i = 0; i < 3; i++) pr.v[i] -= vn * n[i];
+          continue;
+        }
+        if (!o.awake) wake(o);
+        const sa = mb / (ma + mb), sb = ma / (ma + mb);
+        for (let i = 0; i < 3; i++) { pr.p[i] -= n[i] * pen * sa; o.p[i] += n[i] * pen * sb; }
+        if (rv < 0) { const J = -1.3 * rv / (1 / ma + 1 / mb); for (let i = 0; i < 3; i++) { pr.v[i] -= J * n[i] / ma; o.v[i] += J * n[i] / mb; } }
+      }
+    }
+
+    // ---------------------------------------------------------------- cars hitting props
+    const CB = {}, CANDS = [];
+    // the car's box in the ground plane (as world.js)
+    function carBox(c) {
+      const s = c.spec, ch = Math.cos(c.h), sh = Math.sin(c.h), off = s.xMin + s.length / 2 - c.cgX;
+      CB.x = c.x + ch * off; CB.z = c.z + sh * off; CB.ux = ch; CB.uz = sh; CB.hx = s.length / 2; CB.hz = s.width / 2;
+      return CB;
+    }
+    // the prop's extent along a horizontal unit vector (u, w): its box projected
+    function extent(pr, ux, uz) {
+      let e = 0;
+      for (const [ax, h] of [[[1, 0, 0], pr.T.hx], [[0, 1, 0], pr.T.hy], [[0, 0, 1], pr.T.hz]]) { rot(pr.q, ax, R); e += h * Math.abs(R[0] * ux + R[2] * uz); }
+      return e;
+    }
+    // which of the prop's axes lies flattest (its long way on the ground, for a toppled pole)
+    function mainAxis(pr) {
+      let best = -1, bx = 1, bz = 0;
+      for (const [ax, h] of [[[1, 0, 0], pr.T.hx], [[0, 1, 0], pr.T.hy], [[0, 0, 1], pr.T.hz]]) {
+        rot(pr.q, ax, R);
+        const l = Math.hypot(R[0], R[2]) * h;
+        if (l > best) { best = l; const n = Math.hypot(R[0], R[2]) || 1; bx = R[0] / n; bz = R[2] / n; }
+      }
+      return [bx, bz];
+    }
+    function vsCar(b, pr, hits) {
+      const c = b.car, A = carBox(c), T = pr.T;
+      // heights: the car's body from a little off the ground to 1.5 m up
+      const ey = extent3y(pr);
+      if (pr.p[1] - ey > c.y + 1.5 || pr.p[1] + ey < c.y + 0.12) return;
+      const [mx, mz] = mainAxis(pr);
+      const axes = [[A.ux, A.uz], [-A.uz, A.ux], [mx, mz], [-mz, mx]], dx = pr.p[0] - A.x, dz = pr.p[2] - A.z;
+      let best = Infinity, nx = 0, nz = 0;
+      for (const [ux, uz] of axes) {
+        const ra = A.hx * Math.abs(A.ux * ux + A.uz * uz) + A.hz * Math.abs(-A.uz * ux + A.ux * uz), rb = extent(pr, ux, uz);
+        const d = dx * ux + dz * uz, pen = ra + rb - Math.abs(d);
+        if (pen <= 0) return;
+        if (pen < best) { best = pen; const sg = d < 0 ? -1 : 1; nx = ux * sg; nz = uz * sg; }   // from the car toward the prop
+      }
+      const vrel = (c.vx - pr.v[0]) * nx + (c.vz - pr.v[2]) * nz;
+      pr.p[0] += nx * (best + 0.01); pr.p[2] += nz * (best + 0.01);
+      wake(pr);
+      if (vrel <= 0.3) return;
+      // hits are never quite central: it goes off to the side it was struck on (else the car would
+      // keep catching it and pushing it up the street)
+      {
+        const off = -dx * A.uz + dz * A.ux, side = Math.abs(off) > 0.05 ? Math.sign(off) : (pr.id % 2 ? 1 : -1);
+        const fwd = Math.abs(nx * A.ux + nz * A.uz);
+        nx += side * -A.uz * 0.6 * fwd; nz += side * A.ux * 0.6 * fwd;
+        const n = Math.hypot(nx, nz); nx /= n; nz /= n;
+      }
+      const M = b.kinematic ? Infinity : c.m, m = T.m;
+      let J;
+      if (T.pole && pr.hit === 0) {
+        // a street light or signal breaks off its base and topples away from the car
+        const vb = 0.45 * vrel;
+        pr.v[0] += nx * vb; pr.v[2] += nz * vb; pr.v[1] += 1.2;
+        const ax = cross([0, 1, 0], [nx, 0, nz]), sp = Math.min(5, 0.28 * vrel / (T.hy / 4));
+        pr.w[0] += ax[0] * sp; pr.w[1] += ax[1] * sp; pr.w[2] += ax[2] * sp;
+        J = m * vb * 1.6;
+      } else {
+        J = (1 + 0.4) * vrel / (1 / M + 1 / m);
+        // struck at bumper height on the near side: a push, a kick upward and a tumble
+        const r = [-nx * Math.min(T.hx, T.hz), Math.max(-T.hy, Math.min(T.hy, c.y + 0.5 - pr.p[1])), -nz * Math.min(T.hx, T.hz)];
+        impulse(pr, r, [nx * J, 0, nz * J]);
+        pr.v[1] += Math.min(6, 0.3 * J / m);
+        pr.w[1] += (pr.id % 2 ? 1 : -1) * Math.min(8, 0.15 * J / m);
+      }
+      limit(pr);
+      pr.hit++; pr.awakeT = 0;
+      if (M !== Infinity) c.applyImpulse(pr.p[0] - nx * extent(pr, nx, nz), pr.p[2] - nz * extent(pr, nx, nz), -nx * J, -nz * J);
+      hits.push({ prop: pr, body: b, type: pr.type, x: pr.p[0], y: pr.p[1], z: pr.p[2], vrel, dv: M === Infinity ? 0 : J / M, first: pr.hit === 1 });
+    }
+    // no prop faster than 35 m/s or spinning faster than 12 rad/s (6 for the poles)
+    function limit(pr) {
+      const s = Math.hypot(pr.v[0], pr.v[1], pr.v[2]), wmax = pr.T.pole ? 6 : 12, ws = Math.hypot(pr.w[0], pr.w[1], pr.w[2]);
+      if (s > 35) for (let i = 0; i < 3; i++) pr.v[i] *= 35 / s;
+      if (ws > wmax) for (let i = 0; i < 3; i++) pr.w[i] *= wmax / ws;
+    }
+    function extent3y(pr) {
+      let e = 0;
+      for (const [ax, h] of [[[1, 0, 0], pr.T.hx], [[0, 1, 0], pr.T.hy], [[0, 0, 1], pr.T.hz]]) { rot(pr.q, ax, R); e += h * Math.abs(R[1]); }
+      return e;
+    }
+
+    /* advance by dt (the world steps: whole 1/120 s steps are taken); bodies: the world's cars.
+     * -> hits this call: [{ prop, body, type, x, y, z, vrel, dv (the car's change of speed), first }] */
+    let acc = 0;
+    function step(dt, bodies) {
+      const hits = [];
+      acc += dt;
+      while (acc >= DT) {
+        acc -= DT;
+        for (const b of bodies) {
+          if (b.frozen) continue;
+          const c = b.car;
+          if (Math.abs(c.vx) + Math.abs(c.vz) < 0.3) continue;
+          for (const pr of near(c.x, c.z, 4, CANDS)) vsCar(b, pr, hits);
+        }
+        for (const pr of list) if (pr.awake) { integrate(pr, DT); between(pr); }
+      }
+      return hits;
+    }
+    return { list, step, TYPES, get awake() { return list.filter(p => p.awake).length; } };
+  }
+
+  return { create, TYPES };
+})();
+if (typeof module === 'object' && module.exports) module.exports = RaceProps;
 
 </script>
 <script>/* media/race/assets.js */
@@ -5357,6 +5819,7 @@ const FX = (() => {
     chip: { color: [0.58, 0.24, 0.16], size: [0.04, 0.07], grow: 0, life: [1.0, 1.8], speed: [1.5, 4.5], up: 1.2, gravity: 1, drag: 0.1, alpha: 1, glow: 0 },
     spark: { color: [1.0, 0.78, 0.35], size: [0.03, 0.05], grow: 0, life: [0.12, 0.3], speed: [3, 8], up: 0.8, gravity: 1, drag: 0.5, alpha: 1, glow: 1.5 },
     glass: { color: [0.75, 0.88, 0.95], size: [0.02, 0.04], grow: 0, life: [0.6, 1.2], speed: [1, 3], up: 0.5, gravity: 1, drag: 0.2, alpha: 0.9, glow: 0 },
+    water: { color: [0.72, 0.84, 0.95], size: [0.06, 0.12], grow: 0.8, life: [0.7, 1.3], speed: [6, 9], up: 1, gravity: 1, drag: 0.35, alpha: 0.6, glow: 0 },   // a burst hydrant (the Race game)
   };
 
   class Particles {
@@ -6348,10 +6811,10 @@ gl_Position = projectionMatrix * mvPosition;`);
         group.visible = true;
         api.prepareDestruction(fake);
         api.updateDestruction(0.0005, 0, 1, 0.5);
-        renderer.compile(scene(), camera);
+        renderer.compile(root(), camera);
         const culled = [];
         for (const { g } of D.debris) g.traverse((o) => { if (o.isMesh && o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
-        renderer.render(scene(), camera);
+        renderer.render(root(), camera);
         for (const o of culled) o.frustumCulled = true;
         api.clearDestruction();
         group.visible = was;
@@ -6424,7 +6887,10 @@ gl_Position = projectionMatrix * mvPosition;`);
         depthMat.dispose(); blackMat.dispose(); nodeTex.dispose();
       },
     };
+    // where debris and shards go: beside the car (its parent: the scene, or a group the game moves),
+    // and the whole scene, for compiling and drawing
     const scene = () => group.parent;
+    const root = () => { let o = group; while (o.parent) o = o.parent; return o; };
     return api;
   }
 
@@ -6701,7 +7167,9 @@ const RaceCrash = (() => {
  * The city comes from the level (level.js): the street as a ribbon along the circuit with its lane
  * markings, kerbs and pavements; side-street stubs and their barriers; buildings merged into a few
  * meshes whose facades are drawn by a shader (floors, window bays, a shop front at street level,
- * some windows lit), plus street lights, trees and traffic signals as instanced meshes.
+ * some windows lit), plus trees and barriers as instanced meshes. All of it follows the hills
+ * (level.terrain); the jump ramps are meshes of their own. Street lights, signal posts and the other
+ * props (props.js) are instanced per kind and redrawn when they move.
  *
  * Cars: the player's car is a CarModels instance (carmodel.js), skinned to its crash lattice, so it
  * can show the crash solver's damage without swapping models. Rivals and traffic share one merged
@@ -6772,11 +7240,17 @@ const RaceRender = (() => {
 
     const city = new T.Group();
     scene.add(city);
-    buildGround(city);
+    buildGround(city, level);
     buildStreet(city, level);
     buildBuildings(city, level);
     buildFurniture(city, level);
     buildStart(city, level);
+    buildRamps(city, level);
+    // the deformable car models (player, wrecks) and what breaks off them: raised to the ground's
+    // height for a crash on a hill (the crash solver works at height 0), else at 0
+    const crashRoot = new T.Group();
+    scene.add(crashRoot);
+    function setCrashLift(h) { crashRoot.position.y = h || 0; crashRoot.updateMatrixWorld(true); }
 
     // ------------------------------------------------ cars
     const carMeshes = {};   // key -> instanced set
@@ -6829,7 +7303,7 @@ const RaceRender = (() => {
         m.lat = lat;
         useEnv(m.group, env);
         m.group.visible = false;
-        scene.add(m.group);
+        crashRoot.add(m.group);
         m.warm(renderer, camera);
         return (made[key] = m);
       })();
@@ -6844,7 +7318,7 @@ const RaceRender = (() => {
     const PM = new T.Matrix4();
     function drawPlayer(st, spinDelta) {
       if (!player) return;
-      carMatrix(PM, st.x, st.z, st.h, st.pitch, st.roll);
+      carMatrix(PM, st.x, st.z, st.h, st.pitch, st.roll, st.lift);
       player.setRigid(PM, st.steer || 0, spinDelta || 0, UP, ZAXIS);
     }
     // a hidden deformable copy of a model, for the other car in a crash (made at load, so a crash
@@ -6855,7 +7329,7 @@ const RaceRender = (() => {
       const m = await CarModels.create(key, spec, lat, renderer);
       m.lat = lat;
       useEnv(m.group, env);
-      scene.add(m.group);
+      crashRoot.add(m.group);
       m.group.visible = false;
       wrecks[key] = m;
       return m;
@@ -6871,16 +7345,17 @@ const RaceRender = (() => {
       model.syncDestruction(view, t + 0.03, 2);   // what's about to break, two pieces a frame at most
       model.updateDestruction(t, k, k2, s);
     }
-    // crash camera: orbit a point, kept out of the buildings
+    // crash camera: orbit a point (at target.y, the ground's height there), kept out of the buildings
     function orbit(target, angle, radius, height, level) {
       let a = angle;
+      const y0 = target.y || 0;
       for (let tries = 0; tries < 12; tries++) {
         const x = target.x + Math.cos(a) * radius, z = target.z + Math.sin(a) * radius;
-        if (!level || !level.collidersNear(x, z, 0.5).some(o => o.box && insideBox(o, x, z, 0.6))) { camera.position.set(x, height, z); break; }
+        if (!level || !level.collidersNear(x, z, 0.5).some(o => o.box && insideBox(o, x, z, 0.6))) { camera.position.set(x, y0 + height, z); break; }
         a += 0.5;
-        camera.position.set(target.x + Math.cos(a) * radius, height, target.z + Math.sin(a) * radius);
+        camera.position.set(target.x + Math.cos(a) * radius, y0 + height, target.z + Math.sin(a) * radius);
       }
-      camera.lookAt(target.x, 0.7, target.z);
+      camera.lookAt(target.x, y0 + 0.7, target.z);
       if (Math.abs(camera.fov - 52) > 0.01) { camera.fov = cam.fov = 52; camera.updateProjectionMatrix(); }
       sun.position.set(target.x, 0, target.z).addScaledVector(SUN_DIR, 200);
       sun.target.position.set(target.x, 0, target.z); sun.target.updateMatrixWorld();
@@ -6893,21 +7368,24 @@ const RaceRender = (() => {
     }
 
     // ------------------------------------------------ camera
-    const cam = { mode: 'chase', pos: new T.Vector3(), look: new T.Vector3(), fov: 62, init: false, back: false };
+    const cam = { mode: 'chase', pos: new T.Vector3(), look: new T.Vector3(), fov: 62, init: false, back: false, y: 0 };
     const tmp = new T.Vector3(), tgt = new T.Vector3();
-    /* st: the followed car { x, z, h, speed, boost, yawRate }; dt: s */
+    /* st: the followed car { x, z, h, y (its height over hills and in the air), speed, boost }; dt: s */
     function follow(st, dt) {
       const c = Math.cos(st.h), s = Math.sin(st.h), sp = st.speed || 0;
+      // the camera's height follows the car's smoothly (a jump lifts it a moment later)
+      cam.y = cam.init ? cam.y + ((st.y || 0) - cam.y) * (1 - Math.exp(-dt * 6)) : (st.y || 0);
       if (cam.mode === 'chase') {
         const back = cam.back ? -1 : 1, dist = 6.4 + Math.min(1.6, sp / 40), height = 2.15 + Math.min(0.5, sp / 120);
-        tgt.set(st.x - c * dist * back, height, st.z - s * dist * back);
+        tgt.set(st.x - c * dist * back, cam.y + height, st.z - s * dist * back);
         if (!cam.init) { cam.pos.copy(tgt); cam.init = true; }
         const k = 1 - Math.exp(-dt * (cam.back ? 30 : 9));
         cam.pos.lerp(tgt, k);
-        cam.look.set(st.x + c * 4 * back, 1.1, st.z + s * 4 * back);
+        cam.pos.y = tgt.y;
+        cam.look.set(st.x + c * 4 * back, (st.y || 0) * 0.5 + cam.y * 0.5 + 1.1, st.z + s * 4 * back);
       } else {   // bumper
-        cam.pos.set(st.x + c * 1.2, 1.05, st.z + s * 1.2);
-        cam.look.set(st.x + c * 30, 0.9, st.z + s * 30);
+        cam.pos.set(st.x + c * 1.2, (st.y || 0) + 1.05, st.z + s * 1.2);
+        cam.look.set(st.x + c * 30, (st.y || 0) + 0.9, st.z + s * 30);
         cam.init = false;
       }
       camera.position.copy(cam.pos);
@@ -6930,7 +7408,41 @@ const RaceRender = (() => {
     window.addEventListener('resize', resize);
     function render() { renderer.render(scene, camera); }
 
-    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize };
+    // ------------------------------------------------ props (props.js): one instanced set per kind
+    const propSets = {}, PQ = new T.Quaternion(), PP = new T.Vector3(), PO = new T.Matrix4();
+    function prepareProps(props) {
+      const byType = {};
+      for (const pr of props.list) (byType[pr.type] = byType[pr.type] || []).push(pr);
+      for (const [type, list] of Object.entries(byType)) {
+        const meshes = propParts(type).map(([g, mat]) => {
+          const im = new T.InstancedMesh(g, mat, list.length);
+          im.castShadow = mat !== PROP_MATS.lamp; im.receiveShadow = true; im.frustumCulled = false;
+          im.instanceMatrix.setUsage(T.DynamicDrawUsage);
+          scene.add(im);
+          return im;
+        });
+        list.forEach((pr, i) => { pr.slot = i; });
+        propSets[type] = { meshes, list };
+      }
+      drawProps(true);
+    }
+    // the props that moved since the last call (all: every one)
+    function drawProps(all) {
+      for (const type in propSets) {
+        const set = propSets[type];
+        let any = false;
+        for (const pr of set.list) {
+          if (!all && !pr.dirty) continue;
+          pr.dirty = false; any = true;
+          PQ.set(pr.q[0], pr.q[1], pr.q[2], pr.q[3]);
+          M.compose(PP.set(pr.p[0], pr.p[1], pr.p[2]), PQ, S1).multiply(PO.makeTranslation(0, -pr.T.hy, 0));
+          for (const im of set.meshes) im.setMatrixAt(pr.slot, M);
+        }
+        if (any) for (const im of set.meshes) im.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift };
   }
 
   const MIRROR = new T.Matrix4().makeScale(1, 1, -1);
@@ -7021,32 +7533,62 @@ const RaceRender = (() => {
   function concrete() { return TEX.concrete || (TEX.concrete = canvasTex(256, 256, (c, w, h) => noise(c, w, h, '#8f8c86', 20, 20))); }
 
   // ---------------------------------------------------------------- ground
-  function buildGround(group) {
+  // the height of the hills (level.terrain), and the ground's up direction there
+  const groundY = (level, x, z) => (level.terrain ? level.terrain(x, z) : 0);
+  function groundN(level, x, z) {
+    if (!level.terrain) return [0, 1, 0];
+    const e = 0.5, gx = (level.terrain(x + e, z) - level.terrain(x - e, z)) / (2 * e), gz = (level.terrain(x, z + e) - level.terrain(x, z - e)) / (2 * e), n = Math.hypot(gx, 1, gz);
+    return [-gx / n, 1 / n, -gz / n];
+  }
+  function buildGround(group, level) {
     const g = new T.PlaneGeometry(6000, 6000);
     g.rotateX(-Math.PI / 2);
     let maps = surface('concrete', 6000);
     if (!maps) { const tex = concrete().clone(); tex.needsUpdate = true; tex.repeat.set(600, 600); maps = { map: tex }; }
     const m = new T.Mesh(g, new T.MeshStandardMaterial({ ...maps, color: 0x9a958c, roughness: 0.95 }));
-    m.position.y = -0.02; m.receiveShadow = true;
+    m.position.y = -0.15; m.receiveShadow = true;
     group.add(m);
+    // over the hills, a grid that follows the ground (the flat plane lies just below it elsewhere)
+    if (!level.hills || !level.hills.length) return;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [cx, cz, , sg] of level.hills) { x0 = Math.min(x0, cx - 3.6 * sg); x1 = Math.max(x1, cx + 3.6 * sg); z0 = Math.min(z0, cz - 3.6 * sg); z1 = Math.max(z1, cz + 3.6 * sg); }
+    const STEP = 4, nx = Math.ceil((x1 - x0) / STEP), nz = Math.ceil((z1 - z0) / STEP);
+    const tg = new T.PlaneGeometry(nx * STEP, nz * STEP, nx, nz);
+    tg.rotateX(-Math.PI / 2); tg.translate(x0 + nx * STEP / 2, 0, z0 + nz * STEP / 2);
+    const p = tg.attributes.position, uv = tg.attributes.uv;
+    // under the street and pavements (where it's hidden) it lies a little lower, so a coarse cell
+    // never shows through them
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i), under = Math.abs(level.nearest(x, z).l) < level.walkOut + 2;
+      p.setY(i, groundY(level, x, z) - (under ? 0.3 : 0.03)); uv.setXY(i, x / 10, z / 10);
+    }
+    tg.computeVertexNormals();
+    let hm = surface('concrete', 10);
+    if (!hm) { const tex = concrete().clone(); tex.needsUpdate = true; hm = { map: tex }; }
+    const hills = new T.Mesh(tg, new T.MeshStandardMaterial({ ...hm, color: 0x9a958c, roughness: 0.95 }));
+    hills.receiveShadow = true;
+    group.add(hills);
   }
 
-  // ribbon along the circuit between lateral offsets l0..l1, at height y; u across, v along (metres)
+  // ribbon along the circuit between lateral offsets l0..l1, at height y over the ground; u across,
+  // v along (metres). Vertices every `step` m along and about every 2.5 m across, so it follows the
+  // hills both ways.
   function ribbon(level, l0, l1, y, vScale, step = 2) {
-    const C = level.circuit, N = Math.ceil(level.length / step), pos = [], uv = [], idx = [];
+    const N = Math.ceil(level.length / step), A = Math.max(1, Math.ceil(Math.abs(l1 - l0) / 2.5)), pos = [], nrm = [], uv = [], idx = [];
     for (let i = 0; i <= N; i++) {
-      const s = Math.min(i * step, level.length), a = level.poseAt(s, l0), b = level.poseAt(s, l1);
-      pos.push(a.x, y, a.z, b.x, y, b.z);
-      uv.push(0, s / vScale, (l1 - l0) / vScale, s / vScale);
-      if (i < N) { const k = 2 * i; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+      const s = Math.min(i * step, level.length);
+      for (let j = 0; j <= A; j++) {
+        const l = l0 + (l1 - l0) * j / A, p = level.poseAt(s, l);
+        pos.push(p.x, groundY(level, p.x, p.z) + y, p.z); nrm.push(...groundN(level, p.x, p.z));
+        uv.push((l - l0) / vScale, s / vScale);
+      }
+      if (i < N) for (let j = 0; j < A; j++) { const k = i * (A + 1) + j, n = k + A + 1; idx.push(k, k + 1, n, k + 1, n + 1, n); }
     }
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
     g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
-    g.computeVertexNormals();
-    // make sure normals point up whatever the winding
-    const n = g.attributes.normal; for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0);
     return g;
   }
 
@@ -7062,7 +7604,7 @@ const RaceRender = (() => {
     for (const l of [-0.12, 0.12]) group.add(shadowed(new T.Mesh(ribbon(level, l - 0.06, l + 0.06, 0.004, 1), yellow)));
     for (const l of [-RH + 0.25, RH - 0.25]) group.add(shadowed(new T.Mesh(ribbon(level, l - 0.08, l + 0.08, 0.004, 1), white)));
     for (const l of [-3.5, 3.5]) group.add(shadowed(new T.Mesh(dashes(level, l, 0.07, 3, 9), white)));
-    // kerbs and pavements (flush: the cars and the crash solver keep to flat ground)
+    // kerbs and pavements (flush: the cars drive over them)
     const kerb = new T.MeshStandardMaterial({ ...(surface('concrete', 1) || { map: concrete() }), color: 0xc9c5bd, roughness: 0.85 });
     const walk = new T.MeshStandardMaterial({ ...(surface('pavers', 4) || { map: pavers() }), color: 0xffffff, roughness: 0.9 });
     for (const sg of [-1, 1]) {
@@ -7075,26 +7617,27 @@ const RaceRender = (() => {
     const stubMat = new T.MeshStandardMaterial({ ...(surface('asphalt', 8) || { map: asphalt() }), roughness: 0.92 });
     for (const q of level.sideStreets) {
       const p = level.poseAt(q.s, q.side * RH), hs = p.h + (q.side > 0 ? Math.PI / 2 : -Math.PI / 2);
-      const g = new T.PlaneGeometry(q.width, 26); g.rotateX(-Math.PI / 2);
+      const g = new T.PlaneGeometry(q.width, 26, 4, 13); g.rotateX(-Math.PI / 2);
       const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * q.width / 8, uv.getY(i) * 26 / 8);   // in 8 m, like the road
+      g.rotateY(-hs + Math.PI / 2); g.translate(p.x + Math.cos(hs) * 13, 0, p.z + Math.sin(hs) * 13);
+      const gp = g.attributes.position; for (let i = 0; i < gp.count; i++) gp.setY(i, groundY(level, gp.getX(i), gp.getZ(i)) + 0.01);
+      g.computeVertexNormals();
       const m = new T.Mesh(g, stubMat);
-      m.position.set(p.x + Math.cos(hs) * 13, 0.01, p.z + Math.sin(hs) * 13);
-      m.rotation.y = -hs + Math.PI / 2;
       m.receiveShadow = true;
       group.add(m);
     }
   }
   const shadowed = (m) => { m.receiveShadow = true; return m; };
   function dashes(level, l, half, len, gap) {
-    const pos = [], idx = [];
+    const pos = [], nrm = [], idx = [];
     for (let s = 0; s < level.length - len; s += len + gap) {
-      const a0 = level.poseAt(s, l - half), a1 = level.poseAt(s, l + half), b0 = level.poseAt(s + len, l - half), b1 = level.poseAt(s + len, l + half), k = pos.length / 3;
-      pos.push(a0.x, 0.004, a0.z, a1.x, 0.004, a1.z, b0.x, 0.004, b0.z, b1.x, 0.004, b1.z);
+      const k = pos.length / 3;
+      for (const p of [level.poseAt(s, l - half), level.poseAt(s, l + half), level.poseAt(s + len, l - half), level.poseAt(s + len, l + half)]) { pos.push(p.x, groundY(level, p.x, p.z) + 0.004, p.z); nrm.push(...groundN(level, p.x, p.z)); }
       idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
     }
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-    g.setAttribute('normal', new T.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => i % 3 === 1 ? 1 : 0), 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
     g.setIndex(idx);
     return g;
   }
@@ -7161,18 +7704,20 @@ float winMask; float frameMask; float litMask;`)
       const A = byStyle[b.style % STYLES.length], c = Math.cos(b.angle), s = Math.sin(b.angle), sd = (n++ * 0.6180339) % 1;
       const corner = (u, w) => [b.x + c * u * b.hx - s * w * b.hz, b.z + s * u * b.hx + c * w * b.hz];
       const P = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
+      // on a hill: the walls go 4 m below the ground at the middle; the facade counts from there
+      const base = groundY(level, b.x, b.z), y0 = base - (base > 0.01 ? 4 : 0), top = base + b.height, d0 = y0 - base;
       for (let e = 0; e < 4; e++) {
         const a = P[e], d = P[(e + 1) % 4], len = Math.hypot(d[0] - a[0], d[1] - a[1]);
         const nx = (d[1] - a[1]) / len, nz = -(d[0] - a[0]) / len;   // outward for this winding
         const k = A.pos.length / 3;
-        A.pos.push(a[0], 0, a[1], d[0], 0, d[1], d[0], b.height, d[1], a[0], b.height, a[1]);
+        A.pos.push(a[0], y0, a[1], d[0], y0, d[1], d[0], top, d[1], a[0], top, a[1]);
         for (let v = 0; v < 4; v++) { A.nrm.push(nx, 0, nz); A.seed.push(sd); }
-        A.uv.push(0, 0, len / 6, 0, len / 6, b.height / 6, 0, b.height / 6);
-        A.uvM.push(0, 0, len, 0, len, b.height, 0, b.height);
+        A.uv.push(0, d0 / 6, len / 6, d0 / 6, len / 6, b.height / 6, 0, b.height / 6);
+        A.uvM.push(0, d0, len, d0, len, b.height, 0, b.height);
         A.idx.push(k, k + 2, k + 1, k, k + 3, k + 2);
       }
       const k = roof.pos.length / 3;
-      for (const p of P) { roof.pos.push(p[0], b.height, p[1]); roof.nrm.push(0, 1, 0); }
+      for (const p of P) { roof.pos.push(p[0], top, p[1]); roof.nrm.push(0, 1, 0); }
       roof.idx.push(k, k + 2, k + 1, k, k + 3, k + 2);
     }
     STYLES.forEach((st, i) => {
@@ -7209,15 +7754,8 @@ float winMask; float frameMask; float litMask;`)
     return im;
   }
   function buildFurniture(group, level) {
-    const metal = new T.MeshStandardMaterial({ color: 0x3c4146, metalness: 0.6, roughness: 0.45 });
-    const at = (x, z, h, y = 0) => new T.Matrix4().makeRotationY(-h).setPosition(x, y, z);
-    // street lights: a pole, an arm over the road, a lamp
-    const pole = new T.CylinderGeometry(0.09, 0.13, 8, 10); pole.translate(0, 4, 0);
-    const arm = new T.BoxGeometry(2.2, 0.08, 0.08); arm.translate(1.1, 7.9, 0);
-    const head = new T.BoxGeometry(0.7, 0.14, 0.32); head.translate(2.1, 7.82, 0);
-    group.add(instanced(pole, metal, level.lamps, (o, m) => m.copy(at(o.x, o.z, o.h))));
-    group.add(instanced(arm, metal, level.lamps, (o, m) => m.copy(at(o.x, o.z, o.h))));
-    group.add(instanced(head, new T.MeshStandardMaterial({ color: 0x222222, emissive: 0xfff1d6, emissiveIntensity: 0.6 }), level.lamps, (o, m) => m.copy(at(o.x, o.z, o.h)), false));
+    // on the ground at (x, z) facing h (street lights and signal posts are props: see prepareProps)
+    const at = (x, z, h) => new T.Matrix4().makeRotationY(-h).setPosition(x, groundY(level, x, z), z);
     // trees: trunk and a cluster of leafy blobs
     const bark = new T.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.95 });
     const leaf = leafMaterial();
@@ -7227,11 +7765,6 @@ float winMask; float frameMask; float litMask;`)
     const crowns = instanced(crown, leaf, level.trees, (o, m) => m.copy(at(o.x, o.z, o.seed)).scale(new T.Vector3(o.size, o.size, o.size)));
     level.trees.forEach((o, i) => crowns.setColorAt(i, new T.Color().setHSL(0.26 + 0.03 * Math.sin(o.seed * 7.1), 0.5, 0.26 + 0.04 * Math.cos(o.seed * 3.3))));
     group.add(crowns);
-    // traffic signals at the side streets: post, arm, head (lights red: the side streets are closed)
-    const spost = new T.CylinderGeometry(0.1, 0.12, 6, 8); spost.translate(0, 3, 0);
-    const shead = new T.BoxGeometry(0.35, 1.0, 0.35); shead.translate(0, 4.3, 0);
-    group.add(instanced(spost, metal, level.signals, (o, m) => m.copy(at(o.x, o.z, o.h))));
-    group.add(instanced(shead, new T.MeshStandardMaterial({ color: 0x1b1d1f, emissive: 0x401010, roughness: 0.5 }), level.signals, (o, m) => m.copy(at(o.x, o.z, o.h))));
     // barriers across the side streets: red and white concrete blocks
     const block = new T.BoxGeometry(1.9, 1.0, 0.6); block.translate(0, 0.5, 0);
     const blocks = [];
@@ -7295,7 +7828,7 @@ float lnoise(vec3 p) {
     line.wrapS = T.RepeatWrapping; line.repeat.set(1.25, 1);   // 20 squares across the street, 2 along it
     const g = new T.PlaneGeometry(level.roadHalf * 2, 1.6); g.rotateX(-Math.PI / 2);   // across the street, 1.6 m deep
     const m = new T.Mesh(g, new T.MeshStandardMaterial({ map: line, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -3 }));
-    m.position.set(p.x, 0.006, p.z); m.rotation.y = -p.h + Math.PI / 2;
+    m.position.set(p.x, groundY(level, p.x, p.z) + 0.006, p.z); m.rotation.y = -p.h + Math.PI / 2;
     m.receiveShadow = true;
     group.add(m);
     // gantry over the street
@@ -7304,9 +7837,83 @@ float lnoise(vec3 p) {
     for (const sg of [-1, 1]) { const leg = new T.Mesh(new T.BoxGeometry(0.4, 7, 0.4), steel); leg.position.set(0, 3.5, sg * (level.roadHalf + 1)); leg.castShadow = true; legs.add(leg); }
     const beam = new T.Mesh(new T.BoxGeometry(0.6, 1.2, level.roadHalf * 2 + 2.4), new T.MeshStandardMaterial({ color: 0x1d2024, emissive: 0x0c2a4a, roughness: 0.5 }));
     beam.position.y = 7; beam.castShadow = true; legs.add(beam);
-    legs.position.set(p.x, 0, p.z); legs.rotation.y = -p.h;
+    legs.position.set(p.x, groundY(level, p.x, p.z), p.z); legs.rotation.y = -p.h;
     group.add(legs);
     // tell CarModels / colliders nothing: the gantry legs stand beyond the kerbs
+  }
+
+  // ---------------------------------------------------------------- jump ramps
+  // across the street: a concrete top with yellow chevrons pointing the way, hazard-striped sides
+  function buildRamps(group, level) {
+    if (!level.ramps || !level.ramps.length) return;
+    const topTex = canvasTex(512, 256, (c, w, h) => {
+      noise(c, w, h, '#77746e', 22, 30);
+      c.fillStyle = '#e6b31e';
+      for (let i = 0; i < 4; i++) {   // chevrons along u (x), each spanning the width
+        const x0 = 40 + i * 120;
+        c.beginPath(); c.moveTo(x0, 0); c.lineTo(x0 + 60, h / 2); c.lineTo(x0, h); c.lineTo(x0 + 28, h); c.lineTo(x0 + 88, h / 2); c.lineTo(x0 + 28, 0); c.closePath(); c.fill();
+      }
+    });
+    const sideTex = canvasTex(256, 64, (c, w, h) => { c.fillStyle = '#e6b31e'; c.fillRect(0, 0, w, h); c.fillStyle = '#16171a'; for (let x = -h; x < w; x += 32) { c.beginPath(); c.moveTo(x, h); c.lineTo(x + 16, h); c.lineTo(x + 16 + h, 0); c.lineTo(x + h, 0); c.closePath(); c.fill(); } });
+    sideTex.wrapS = T.RepeatWrapping; topTex.wrapT = T.RepeatWrapping;
+    const topMat = new T.MeshStandardMaterial({ map: topTex, roughness: 0.85, side: T.DoubleSide });
+    const sideMat = new T.MeshStandardMaterial({ map: sideTex, roughness: 0.7, side: T.DoubleSide });
+    const RH = level.roadHalf;
+    for (const r of level.ramps) {
+      const ch = Math.cos(r.h), sh = Math.sin(r.h), N = Math.ceil(r.len / 0.5);
+      const at = (u, l) => [r.x + ch * u - sh * l, r.z + sh * u + ch * l];
+      const tp = [], tuv = [], tidx = [], sp = [], suv = [], sidx = [];
+      for (let i = 0; i <= N; i++) {
+        const u = Math.min(r.len, i * 0.5), hh = level.rampProfile(r, Math.min(u, r.len - 1e-6))[0];
+        for (const l of [-RH, RH]) {
+          const [x, z] = at(u, l), g = groundY(level, x, z);
+          tp.push(x, g + hh + 0.01, z); tuv.push(u / r.len, (l + RH) / (2 * RH) * 4);   // four rows of chevrons across
+          sp.push(x, g, z, x, g + hh + 0.01, z); suv.push(u / 4, 0, u / 4, Math.max(0.05, hh) / 1.6);
+        }
+        if (i < N) {
+          const k = 2 * i; tidx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
+          for (const side of [0, 1]) { const a = 4 * i + 2 * side, b = a + 4; sidx.push(a, b, a + 1, a + 1, b, b + 1); }
+        }
+      }
+      const mk = (pos, uv, idx, mat) => {
+        const g = new T.BufferGeometry();
+        g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+        g.computeVertexNormals();
+        const m = new T.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; group.add(m);
+        return g;
+      };
+      const tg = mk(tp, tuv, tidx, topMat);
+      const n = tg.attributes.normal; if (n.getY(0) < 0) for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));   // facing up
+      mk(sp, suv, sidx, sideMat);
+    }
+  }
+
+  // ---------------------------------------------------------------- props' meshes
+  // each kind's meshes with its base at y = 0 (props.js puts its box's centre hy above that):
+  // [[geometry, material], ...]; colours per vertex
+  const PROP_MATS = {};
+  function propParts(type) {
+    const M = PROP_MATS;
+    M.paint = M.paint || new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.15 });
+    M.metal = M.metal || new T.MeshStandardMaterial({ color: 0x3c4146, metalness: 0.6, roughness: 0.45 });
+    M.lamp = M.lamp || new T.MeshStandardMaterial({ color: 0x222222, emissive: 0xfff1d6, emissiveIntensity: 0.6 });
+    M.signal = M.signal || new T.MeshStandardMaterial({ color: 0x1b1d1f, emissive: 0x401010, roughness: 0.5 });
+    const box = (w, h, d, x, y, z) => { const g = new T.BoxGeometry(w, h, d); g.translate(x, y, z); return g; };
+    const cyl = (r0, r1, h, y, seg = 14) => { const g = new T.CylinderGeometry(r0, r1, h, seg); g.translate(0, y, 0); return g; };
+    const colour = (g, hex) => { const c = new T.Color(hex), n = g.attributes.position.count, a = new Float32Array(3 * n); for (let i = 0; i < n; i++) { a[3 * i] = c.r; a[3 * i + 1] = c.g; a[3 * i + 2] = c.b; } g.setAttribute('color', new T.BufferAttribute(a, 3)); return g; };
+    const painted = (parts) => [[window.mergeGeometries(parts.map(([g, hex]) => colour(g, hex))), M.paint]];
+    switch (type) {
+      case 'lamp': return [[window.mergeGeometries([cyl(0.09, 0.13, 8, 4, 10), box(2.2, 0.08, 0.08, 1.1, 7.9, 0)]), M.metal], [box(0.7, 0.14, 0.32, 2.1, 7.82, 0), M.lamp]];
+      case 'signal': return [[cyl(0.1, 0.12, 6, 3, 8), M.metal], [box(0.35, 1.0, 0.35, 0, 4.3, 0), M.signal]];
+      case 'cone': return painted([[cyl(0.03, 0.2, 0.66, 0.37), 0xf26a1b], [cyl(0.11, 0.14, 0.12, 0.35), 0xf2f2ee], [box(0.42, 0.04, 0.42, 0, 0.02, 0), 0x1d1e20]]);
+      case 'bin': return painted([[cyl(0.3, 0.27, 0.92, 0.46), 0x2f4a36], [cyl(0.32, 0.32, 0.06, 0.95), 0x22352a]]);
+      case 'newsbox': return painted([[box(0.5, 0.75, 0.45, 0, 0.62, 0), 0x1f4fa0], [box(0.3, 0.25, 0.3, 0, 0.125, 0), 0x2a2c30], [box(0.36, 0.22, 0.03, 0, 0.78, 0.23), 0xd9dde2]]);
+      case 'hydrant': return painted([[cyl(0.13, 0.15, 0.6, 0.3), 0xb3201b], [cyl(0.06, 0.16, 0.14, 0.67), 0xb3201b], [box(0.42, 0.1, 0.1, 0, 0.42, 0), 0xc8a32a], [cyl(0.18, 0.18, 0.06, 0.03), 0x2a2c30]]);
+      case 'bench': return painted([[box(1.8, 0.06, 0.45, 0, 0.45, 0), 0x8a5a33], [box(1.8, 0.38, 0.05, 0, 0.76, -0.2), 0x8a5a33], [box(0.06, 0.45, 0.45, -0.8, 0.225, 0), 0x1d1e20], [box(0.06, 0.45, 0.45, 0.8, 0.225, 0), 0x1d1e20]]);
+      case 'crate': return painted([[box(0.8, 0.8, 0.8, 0, 0.4, 0), 0xa8794a], [box(0.82, 0.08, 0.82, 0, 0.1, 0), 0x7d5733], [box(0.82, 0.08, 0.82, 0, 0.7, 0), 0x7d5733]]);
+      case 'barrel': return painted([[cyl(0.29, 0.29, 0.88, 0.44, 16), 0xb5361f], [cyl(0.3, 0.3, 0.04, 0.3, 16), 0x5a1a10], [cyl(0.3, 0.3, 0.04, 0.6, 16), 0x5a1a10]]);
+    }
+    return painted([[box(0.5, 0.5, 0.5, 0, 0.25, 0), 0x888888]]);
   }
 
   // ---------------------------------------------------------------- instanced cars
@@ -7403,6 +8010,7 @@ const RaceGame = (() => {
   const L = level.length;
   const R = RaceRender.create({ level, container: $('#view') });
   const world = RaceWorld.create(level);
+  const props = RaceProps.create(level);   // street lights, signals, cones, bins ... to knock over
   const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
   const DAMAGE = q.get('damage') === 'dramatic' ? 'dramatic' : 'realistic';
   // the car-select screen's cars and paints (sRGB). Scripted runs (?test, ?director: the trailer
@@ -7483,6 +8091,32 @@ const RaceGame = (() => {
   let boost = 0.3, takedowns = 0, slowmo = 0;
   const lastHit = new Map();   // rival -> race time of the player's last contact with it
   function gainBoost(x, label) { boost = Math.min(1, boost + x); if (label) chip(label); }
+
+  // ---------------------------------------------------------------- health
+  // Hits wear the car down by how hard they are (RaceWorld.hitDamage: scrapes and nudges are free, a
+  // square 47 km/h hit on a wall takes about a fifth); the full crash comes when it runs out, or at
+  // once from a hit hard enough to empty it. Back to full after a crash.
+  let health = 1, hurtT = 0, hurtAt = -1, hurtD = 0;
+  function hurt(d) {
+    health = Math.max(0, health - d);
+    hurtT = Math.min(1, 0.25 + d * 3);
+    // the bar flashes red (an opacity animation: the compositor runs it, nothing is laid out again)
+    if ($('#health-flash').animate) $('#health-flash').animate([{ opacity: 0.85 }, { opacity: 0 }], { duration: 400, easing: 'ease-out' });
+    if (d > 0.08) chip(`Damage ${Math.round(d * 100)}%`);
+  }
+  // props knocked over: a sound, sparks or splinters, a little boost for the player; a burst hydrant
+  // sprays for a few seconds
+  const geysers = [];
+  const SPLINTERS = { crate: 'chip', bench: 'chip' };
+  function propHit(h) {
+    const mine = h.body === me, d = Math.hypot(h.x - car.x, h.z - car.z);
+    if (d > 90) return;
+    const pos = [h.x, h.y, h.z];
+    if (h.prop.T.metal) { FX.clank(Math.min(30, h.prop.T.m / 4) * Math.min(1, h.vrel / 12), pos); sparks.spawn(h.x, h.y, h.z, Math.min(18, 3 + Math.round(h.vrel)), 'spark', [0, 0.5, 0]); }
+    else { FX.hit(Math.min(8000, h.prop.T.m * h.vrel * 20), pos); if (SPLINTERS[h.type]) sparks.spawn(h.x, h.y, h.z, 10, 'chip', [0, 0.6, 0]); }
+    if (h.first && h.type === 'hydrant') geysers.push({ x: h.x, z: h.z, y: level.terrain(h.x, h.z), t: 6 });
+    if (mine && h.first && state === 'race') { gainBoost(0.02, null); RaceInput.rumble(0.25, 0.4, 70); }
+  }
   function nearMisses() {
     for (const t of traffic.cars) {
       const kind = RaceAI.nearMiss(car, t);
@@ -7514,6 +8148,9 @@ const RaceGame = (() => {
     const shapes = { boxes: near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height })), cyls: near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height })) };
     crash = RaceCrash.start({ units, world: shapes, duration: 1.6, damage: DAMAGE });
     crash.impactKmh = e.vn * 3.6;
+    // the solver's ground is flat at 0: the crash is drawn at the ground's height here
+    crash.lift = level.groundAt(car.x, car.z).h;
+    R.setCrashLift(crash.lift); PT.y = crash.lift;
     crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: paintOf(b) }));
     for (const U of crashUnits) { U.body.frozen = true; if (U.model !== R.player) { U.model.group.visible = true; if (U.paint !== undefined) U.model.setPaint(U.paint); } }
     frozenDraw = drawStates();   // the street as it was, for the crash camera
@@ -7526,7 +8163,7 @@ const RaceGame = (() => {
     $('#crash-speed').textContent = `Impact ${Math.round(crash.impactKmh)} km/h`;
     if (TEST) testOut.crashAt = performance.now();
   }
-  const PT = { x: 0, z: 0 };
+  const PT = { x: 0, z: 0, y: 0 };   // the crash camera's target (y: the ground's height there)
   // play crash frames on the crash's models at time t (frame cursor kept in kCur)
   function showCrashFrame(cr, units, t) {
     const F = cr.F, n = F.t.length;
@@ -7566,14 +8203,15 @@ const RaceGame = (() => {
     evPending.cursor = cr.events.length;
     evPending.push(...fresh);
     evPending.sort((a, b) => a.t - b.t);
+    const lift = cr.lift || 0;   // the crash is drawn at the ground's height there
     while (evPending.length && evPending[0].t <= t) {
-      const e = evPending.shift(), pos = [e.x, e.y, e.z];
-      if (e.type === 'first') { FX.crunch(1, pos); sparks.spawn(e.x, e.y, e.z, 40, 'spark', [0, 0.6, 0]); sparks.spawn(e.x, e.y, e.z, 16, 'dust'); }
-      else if (e.type === 'contact') { if (Math.random() < 0.25) FX.crunch(Math.min(1, e.mag / 3000), pos); if (Math.random() < 0.5) sparks.spawn(e.x, e.y, e.z, 4, 'spark', [0, 0.3, 0]); }
-      else if (e.type === 'detach') { FX.tear(e.mass, pos); FX.clank(e.mass, pos); sparks.spawn(e.x, e.y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); }
-      else if (e.type === 'glass') { FX.glass(e.mass, pos); sparks.spawn(e.x, e.y, e.z, 12, 'glass'); }
+      const e = evPending.shift(), y = e.y + lift, pos = [e.x, y, e.z];
+      if (e.type === 'first') { FX.crunch(1, pos); sparks.spawn(e.x, y, e.z, 40, 'spark', [0, 0.6, 0]); sparks.spawn(e.x, y, e.z, 16, 'dust'); }
+      else if (e.type === 'contact') { if (Math.random() < 0.25) FX.crunch(Math.min(1, e.mag / 3000), pos); if (Math.random() < 0.5) sparks.spawn(e.x, y, e.z, 4, 'spark', [0, 0.3, 0]); }
+      else if (e.type === 'detach') { FX.tear(e.mass, pos); FX.clank(e.mass, pos); sparks.spawn(e.x, y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); }
+      else if (e.type === 'glass') { FX.glass(e.mass, pos); sparks.spawn(e.x, y, e.z, 12, 'glass'); }
       else if (e.type === 'crack') FX.crack(0.8, pos);
-      else if (e.type === 'burst') { FX.blowout(pos); sparks.spawn(e.x, 0.15, e.z, 10, 'dust'); }
+      else if (e.type === 'burst') { FX.blowout(pos); sparks.spawn(e.x, lift + 0.15, e.z, 10, 'dust'); }
     }
   }
   function respawn() {
@@ -7597,6 +8235,8 @@ const RaceGame = (() => {
     }
     if (TEST) { testOut.respawnMs = performance.now() - testOut.crashAt; testOut.parts = crash.debris.length; testOut.glass = crash.glass.length; testOut.mode = crash.mode; testOut.T0 = crash.T0; }
     state = prog.done ? 'finished' : 'race'; crash = null; crashUnits = []; frozenDraw = null;
+    health = 1;   // repaired
+    R.setCrashLift(0); PT.y = 0;
     FX.setTimeScale(1);
     if (audio) FX.engineStart();
     $('#crash').hidden = true;
@@ -7613,6 +8253,7 @@ const RaceGame = (() => {
     const cin = Cinematic.fromCrash({ units: res.units.map((u, i) => Object.assign({}, u, { axes: cr.F.unitAxes[i] })), frames: cr.F, T0: res.T0, contact: res.contact }, cr.events);
     replay = { cr, units, cin, t: Math.max(0, res.T0 - 0.15), end: cr.F.t[cr.F.t.length - 1], prevState: state };
     evPending = []; kCur = 0; camAngle = 0.4;
+    R.setCrashLift(cr.lift); PT.y = cr.lift || 0;
     state = 'replay';
     $('#results').hidden = true; $('#replay-bar').hidden = false;
   }
@@ -7630,6 +8271,7 @@ const RaceGame = (() => {
   function endReplay() {
     for (const U of replay.units) { U.model.clearDestruction(); if (U.model !== R.player) U.model.group.visible = false; }
     state = replay.prevState; replay = null;
+    R.setCrashLift(0); PT.y = 0;
     FX.setTimeScale(1);
     $('#replay-bar').hidden = true;
     if (state === 'finished') $('#results').hidden = false;
@@ -7693,6 +8335,11 @@ const RaceGame = (() => {
     $('#hud-best').textContent = fmtTime(prog.best);
     $('#boost-fill').style.width = `${Math.round(boost * 100)}%`;
     $('#boost').classList.toggle('on', car.boosting);
+    $('#health-fill').style.width = `${Math.round(health * 100)}%`;
+    const hc = 'health' + (health > 0.5 ? '' : health > 0.25 ? ' low' : ' critical');
+    if ($('#health').className !== hc) $('#health').className = hc;
+    if (hurtT > 0) hurtT = Math.max(0, hurtT - dt * 1.8);
+    $('#hurt').style.opacity = hurtT.toFixed(3);
     $('#hud-td').textContent = takedowns;
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('#msg').hidden = true; }
     if (chipT > 0) { chipT -= dt; if (chipT <= 0) $('#chip').hidden = true; }
@@ -7778,7 +8425,7 @@ const RaceGame = (() => {
   const director = { input: null, camera: null };
   function playerInput() {
     if (director.input) return director.input(STEP);
-    if (TEST === 'takedown') return { throttle: 1, steer: simT < 2.8 ? 0.5 : -0.3 };
+    if (TEST === 'takedown') return { throttle: 1, steer: simT < 1.2 ? 0.5 : -0.5 };   // shove, then pull away
     if (TEST) return testDrive;
     if (state === 'finished' && autopilot) return ai.drive(autopilot, STEP, ctxAI);
     const want = !!input.boost && boost > 0.01;
@@ -7819,6 +8466,7 @@ const RaceGame = (() => {
         if (state === 'race' || state === 'finished' || state === 'crash') simT += STEP;
         acc -= STEP;
         for (const e of ev) handleContact(e);
+        for (const h of props.step(STEP, world.bodies)) propHit(h);
         if (state === 'race' || state === 'finished') track(simT);
         for (const r of ai.rivals) {
           ai.track(r, simT, level.laps);
@@ -7838,18 +8486,26 @@ const RaceGame = (() => {
     if (state === 'crash') updateCrash(dt, input);
     else if (state !== 'replay') {
       const p = car.pose, spinNow = car.wheels[2].spin;
-      R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch, roll: car.roll, steer: car.steer }, spinNow - prevSpin);
+      R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: car.roll + car.gRoll, lift: car.y, steer: car.steer }, spinNow - prevSpin);
       prevSpin = spinNow;
       // the car faces the camera: a front three-quarter view, swaying 3-37 degrees off the nose
-      if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
-      else R.follow({ x: p.x, z: p.z, h: p.heading, speed: car.speed, boost: car.boosting }, dt);
+      if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
+      else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dt);
     }
     // everyone else (instanced): the street as it was during a crash or replay
     const draws = (state === 'crash' || state === 'replay') && frozenDraw ? frozenDraw : drawStates();
     const slots = { lexus: 0, mustang: 0 };
     for (const d of draws) R.drawCar(d.key, slots[d.key]++, d);
     R.endCars();
+    // burst hydrants spray for a few seconds
+    for (let i = geysers.length - 1; i >= 0; i--) {
+      const g = geysers[i];
+      g.t -= dt;
+      if (g.t <= 0) { geysers.splice(i, 1); continue; }
+      sparks.spawn(g.x, g.y + 0.2, g.z, Math.max(1, Math.round(60 * dt * Math.min(1, g.t / 2))), 'water', [0, 4, 0]);
+    }
     sparks.update(dt);
+    R.drawProps();
     sparks.setScale(R.renderer.domElement.height / (2 * Math.tan(R.camera.fov * Math.PI / 360)));
     if (audio && (state === 'race' || state === 'countdown' || state === 'finished')) FX.engineUpdate(car.forward * 3.6, Math.max(car.throttle, input.throttle || 0), state === 'countdown' ? 900 + 4500 * (input.throttle || 0) : car.rpm);
     hud(dt, simT);
@@ -7860,7 +8516,7 @@ const RaceGame = (() => {
   // what to draw for the other cars
   function drawStates() {
     const out = [];
-    const add = (body, key, paint) => { if (body.frozen && state !== 'select' && state !== 'countdown') return; const c = body.car, p = c.pose; out.push({ key, x: p.x, z: p.z, h: p.heading, pitch: c.pitch, roll: c.roll, steer: c.steer, spins: c.wheels.map(w => w.spin), paint }); };
+    const add = (body, key, paint) => { if (body.frozen && state !== 'select' && state !== 'countdown') return; const c = body.car, p = c.pose; out.push({ key, x: p.x, z: p.z, h: p.heading, pitch: c.pitch + c.gPitch, roll: c.roll + c.gRoll, lift: c.y, steer: c.steer, spins: c.wheels.map(w => w.spin), paint }); };
     for (const r of ai.rivals) add(r.body, r.key, r.paint);
     for (const t of traffic.cars) add(t.body, t.key, t.paint);
     for (const o of extra) add(o.body, o.key, o.paint);
@@ -7873,7 +8529,22 @@ const RaceGame = (() => {
     const mine = e.a === me || e.b === me;
     if (TEST && (e.a.rival || (e.b && e.b.rival) || mine && e.vn > 1)) (testOut.contacts = testOut.contacts || []).push([+simT.toFixed(2), e.kind, e.a === me ? 'me' : e.a.rival ? 'rival' : 'x', e.b === me ? 'me' : e.b && e.b.rival ? 'rival' : e.b ? 'x' : 'static', +e.vn.toFixed(1), e.crash]);
     const other = e.a === me ? e.b : e.b === me ? e.a : null;
-    if (mine && e.crash && state === 'race') { triggerCrash(e); return; }
+    if (e.kind === 'land') {   // touching down after a jump or a crest
+      if (mine && e.vn > 3) {
+        FX.thud(Math.min(40, e.vn * 5), [e.x, car.y, e.z]); RaceInput.rumble(Math.min(1, e.vn / 10), 0.5, 140);
+        if (e.vn > 5) sparks.spawn(e.x, car.y + 0.1, e.z, 14, 'spark', [car.vx * 0.2, 0.4, car.vz * 0.2]);
+      }
+      return;
+    }
+    // the player: the hit wears the health down; the crash when it's gone
+    if (mine && state === 'race' && !me.ghost) {
+      let d = RaceWorld.hitDamage(e, me);
+      // one hit can touch several times in a few steps: within 0.15 s only the worst one counts
+      if (simT - hurtAt < 0.15) { const extra = Math.max(0, d - hurtD); hurtD = Math.max(hurtD, d); d = extra; }
+      else if (d > 0) { hurtAt = simT; hurtD = d; }
+      if (d > 0) hurt(d);
+      if (health <= 0) { triggerCrash(e); return; }
+    }
     if (mine && other && other.rival) {
       lastHit.set(other.rival, simT);
       // a solid shunt unsettles the rival: a yaw kick away from the hit, and a moment out of control
@@ -7885,9 +8556,9 @@ const RaceGame = (() => {
     }
     if (mine && other && other.traffic) other.traffic.touched = true;
     if (mine && e.vn > 2) {
-      const pos = [e.x, 0.5, e.z];
+      const pos = [e.x, car.y + 0.5, e.z];
       FX.hit(Math.min(4e5, e.J * 40), pos);
-      sparks.spawn(e.x, 0.45, e.z, Math.min(60, 8 + e.vn * 3), 'spark', [e.nx * 2 + car.vx * 0.3, 1.5, e.nz * 2 + car.vz * 0.3]);
+      sparks.spawn(e.x, car.y + 0.45, e.z, Math.min(60, 8 + e.vn * 3), 'spark', [e.nx * 2 + car.vx * 0.3, 1.5, e.nz * 2 + car.vz * 0.3]);
       RaceInput.rumble(Math.min(1, e.vn / 15), 0.3, 120);
     }
     // a rival wrecked (without wrecking the player): spun out; a takedown if the player hit it just
@@ -7926,7 +8597,7 @@ const RaceGame = (() => {
       const f = level.nearest(b.x, b.z), p = level.poseAt(f.s, -5.25);
       car.place(p.x, p.z, Math.atan2(b.z - p.z, b.x - p.x), 150 / 3.6);
     } else if (TEST === 'takedown') {
-      // side by side at 100 km/h, the rival on the kerb side: steer into it, toward the street lights
+      // side by side at 100 km/h, the rival on the kerb side: shove it toward the trees, pull away
       const p = level.poseAt(300, 1.75), r = ai.rivals[0], p2 = level.poseAt(300, 5.25);
       car.place(p.x, p.z, p.h, 100 / 3.6); r.body.car.place(p2.x, p2.z, p2.h, 100 / 3.6); r.lane = r.l = r.laneT = 5.25; r.prog.prevS = 300;
     } else if (TEST === 'headon') {
@@ -7945,12 +8616,18 @@ const RaceGame = (() => {
     const workerMode = RaceCrash.prepare();
     await R.preparePlayer(carKey, specs[carKey], PAINTS[paintIdx].hex);   // warmed for a crash there
     await R.prepareCars(['lexus', 'mustang'], 48);
+    R.prepareProps(props);
     await R.prepareWreck('lexus', specs.lexus);
     await R.prepareWreck('mustang', specs.mustang);
     for (const m of [R.wrecks.lexus, R.wrecks.mustang]) m.warm(R.renderer, R.camera);
     R.renderer.compile(R.scene, R.camera);
-    // draw the particles once too (they draw nothing until the first crash)
+    // draw the particles once too (they draw nothing until the first crash), and everything else with
+    // the frustum culling off: some drivers finish a shader only at its first draw, and the crash
+    // camera may be the first to see a ramp
+    const culled = [];
+    R.scene.traverse((o) => { if (o.frustumCulled && (o.isMesh || o.isPoints)) { o.frustumCulled = false; culled.push(o); } });
     sparks.spawn(car.x, 1, car.z, 4, 'spark'); sparks.update(1e-3); R.render();
+    for (const o of culled) o.frustumCulled = true;
     sparks.n = 0; sparks.update(0);
     await workerMode;
     $('#loading').hidden = true;
@@ -7964,7 +8641,7 @@ const RaceGame = (() => {
   }
   start().catch((err) => { $('#loading').textContent = 'Could not start: ' + err.message; console.error(err); });
 
-  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return PAINTS[paintIdx]; }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, standings };
+  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return PAINTS[paintIdx]; }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, get health() { return health; }, props, standings };
 })();
 
 </script>

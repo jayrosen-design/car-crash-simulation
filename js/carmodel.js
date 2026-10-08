@@ -784,10 +784,10 @@ gl_Position = projectionMatrix * mvPosition;`);
         group.visible = true;
         api.prepareDestruction(fake);
         api.updateDestruction(0.0005, 0, 1, 0.5);
-        renderer.compile(scene(), camera);
+        renderer.compile(root(), camera);
         const culled = [];
         for (const { g } of D.debris) g.traverse((o) => { if (o.isMesh && o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
-        renderer.render(scene(), camera);
+        renderer.render(root(), camera);
         for (const o of culled) o.frustumCulled = true;
         api.clearDestruction();
         group.visible = was;
@@ -860,7 +860,10 @@ gl_Position = projectionMatrix * mvPosition;`);
         depthMat.dispose(); blackMat.dispose(); nodeTex.dispose();
       },
     };
+    // where debris and shards go: beside the car (its parent: the scene, or a group the game moves),
+    // and the whole scene, for compiling and drawing
     const scene = () => group.parent;
+    const root = () => { let o = group; while (o.parent) o = o.parent; return o; };
     return api;
   }
 

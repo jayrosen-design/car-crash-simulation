@@ -38,6 +38,14 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .boost-bar { width: 220px; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.12); overflow: hidden; border: 1px solid var(--line); }
 .boost-bar i { display: block; height: 100%; width: 30%; background: linear-gradient(90deg, #f2b233, #ff6a2b); transition: width 0.12s; }
 .boost.on .boost-bar i { background: linear-gradient(90deg, #ffd36b, #ff3b1f); box-shadow: 0 0 12px #ff6a2b; }
+.health { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-bottom: 6px; }
+.health .k { color: var(--muted); text-transform: uppercase; font-size: 12px; letter-spacing: 0.08em; }
+.health-bar { position: relative; width: 220px; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.12); overflow: hidden; border: 1px solid var(--line); }
+.health-bar b { position: absolute; inset: 0; background: #ff3b1f; opacity: 0; }   /* the flash on a hit (faded by script) */
+.health-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #3fbf6a, #8fe08a); transition: width 0.2s; }
+.health.low .health-bar i { background: linear-gradient(90deg, #e0a526, #f2cf5b); }
+.health.critical .health-bar i { background: linear-gradient(90deg, #d8322a, #ff6a4d); }
+.hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(200, 20, 10, 0) 55%, rgba(200, 20, 10, 0.55) 100%); }
 .chip { position: absolute; bottom: 120px; right: 24px; padding: 6px 12px; border-radius: 8px; background: rgba(242, 178, 51, 0.92); color: #1a1205; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; }
 .eyebrow { margin: 0 0 6px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
 .credits { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.45; }
@@ -103,7 +111,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .replay-bar { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 8px 14px; border-radius: 10px; background: rgba(10, 12, 16, 0.75); border: 1px solid var(--line); font-size: 14px; }
 .replay-bar .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ff3b1f; margin-right: 8px; vertical-align: 1px; }
 .overlay .panel { pointer-events: auto; }
-@media (max-width: 760px) { .minimap { display: none; } .boost-bar { width: 140px; } }
+@media (max-width: 760px) { .minimap { display: none; } .boost-bar, .health-bar { width: 140px; } }
 .speedo { display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 8px; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
 .speedo #hud-speed { font-size: 64px; font-weight: 800; font-family: var(--mono); line-height: 1; }
 .speedo .unit { font-size: 16px; color: var(--muted); }

@@ -1,15 +1,19 @@
 /* The Race game's world: cars on the level, their collisions, and when a hit is a crash.
  *
  * Each car is an oriented box of its length and width (the crash solver's lattice has exactly that
- * envelope). Against the level's boxes (buildings, barriers) and cylinders (street lights, trees,
- * signal posts), and against each other, contacts are found by the separating-axis test and
+ * envelope). Against the level's boxes (buildings, barriers) and cylinders (trees), and against
+ * each other, contacts are found by the separating-axis test and
  * resolved with impulses: restitution and Coulomb friction at the contact point, so a glancing hit
  * scrapes and turns the car and a square one stops it. A hit is a crash when the approach speed
  * along the contact normal passes a limit (CRASH); then the game hands the cars over to the full
  * crash solver from their state one step earlier, just before they touched (history()).
  *
  * Cars are RaceCar bodies (vehicle.js). Traffic can be kinematic (set by its driver each step)
- * until something hits it; then it becomes a free body.
+ * until something hits it; then it becomes a free body. Cars follow the level's hills and ramps and
+ * can fly off them (vertical()); a car in the air clears low colliders and other cars.
+ *
+ * Rivals still crash at the CRASH limits; the player has a health bar instead (game.js), and
+ * damage() turns a hit's change of speed into a share of it.
  *
  * DOM-free: global RaceWorld in the browser, module.exports in Node.
  */
@@ -19,6 +23,19 @@ const RaceWorld = (() => {
   const CRASH = { wall: 13, car: 13.5, pack: 20 };
   const E_WALL = 0.12, E_CAR = 0.2, MU_WALL = 0.35, MU_CAR = 0.3;
   const HISTORY = 12;                       // steps kept for the crash hand-over
+  const G = 9.81, FLAT = { h: 0, gx: 0, gz: 0 };
+  // the player's damage (a share of the health bar) from a hit that changes the car's speed by dv
+  // m/s: nothing for scrapes and nudges under 2.5 m/s, about a fifth for a square hit on a wall at
+  // 13 m/s (47 km/h), all of it from about 25 m/s (90 km/h)
+  const damage = (dv) => Math.max(0, dv - 2.5) ** 2 / 650;
+  // ... from a contact event, at its first touch: the approach speed along the normal, with the
+  // bounce; against another car, the share of the change of speed this car takes (by mass)
+  function hitDamage(e, b) {
+    if (e.kind === 'land') return 0;
+    let dv = e.vn * (e.kind === 'car' ? 1 + E_CAR : 1 + E_WALL);
+    if (e.kind === 'car') { const o = e.a === b ? e.b : e.a; dv *= o.car.m / (o.car.m + b.car.m); }
+    return damage(dv);
+  }
 
   function create(level) {
     const bodies = [];
@@ -135,22 +152,58 @@ const RaceWorld = (() => {
       events.push({ a, b, kind: 'car', vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, crash: -vn > lim && !a.ghost && !b.ghost, J });
     }
 
+    // ---------------------------------------------------------------- over hills and ramps
+    // A car follows the ground under its centre of gravity until the ground falls away faster than
+    // gravity can pull it down (a ramp's lip, a crest taken fast); then it flies, without grip
+    // (vehicle.js), and lands. On the ground gravity pulls it along the slope. Kinematic traffic
+    // keeps to the ground.
+    const GR = {};
+    function vertical(b, dt) {
+      const c = b.car, g = level.groundAt ? level.groundAt(c.x, c.z, GR) : FLAT;
+      if (c.snap || b.kinematic) { c.y = g.h; c.vy = 0; c.air = false; c.snap = false; }
+      else if (!c.air) {
+        c.vx -= G * g.gx * dt; c.vz -= G * g.gz * dt;
+        const vyG = (g.h - c.y) / dt;
+        if ((c.vy - vyG) / dt > G * 1.05) { c.air = true; c.vy -= G * dt; c.y += c.vy * dt; }   // takes off
+        else { c.vy = vyG; c.y = g.h; }
+      } else {
+        c.vy -= G * dt; c.y += c.vy * dt;
+        if (c.y <= g.h) {
+          const vyG = g.gx * c.vx + g.gz * c.vz, impact = vyG - c.vy;   // how fast it meets the ground
+          c.y = g.h; c.vy = vyG; c.air = false;
+          events.push({ a: b, b: null, kind: 'land', vn: impact, x: c.x, z: c.z, nx: 0, nz: 0, crash: false, J: 0 });
+        }
+      }
+      // pitch and roll to draw: the ground's; in the air, the nose along the flight path
+      const ch = Math.cos(c.h), sh = Math.sin(c.h);
+      let tp = 0, tr = 0;
+      if (c.air) tp = Math.max(-0.45, Math.min(0.45, Math.atan2(c.vy, Math.max(5, Math.abs(c.vx * ch + c.vz * sh)))));
+      else { tp = Math.atan(g.gx * ch + g.gz * sh); tr = -Math.atan(-g.gx * sh + g.gz * ch); }
+      const k = 1 - Math.exp(-dt * (c.air ? 3 : 14));
+      c.gPitch += (tp - c.gPitch) * k; c.gRoll += (tr - c.gRoll) * k;
+    }
+    // how high a car is above the ground it would hit a collider on (terrain only: no ramps there)
+    const above = (c) => c.y - (level.terrain ? level.terrain(c.x, c.z) : 0);
+
     // ---------------------------------------------------------------- the step
     /* inputs(body) -> the driving input for a non-kinematic body this step */
     function step(dt, inputs) {
       events.length = 0;
       snapshot();
       for (const b of bodies) {
-        if (b.kinematic || b.frozen) continue;
-        b.car.step(dt, inputs(b) || {});
+        if (b.frozen) continue;
+        if (!b.kinematic) b.car.step(dt, inputs(b) || {});
+        vertical(b, dt);
         if (b.ghost > 0) b.ghost = Math.max(0, b.ghost - dt);
       }
-      // static contacts (twice: a corner can be pushed into a neighbouring shape)
+      // static contacts (twice: a corner can be pushed into a neighbouring shape); a car in the air
+      // clears the low ones
       for (const b of bodies) {
         if (b.kinematic || b.frozen) continue;
         for (let pass = 0; pass < 2; pass++) {
           const A = box(b, BA);
           for (const o of level.collidersNear(A.x, A.z, A.hx + 1)) {
+            if (b.car.air && above(b.car) > o.height - 0.3) continue;
             const hit = o.box ? vsBox(b, A, o) : vsCyl(b, A, o);
             if (hit) { resolveStatic(b, hit, o.box ? 'wall' : 'post'); box(b, A); }
           }
@@ -166,6 +219,7 @@ const RaceWorld = (() => {
           if (a.ghost || b.ghost) continue;
           const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z;
           if (dx * dx + dz * dz > 49) continue;
+          if (Math.abs(a.car.y - b.car.y) > 1.2) continue;   // one flying over the other
           const A = box(a, BA), B = box(b, BB), hit = vsCar(A, B);
           if (!hit) continue;
           // a hit traffic car becomes a free body
@@ -201,6 +255,6 @@ const RaceWorld = (() => {
   }
 
   // the box of a car spec at a pose (for spawning clear of other cars)
-  return { create, CRASH };
+  return { create, CRASH, damage, hitDamage };
 })();
 if (typeof module === 'object' && module.exports) module.exports = RaceWorld;

@@ -345,6 +345,7 @@ const FX = (() => {
     chip: { color: [0.58, 0.24, 0.16], size: [0.04, 0.07], grow: 0, life: [1.0, 1.8], speed: [1.5, 4.5], up: 1.2, gravity: 1, drag: 0.1, alpha: 1, glow: 0 },
     spark: { color: [1.0, 0.78, 0.35], size: [0.03, 0.05], grow: 0, life: [0.12, 0.3], speed: [3, 8], up: 0.8, gravity: 1, drag: 0.5, alpha: 1, glow: 1.5 },
     glass: { color: [0.75, 0.88, 0.95], size: [0.02, 0.04], grow: 0, life: [0.6, 1.2], speed: [1, 3], up: 0.5, gravity: 1, drag: 0.2, alpha: 0.9, glow: 0 },
+    water: { color: [0.72, 0.84, 0.95], size: [0.06, 0.12], grow: 0.8, life: [0.7, 1.3], speed: [6, 9], up: 1, gravity: 1, drag: 0.35, alpha: 0.6, glow: 0 },   // a burst hydrant (the Race game)
   };
 
   class Particles {

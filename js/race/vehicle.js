@@ -48,6 +48,10 @@ const RaceCar = (() => {
       gear: 1, rpm: 900, reverse: false, odometer: 0,
       drift: 0,                // 0..1: how much the car is sliding (for boost and sound)
       sideSlip: 0,             // body slip angle (rad)
+      // height over hills and ramps (world.js keeps these): height of the centre of gravity's
+      // ground point, vertical speed, in the air?, put back on the ground next step?, the ground's
+      // (or the flight's) pitch and roll for drawing
+      y: 0, vy: 0, air: false, snap: true, gPitch: 0, gRoll: 0,
       // the model's origin (the pose the renderer and the crash solver use)
       get pose() { const c = Math.cos(car.h), s = Math.sin(car.h); return { x: car.x - c * cgX, z: car.z - s * cgX, heading: car.h }; },
       get speed() { return Math.hypot(car.vx, car.vz); },
@@ -57,6 +61,7 @@ const RaceCar = (() => {
         car.x = x + c * cgX; car.z = z + s * cgX; car.h = h;
         car.vx = c * (speed || 0); car.vz = s * (speed || 0); car.yaw = 0; car.ax = car.ay = 0;
         car.pitch = car.roll = car.pv = car.rv = 0; car.steer = 0;
+        car.air = false; car.vy = 0; car.snap = true;
       },
       // driven along a path by someone else (traffic): place the model's origin and set the motion
       setKinematic(x, z, h, speed, yaw) {
@@ -107,7 +112,7 @@ const RaceCar = (() => {
         const vl = cd * wvx + sd * wvz, vs = -sd * wvx + cd * wvz;      // along and across the wheel
         const tyre = w.front ? MF.front : MF.rear;
         const mu = tune.grip * tyre.mu * (w.front ? 1 : (car.handbrake > 0.5 ? 0.42 : 1));
-        const Fmax = mu * w.Fz;
+        const Fmax = car.air ? 0 : mu * w.Fz;   // no grip in the air
         // longitudinal: drive, brakes (ABS: up to the grip), rolling resistance, handbrake
         let fl = drive * (w.front ? tune.drive[0] : tune.drive[1]) / 2;
         const sgn = vl > 0.05 ? 1 : vl < -0.05 ? -1 : 0;
@@ -124,7 +129,7 @@ const RaceCar = (() => {
         const cap = (w.Fz / G) * Math.abs(vs) / dt;
         if (Math.abs(fs) > cap) fs = Math.sign(fs) * cap;
         w.slip = alpha; w.Fx = fl; w.Fy = fs;
-        w.skid = Math.min(1, Math.max(Math.abs(alpha) > 0.12 ? (Math.abs(alpha) - 0.12) * 4 : 0, Math.abs(fl) / (Fmax || 1) > 0.95 && brk > 0.3 ? 0.6 : 0));
+        w.skid = car.air ? 0 : Math.min(1, Math.max(Math.abs(alpha) > 0.12 ? (Math.abs(alpha) - 0.12) * 4 : 0, Math.abs(fl) / (Fmax || 1) > 0.95 && brk > 0.3 ? 0.6 : 0));
         slideSum += w.skid;
         // to the car's frame, and the yaw moment about the centre of gravity
         const fx = cd * fl - sd * fs, fz = sd * fl + cd * fs;
@@ -142,7 +147,7 @@ const RaceCar = (() => {
       car.yaw += Tq / Izz * dt;
       // arcade stability control: hold the yaw rate near what the steering asks for (plus a margin), and
       // damp it a little when not steering, so the car tracks straight; off under the handbrake
-      if (car.handbrake < 0.5) {
+      if (car.handbrake < 0.5 && !car.air) {
         const want = vx * Math.tan(car.steer) / car.L;
         const lim = Math.min(Math.abs(want) * 1.25 + 0.15, 0.95 * tune.grip * G / Math.max(3, v) + 0.05);   // no tighter than the grip allows
         if (Math.abs(car.yaw) > lim) car.yaw += (Math.sign(car.yaw) * lim - car.yaw) * (1 - Math.exp(-6 * dt));

@@ -1534,7 +1534,8 @@ node tools/headless-check.js lexus      a subset, by name fragment (rigid56, lab
 <li><strong>The GPU solver doesn't cover everything.</strong> It covers every crash the labs set up, but not the brick wall. Parts don't come off and tyres don't burst, and friction heat isn't in its energy books. At today's lattice size it is slower than the CPU.</li>
 <li><strong>Race.</strong>
 <ul>
-<li>The city is flat: the kerbs are only drawn, because the crash solver and the debris assume level ground.</li>
+<li>The crash solver works on flat ground, so a crash on a hill is drawn at the ground's height where it happened. On a slope or a ramp the wreck can sit a little into or above the surface. The kerbs are only drawn, not raised.</li>
+<li>Props touch each other only as spheres, and they don't land on cars: a falling street light can pass through a roof.</li>
 <li>Only your crashes run the lattice solver. Rivals and traffic wreck as rigid bodies, because the solver runs slower than real time during an impact, which is also why the crash camera is in slow motion.</li>
 <li>Very hard head-on hits (about 150 km/h and up, square into a wall) can tip the car onto its nose. That is the solver's own behaviour, also seen in the simulator's rigid-barrier test.</li>
 <li>Opponent driving is a set of rules (speed profile, pure pursuit, lane choice), not a learned driver.</li>

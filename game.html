@@ -25,7 +25,9 @@
       <div class="hud-row"><span class="k">Takedowns</span><span id="hud-td" class="v">0</span></div>
     </div>
     <canvas id="minimap" class="minimap panel" width="200" height="170"></canvas>
+    <div id="hurt" class="hurt"></div>
     <div class="hud-br">
+      <div id="health" class="health"><span class="k">Health</span><div class="health-bar"><i id="health-fill"></i><b id="health-flash"></b></div></div>
       <div id="boost" class="boost"><span class="k">Boost</span><div class="boost-bar"><i id="boost-fill"></i></div></div>
       <div class="speedo"><span id="hud-speed">0</span><span class="unit">km/h</span><span class="gear">gear <b id="hud-gear">1</b></span></div>
     </div>
@@ -38,7 +40,7 @@
     <header class="sel-head">
       <p class="eyebrow">Car Crash Simulation · Race</p>
       <h2>Choose your car</h2>
-      <p class="muted">Three laps of the city against seven rivals, with traffic both ways. Near misses, the oncoming lanes, drifts and takedowns fill your boost. Crash, and the full crash physics plays it back in slow motion.</p>
+      <p class="muted">Three laps of the city against seven rivals, with traffic both ways. Jump the ramps and knock things over. Near misses, the oncoming lanes, drifts and takedowns fill your boost. Hits wear your health down; when it's gone, the full crash physics plays the crash back in slow motion.</p>
     </header>
 
     <section class="panel sel-garage" aria-label="Car and paint">
@@ -128,6 +130,7 @@
 <script src="js/race/vehicle.js"></script>
 <script src="js/race/world.js"></script>
 <script src="js/race/ai.js"></script>
+<script src="js/race/props.js"></script>
 <script src="media/race/assets.js"></script>
 <script type="module">
   // three.js is an ES module from the CDN; the game's scripts are classic scripts so the page also

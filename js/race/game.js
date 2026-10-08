@@ -38,6 +38,7 @@ const RaceGame = (() => {
   const L = level.length;
   const R = RaceRender.create({ level, container: $('#view') });
   const world = RaceWorld.create(level);
+  const props = RaceProps.create(level);   // street lights, signals, cones, bins ... to knock over
   const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
   const DAMAGE = q.get('damage') === 'dramatic' ? 'dramatic' : 'realistic';
   // the car-select screen's cars and paints (sRGB). Scripted runs (?test, ?director: the trailer
@@ -118,6 +119,32 @@ const RaceGame = (() => {
   let boost = 0.3, takedowns = 0, slowmo = 0;
   const lastHit = new Map();   // rival -> race time of the player's last contact with it
   function gainBoost(x, label) { boost = Math.min(1, boost + x); if (label) chip(label); }
+
+  // ---------------------------------------------------------------- health
+  // Hits wear the car down by how hard they are (RaceWorld.hitDamage: scrapes and nudges are free, a
+  // square 47 km/h hit on a wall takes about a fifth); the full crash comes when it runs out, or at
+  // once from a hit hard enough to empty it. Back to full after a crash.
+  let health = 1, hurtT = 0, hurtAt = -1, hurtD = 0;
+  function hurt(d) {
+    health = Math.max(0, health - d);
+    hurtT = Math.min(1, 0.25 + d * 3);
+    // the bar flashes red (an opacity animation: the compositor runs it, nothing is laid out again)
+    if ($('#health-flash').animate) $('#health-flash').animate([{ opacity: 0.85 }, { opacity: 0 }], { duration: 400, easing: 'ease-out' });
+    if (d > 0.08) chip(`Damage ${Math.round(d * 100)}%`);
+  }
+  // props knocked over: a sound, sparks or splinters, a little boost for the player; a burst hydrant
+  // sprays for a few seconds
+  const geysers = [];
+  const SPLINTERS = { crate: 'chip', bench: 'chip' };
+  function propHit(h) {
+    const mine = h.body === me, d = Math.hypot(h.x - car.x, h.z - car.z);
+    if (d > 90) return;
+    const pos = [h.x, h.y, h.z];
+    if (h.prop.T.metal) { FX.clank(Math.min(30, h.prop.T.m / 4) * Math.min(1, h.vrel / 12), pos); sparks.spawn(h.x, h.y, h.z, Math.min(18, 3 + Math.round(h.vrel)), 'spark', [0, 0.5, 0]); }
+    else { FX.hit(Math.min(8000, h.prop.T.m * h.vrel * 20), pos); if (SPLINTERS[h.type]) sparks.spawn(h.x, h.y, h.z, 10, 'chip', [0, 0.6, 0]); }
+    if (h.first && h.type === 'hydrant') geysers.push({ x: h.x, z: h.z, y: level.terrain(h.x, h.z), t: 6 });
+    if (mine && h.first && state === 'race') { gainBoost(0.02, null); RaceInput.rumble(0.25, 0.4, 70); }
+  }
   function nearMisses() {
     for (const t of traffic.cars) {
       const kind = RaceAI.nearMiss(car, t);
@@ -149,6 +176,9 @@ const RaceGame = (() => {
     const shapes = { boxes: near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height })), cyls: near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height })) };
     crash = RaceCrash.start({ units, world: shapes, duration: 1.6, damage: DAMAGE });
     crash.impactKmh = e.vn * 3.6;
+    // the solver's ground is flat at 0: the crash is drawn at the ground's height here
+    crash.lift = level.groundAt(car.x, car.z).h;
+    R.setCrashLift(crash.lift); PT.y = crash.lift;
     crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: paintOf(b) }));
     for (const U of crashUnits) { U.body.frozen = true; if (U.model !== R.player) { U.model.group.visible = true; if (U.paint !== undefined) U.model.setPaint(U.paint); } }
     frozenDraw = drawStates();   // the street as it was, for the crash camera
@@ -161,7 +191,7 @@ const RaceGame = (() => {
     $('#crash-speed').textContent = `Impact ${Math.round(crash.impactKmh)} km/h`;
     if (TEST) testOut.crashAt = performance.now();
   }
-  const PT = { x: 0, z: 0 };
+  const PT = { x: 0, z: 0, y: 0 };   // the crash camera's target (y: the ground's height there)
   // play crash frames on the crash's models at time t (frame cursor kept in kCur)
   function showCrashFrame(cr, units, t) {
     const F = cr.F, n = F.t.length;
@@ -201,14 +231,15 @@ const RaceGame = (() => {
     evPending.cursor = cr.events.length;
     evPending.push(...fresh);
     evPending.sort((a, b) => a.t - b.t);
+    const lift = cr.lift || 0;   // the crash is drawn at the ground's height there
     while (evPending.length && evPending[0].t <= t) {
-      const e = evPending.shift(), pos = [e.x, e.y, e.z];
-      if (e.type === 'first') { FX.crunch(1, pos); sparks.spawn(e.x, e.y, e.z, 40, 'spark', [0, 0.6, 0]); sparks.spawn(e.x, e.y, e.z, 16, 'dust'); }
-      else if (e.type === 'contact') { if (Math.random() < 0.25) FX.crunch(Math.min(1, e.mag / 3000), pos); if (Math.random() < 0.5) sparks.spawn(e.x, e.y, e.z, 4, 'spark', [0, 0.3, 0]); }
-      else if (e.type === 'detach') { FX.tear(e.mass, pos); FX.clank(e.mass, pos); sparks.spawn(e.x, e.y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); }
-      else if (e.type === 'glass') { FX.glass(e.mass, pos); sparks.spawn(e.x, e.y, e.z, 12, 'glass'); }
+      const e = evPending.shift(), y = e.y + lift, pos = [e.x, y, e.z];
+      if (e.type === 'first') { FX.crunch(1, pos); sparks.spawn(e.x, y, e.z, 40, 'spark', [0, 0.6, 0]); sparks.spawn(e.x, y, e.z, 16, 'dust'); }
+      else if (e.type === 'contact') { if (Math.random() < 0.25) FX.crunch(Math.min(1, e.mag / 3000), pos); if (Math.random() < 0.5) sparks.spawn(e.x, y, e.z, 4, 'spark', [0, 0.3, 0]); }
+      else if (e.type === 'detach') { FX.tear(e.mass, pos); FX.clank(e.mass, pos); sparks.spawn(e.x, y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); }
+      else if (e.type === 'glass') { FX.glass(e.mass, pos); sparks.spawn(e.x, y, e.z, 12, 'glass'); }
       else if (e.type === 'crack') FX.crack(0.8, pos);
-      else if (e.type === 'burst') { FX.blowout(pos); sparks.spawn(e.x, 0.15, e.z, 10, 'dust'); }
+      else if (e.type === 'burst') { FX.blowout(pos); sparks.spawn(e.x, lift + 0.15, e.z, 10, 'dust'); }
     }
   }
   function respawn() {
@@ -232,6 +263,8 @@ const RaceGame = (() => {
     }
     if (TEST) { testOut.respawnMs = performance.now() - testOut.crashAt; testOut.parts = crash.debris.length; testOut.glass = crash.glass.length; testOut.mode = crash.mode; testOut.T0 = crash.T0; }
     state = prog.done ? 'finished' : 'race'; crash = null; crashUnits = []; frozenDraw = null;
+    health = 1;   // repaired
+    R.setCrashLift(0); PT.y = 0;
     FX.setTimeScale(1);
     if (audio) FX.engineStart();
     $('#crash').hidden = true;
@@ -248,6 +281,7 @@ const RaceGame = (() => {
     const cin = Cinematic.fromCrash({ units: res.units.map((u, i) => Object.assign({}, u, { axes: cr.F.unitAxes[i] })), frames: cr.F, T0: res.T0, contact: res.contact }, cr.events);
     replay = { cr, units, cin, t: Math.max(0, res.T0 - 0.15), end: cr.F.t[cr.F.t.length - 1], prevState: state };
     evPending = []; kCur = 0; camAngle = 0.4;
+    R.setCrashLift(cr.lift); PT.y = cr.lift || 0;
     state = 'replay';
     $('#results').hidden = true; $('#replay-bar').hidden = false;
   }
@@ -265,6 +299,7 @@ const RaceGame = (() => {
   function endReplay() {
     for (const U of replay.units) { U.model.clearDestruction(); if (U.model !== R.player) U.model.group.visible = false; }
     state = replay.prevState; replay = null;
+    R.setCrashLift(0); PT.y = 0;
     FX.setTimeScale(1);
     $('#replay-bar').hidden = true;
     if (state === 'finished') $('#results').hidden = false;
@@ -328,6 +363,11 @@ const RaceGame = (() => {
     $('#hud-best').textContent = fmtTime(prog.best);
     $('#boost-fill').style.width = `${Math.round(boost * 100)}%`;
     $('#boost').classList.toggle('on', car.boosting);
+    $('#health-fill').style.width = `${Math.round(health * 100)}%`;
+    const hc = 'health' + (health > 0.5 ? '' : health > 0.25 ? ' low' : ' critical');
+    if ($('#health').className !== hc) $('#health').className = hc;
+    if (hurtT > 0) hurtT = Math.max(0, hurtT - dt * 1.8);
+    $('#hurt').style.opacity = hurtT.toFixed(3);
     $('#hud-td').textContent = takedowns;
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('#msg').hidden = true; }
     if (chipT > 0) { chipT -= dt; if (chipT <= 0) $('#chip').hidden = true; }
@@ -413,7 +453,7 @@ const RaceGame = (() => {
   const director = { input: null, camera: null };
   function playerInput() {
     if (director.input) return director.input(STEP);
-    if (TEST === 'takedown') return { throttle: 1, steer: simT < 2.8 ? 0.5 : -0.3 };
+    if (TEST === 'takedown') return { throttle: 1, steer: simT < 1.2 ? 0.5 : -0.5 };   // shove, then pull away
     if (TEST) return testDrive;
     if (state === 'finished' && autopilot) return ai.drive(autopilot, STEP, ctxAI);
     const want = !!input.boost && boost > 0.01;
@@ -454,6 +494,7 @@ const RaceGame = (() => {
         if (state === 'race' || state === 'finished' || state === 'crash') simT += STEP;
         acc -= STEP;
         for (const e of ev) handleContact(e);
+        for (const h of props.step(STEP, world.bodies)) propHit(h);
         if (state === 'race' || state === 'finished') track(simT);
         for (const r of ai.rivals) {
           ai.track(r, simT, level.laps);
@@ -473,18 +514,26 @@ const RaceGame = (() => {
     if (state === 'crash') updateCrash(dt, input);
     else if (state !== 'replay') {
       const p = car.pose, spinNow = car.wheels[2].spin;
-      R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch, roll: car.roll, steer: car.steer }, spinNow - prevSpin);
+      R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: car.roll + car.gRoll, lift: car.y, steer: car.steer }, spinNow - prevSpin);
       prevSpin = spinNow;
       // the car faces the camera: a front three-quarter view, swaying 3-37 degrees off the nose
-      if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
-      else R.follow({ x: p.x, z: p.z, h: p.heading, speed: car.speed, boost: car.boosting }, dt);
+      if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
+      else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dt);
     }
     // everyone else (instanced): the street as it was during a crash or replay
     const draws = (state === 'crash' || state === 'replay') && frozenDraw ? frozenDraw : drawStates();
     const slots = { lexus: 0, mustang: 0 };
     for (const d of draws) R.drawCar(d.key, slots[d.key]++, d);
     R.endCars();
+    // burst hydrants spray for a few seconds
+    for (let i = geysers.length - 1; i >= 0; i--) {
+      const g = geysers[i];
+      g.t -= dt;
+      if (g.t <= 0) { geysers.splice(i, 1); continue; }
+      sparks.spawn(g.x, g.y + 0.2, g.z, Math.max(1, Math.round(60 * dt * Math.min(1, g.t / 2))), 'water', [0, 4, 0]);
+    }
     sparks.update(dt);
+    R.drawProps();
     sparks.setScale(R.renderer.domElement.height / (2 * Math.tan(R.camera.fov * Math.PI / 360)));
     if (audio && (state === 'race' || state === 'countdown' || state === 'finished')) FX.engineUpdate(car.forward * 3.6, Math.max(car.throttle, input.throttle || 0), state === 'countdown' ? 900 + 4500 * (input.throttle || 0) : car.rpm);
     hud(dt, simT);
@@ -495,7 +544,7 @@ const RaceGame = (() => {
   // what to draw for the other cars
   function drawStates() {
     const out = [];
-    const add = (body, key, paint) => { if (body.frozen && state !== 'select' && state !== 'countdown') return; const c = body.car, p = c.pose; out.push({ key, x: p.x, z: p.z, h: p.heading, pitch: c.pitch, roll: c.roll, steer: c.steer, spins: c.wheels.map(w => w.spin), paint }); };
+    const add = (body, key, paint) => { if (body.frozen && state !== 'select' && state !== 'countdown') return; const c = body.car, p = c.pose; out.push({ key, x: p.x, z: p.z, h: p.heading, pitch: c.pitch + c.gPitch, roll: c.roll + c.gRoll, lift: c.y, steer: c.steer, spins: c.wheels.map(w => w.spin), paint }); };
     for (const r of ai.rivals) add(r.body, r.key, r.paint);
     for (const t of traffic.cars) add(t.body, t.key, t.paint);
     for (const o of extra) add(o.body, o.key, o.paint);
@@ -508,7 +557,22 @@ const RaceGame = (() => {
     const mine = e.a === me || e.b === me;
     if (TEST && (e.a.rival || (e.b && e.b.rival) || mine && e.vn > 1)) (testOut.contacts = testOut.contacts || []).push([+simT.toFixed(2), e.kind, e.a === me ? 'me' : e.a.rival ? 'rival' : 'x', e.b === me ? 'me' : e.b && e.b.rival ? 'rival' : e.b ? 'x' : 'static', +e.vn.toFixed(1), e.crash]);
     const other = e.a === me ? e.b : e.b === me ? e.a : null;
-    if (mine && e.crash && state === 'race') { triggerCrash(e); return; }
+    if (e.kind === 'land') {   // touching down after a jump or a crest
+      if (mine && e.vn > 3) {
+        FX.thud(Math.min(40, e.vn * 5), [e.x, car.y, e.z]); RaceInput.rumble(Math.min(1, e.vn / 10), 0.5, 140);
+        if (e.vn > 5) sparks.spawn(e.x, car.y + 0.1, e.z, 14, 'spark', [car.vx * 0.2, 0.4, car.vz * 0.2]);
+      }
+      return;
+    }
+    // the player: the hit wears the health down; the crash when it's gone
+    if (mine && state === 'race' && !me.ghost) {
+      let d = RaceWorld.hitDamage(e, me);
+      // one hit can touch several times in a few steps: within 0.15 s only the worst one counts
+      if (simT - hurtAt < 0.15) { const extra = Math.max(0, d - hurtD); hurtD = Math.max(hurtD, d); d = extra; }
+      else if (d > 0) { hurtAt = simT; hurtD = d; }
+      if (d > 0) hurt(d);
+      if (health <= 0) { triggerCrash(e); return; }
+    }
     if (mine && other && other.rival) {
       lastHit.set(other.rival, simT);
       // a solid shunt unsettles the rival: a yaw kick away from the hit, and a moment out of control
@@ -520,9 +584,9 @@ const RaceGame = (() => {
     }
     if (mine && other && other.traffic) other.traffic.touched = true;
     if (mine && e.vn > 2) {
-      const pos = [e.x, 0.5, e.z];
+      const pos = [e.x, car.y + 0.5, e.z];
       FX.hit(Math.min(4e5, e.J * 40), pos);
-      sparks.spawn(e.x, 0.45, e.z, Math.min(60, 8 + e.vn * 3), 'spark', [e.nx * 2 + car.vx * 0.3, 1.5, e.nz * 2 + car.vz * 0.3]);
+      sparks.spawn(e.x, car.y + 0.45, e.z, Math.min(60, 8 + e.vn * 3), 'spark', [e.nx * 2 + car.vx * 0.3, 1.5, e.nz * 2 + car.vz * 0.3]);
       RaceInput.rumble(Math.min(1, e.vn / 15), 0.3, 120);
     }
     // a rival wrecked (without wrecking the player): spun out; a takedown if the player hit it just
@@ -561,7 +625,7 @@ const RaceGame = (() => {
       const f = level.nearest(b.x, b.z), p = level.poseAt(f.s, -5.25);
       car.place(p.x, p.z, Math.atan2(b.z - p.z, b.x - p.x), 150 / 3.6);
     } else if (TEST === 'takedown') {
-      // side by side at 100 km/h, the rival on the kerb side: steer into it, toward the street lights
+      // side by side at 100 km/h, the rival on the kerb side: shove it toward the trees, pull away
       const p = level.poseAt(300, 1.75), r = ai.rivals[0], p2 = level.poseAt(300, 5.25);
       car.place(p.x, p.z, p.h, 100 / 3.6); r.body.car.place(p2.x, p2.z, p2.h, 100 / 3.6); r.lane = r.l = r.laneT = 5.25; r.prog.prevS = 300;
     } else if (TEST === 'headon') {
@@ -580,12 +644,18 @@ const RaceGame = (() => {
     const workerMode = RaceCrash.prepare();
     await R.preparePlayer(carKey, specs[carKey], PAINTS[paintIdx].hex);   // warmed for a crash there
     await R.prepareCars(['lexus', 'mustang'], 48);
+    R.prepareProps(props);
     await R.prepareWreck('lexus', specs.lexus);
     await R.prepareWreck('mustang', specs.mustang);
     for (const m of [R.wrecks.lexus, R.wrecks.mustang]) m.warm(R.renderer, R.camera);
     R.renderer.compile(R.scene, R.camera);
-    // draw the particles once too (they draw nothing until the first crash)
+    // draw the particles once too (they draw nothing until the first crash), and everything else with
+    // the frustum culling off: some drivers finish a shader only at its first draw, and the crash
+    // camera may be the first to see a ramp
+    const culled = [];
+    R.scene.traverse((o) => { if (o.frustumCulled && (o.isMesh || o.isPoints)) { o.frustumCulled = false; culled.push(o); } });
     sparks.spawn(car.x, 1, car.z, 4, 'spark'); sparks.update(1e-3); R.render();
+    for (const o of culled) o.frustumCulled = true;
     sparks.n = 0; sparks.update(0);
     await workerMode;
     $('#loading').hidden = true;
@@ -599,5 +669,5 @@ const RaceGame = (() => {
   }
   start().catch((err) => { $('#loading').textContent = 'Could not start: ' + err.message; console.error(err); });
 
-  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return PAINTS[paintIdx]; }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, standings };
+  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return PAINTS[paintIdx]; }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, get health() { return health; }, props, standings };
 })();

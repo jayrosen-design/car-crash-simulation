@@ -3,8 +3,10 @@
  * The circuit is a polygon of street corners, each rounded with its own radius (tight city corners,
  * one sweeping bend), sampled every metre. Along it: a four-lane two-way street (two lanes each
  * way), pavements, side streets closed off with barriers, street lights, trees and traffic lights,
- * buildings set back from the pavement, and more buildings filling the blocks behind them. The
- * ground is flat (y = 0), as the crash solver and the damage renderer assume.
+ * buildings set back from the pavement, and more buildings filling the blocks behind them. Rolling
+ * hills on some straights (terrain), jump ramps across the street (groundAt adds them), and props to
+ * knock over (props.js). The crash solver works on flat ground: the game runs a crash at the local
+ * ground height (see game.js).
  *
  * Conventions (as js/physics.js): x and z on the ground, y up; a heading h points along
  * (cos h, sin h); a lateral offset l is measured to the right of the circuit's direction, along
@@ -135,6 +137,51 @@ const CrashLevel = (() => {
     }
     const sampleAt = (s) => Math.floor((((s % L) + L) % L) / DS) % C.N;
 
+    // ------------------------------------------------ the lie of the land
+    // Rolling hills: smooth bumps on the second and last straights and over the sweeping bend; the
+    // first straight, its start and grid stay flat. Everything stands on this ground (street,
+    // pavements, buildings, props); the height is never below 0. [x, z, height, spread] (m)
+    const HILLS = [[480, 112, 6, 36], [416, 300, 4, 40], [0, 112, 5, 34]];
+    // Jump ramps across the street on three straights (the first, the bottom one and the long
+    // diagonal; none on a hill): from s, up `up` m to `height`, a short top, down `down` m.
+    const ramps = [];
+    for (const [s0, up, top, down, height] of [[215, 12, 2, 8, 1.4], [998, 11, 2, 8, 1.3], [1215, 12, 2, 8, 1.5]]) {
+      const p = poseAt(s0, 0), len = up + top + down;
+      ramps.push({ s: s0, up, top, down, height, len, x: p.x, z: p.z, h: p.h, cx: p.x + Math.cos(p.h) * len / 2, cz: p.z + Math.sin(p.h) * len / 2, rad: Math.hypot(len / 2, ROAD_HALF) + 1 });
+    }
+    // a ramp's surface height and its slope along the street, u m past its start
+    function rampProfile(r, u) {
+      if (u < 0 || u >= r.len) return [0, 0];
+      if (u < r.up) return [r.height * u / r.up, r.height / r.up];
+      if (u < r.up + r.top) return [r.height, 0];
+      return [r.height * (1 - (u - r.up - r.top) / r.down), -r.height / r.down];
+    }
+    // the ground's height (hills only, without the ramps) at (x, z)
+    function terrain(x, z) {
+      let h = 0;
+      for (const [cx, cz, A, sg] of HILLS) h += A * Math.exp(-((x - cx) ** 2 + (z - cz) ** 2) / (2 * sg * sg));
+      return h;
+    }
+    // the surface cars and props stand on: hills plus the ramps on the street -> out { h, gx, gz }
+    // (height and its gradient)
+    function groundAt(x, z, out = {}) {
+      let h = 0, gx = 0, gz = 0;
+      for (const [cx, cz, A, sg] of HILLS) {
+        const dx = x - cx, dz = z - cz, e = A * Math.exp(-(dx * dx + dz * dz) / (2 * sg * sg));
+        h += e; gx -= e * dx / (sg * sg); gz -= e * dz / (sg * sg);
+      }
+      for (const r of ramps) {
+        if ((x - r.cx) ** 2 + (z - r.cz) ** 2 > r.rad * r.rad) continue;
+        const c = Math.cos(r.h), s = Math.sin(r.h), dx = x - r.x, dz = z - r.z;
+        const u = dx * c + dz * s, l = -dx * s + dz * c;
+        if (Math.abs(l) > ROAD_HALF) continue;
+        const [rh, sl] = rampProfile(r, u);
+        h += rh; gx += sl * c; gz += sl * s;
+      }
+      out.h = h; out.gx = gx; out.gz = gz;
+      return out;
+    }
+
     // ------------------------------------------------ side streets, buildings, street furniture
     const boxes = [], cyls = [];           // colliders (as the crash solver takes them)
     const buildings = [], sideStreets = [], lamps = [], trees = [], signals = [], barriers = [], stops = [];
@@ -225,13 +272,13 @@ const CrashLevel = (() => {
       skyline.push({ x: cx, z: cz, hx: 15 + R() * 25, hz: 15 + R() * 25, angle: R() * 0.4, height: 30 + R() * R() * 160, style: Math.floor(R() * 4) });
     }
 
-    // street furniture along the pavements (colliders: posts, trunks)
+    // street furniture along the pavements (colliders: tree trunks; the street lights are props that
+    // break off their bases when hit, see below)
     for (const side of [-1, 1]) {
       for (let s = 12; s < L - 6; s += 32) {
         if (nearSide(s, side, 4)) continue;
         const p = poseAt(s, side * (ROAD_HALF + 0.7));
-        lamps.push({ x: p.x, z: p.z, h: p.h + (side > 0 ? -Math.PI / 2 : Math.PI / 2), side });
-        cyls.push({ x: p.x, z: p.z, r: 0.13, height: 8 });
+        lamps.push({ x: p.x, z: p.z, h: p.h + (side > 0 ? -Math.PI / 2 : Math.PI / 2), side, s });
         const ts = s + 16;
         if (!nearSide(ts, side, 5) && Math.abs(C.k[sampleAt(ts)]) < 0.012) {
           const q = poseAt(ts, side * (ROAD_HALF + 2.2));
@@ -249,7 +296,46 @@ const CrashLevel = (() => {
       for (const e of [-1, 1]) {
         const c = poseAt(q.s + e * (q.width / 2 + 1.2), q.side * (ROAD_HALF + 0.9));
         signals.push({ x: c.x, z: c.z, h: c.h + (q.side > 0 ? -Math.PI / 2 : Math.PI / 2), arm: e < 0 });
-        cyls.push({ x: c.x, z: c.z, r: 0.12, height: 6 });
+      }
+    }
+
+    // ------------------------------------------------ things to knock over (props.js moves them)
+    // { type, x, z, h (yaw), y (stacked on another, m) }. The street lights and signal posts; along
+    // the outer pavement bins, newspaper boxes, hydrants and benches; cones and barrels at roadworks
+    // by the kerb (clear of the outer lane's traffic); crates and barrels in front of the side
+    // streets' barriers. Kept clear of the ramps.
+    const props = [];
+    const nearRamp = (s, m) => ramps.some(r => { const u = wrapDiff(s, r.s); return u > -m && u < r.len + m; });
+    for (const o of lamps) props.push({ type: 'lamp', x: o.x, z: o.z, h: o.h, y: 0 });
+    for (const o of signals) props.push({ type: 'signal', x: o.x, z: o.z, h: o.h, y: 0 });
+    const KINDS = [['bin', 0.3], ['newsbox', 0.2], ['hydrant', 0.2], ['bench', 0.3]];
+    for (const side of [-1, 1]) {
+      for (let s = 20; s < L - 10; s += 22 + R() * 12) {
+        let u = R(), type = KINDS[0][0];
+        for (const [k, w] of KINDS) { if (u < w) { type = k; break; } u -= w; }
+        if (nearSide(s, side, 6) || Math.abs(C.k[sampleAt(s)]) > 0.02) continue;
+        if (lamps.some(o => o.side === side && Math.abs(wrapDiff(o.s, s)) < 2.5)) continue;
+        const l = type === 'hydrant' ? ROAD_HALF + 1.0 : type === 'bench' ? ROAD_HALF + 3.4 : ROAD_HALF + 3.6;
+        const p = poseAt(s, side * l);
+        props.push({ type, x: p.x, z: p.z, h: type === 'bench' ? p.h + (side > 0 ? 0 : Math.PI) : p.h + R() * 6.28, y: 0 });
+      }
+    }
+    // roadworks: a row of cones along the kerb, a barrel at each end
+    for (const f of [0.3, 0.45, 0.66, 0.93]) {
+      const s0 = f * L, side = R() < 0.5 ? -1 : 1;
+      if (nearRamp(s0, 30) || nearSide(s0 + 12, side, 20) || Math.abs(wrapDiff(s0, START_S)) < 80) continue;
+      for (let i = 0; i <= 8; i++) {
+        const p = poseAt(s0 + i * 3.2, side * 6.95);
+        props.push({ type: i === 0 || i === 8 ? 'barrel' : 'cone', x: p.x, z: p.z, h: R() * 6.28, y: 0 });
+      }
+    }
+    // the side streets: crates (some stacked) and barrels in front of the barriers
+    for (const q of sideStreets) {
+      const p0 = poseAt(q.s, q.side * ROAD_HALF), hs = p0.h + (q.side > 0 ? Math.PI / 2 : -Math.PI / 2), c = Math.cos(hs), s = Math.sin(hs);
+      const at = (along, across) => ({ x: p0.x + c * along - s * across, z: p0.z + s * along + c * across });
+      for (const [along, across, type, y] of [[6.2, -2.4, 'crate', 0], [6.2, -1.5, 'crate', 0], [6.2, -1.95, 'crate', 0.8], [7.0, 2.2, 'barrel', 0], [6.4, 2.9, 'barrel', 0], [6.6, -3.4, 'crate', 0]]) {
+        const p = at(along, across);
+        props.push({ type, x: p.x, z: p.z, h: hs + (R() - 0.5) * 0.3, y });
       }
     }
 
@@ -270,8 +356,8 @@ const CrashLevel = (() => {
     return {
       seed: opts.seed || 20261007, circuit: C, length: L, laps: 3, lanes: LANES, laneWidth: LANE_W, roadHalf: ROAD_HALF, walkOut: WALK_OUT,
       start: { s: START_S }, corners,
-      buildings, skyline, sideStreets, lamps, trees, signals, barriers, stops,
-      colliders: { boxes, cyls }, collidersNear, nearest, poseAt, sampleAt, wrapDiff,
+      buildings, skyline, sideStreets, lamps, trees, signals, barriers, stops, props, ramps, hills: HILLS,
+      colliders: { boxes, cyls }, collidersNear, nearest, poseAt, sampleAt, wrapDiff, terrain, groundAt, rampProfile,
       bounds: { x0, x1, z0, z1 },
     };
   }
