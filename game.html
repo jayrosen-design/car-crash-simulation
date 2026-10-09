@@ -23,6 +23,7 @@
       <div class="hud-row"><span class="k">Time</span><span id="hud-time" class="v mono">0:00.00</span></div>
       <div class="hud-row"><span class="k">Best lap</span><span id="hud-best" class="v mono">--:--.--</span></div>
       <div class="hud-row"><span class="k">Takedowns</span><span id="hud-td" class="v">0</span></div>
+      <div class="hud-row"><span class="k">Score</span><span id="hud-score" class="v">0</span></div>
     </div>
     <canvas id="minimap" class="minimap panel" width="200" height="170"></canvas>
     <div id="hurt" class="hurt"></div>
@@ -33,6 +34,7 @@
     </div>
     <div id="msg" class="msg" hidden></div>
     <div id="chip" class="chip" hidden></div>
+    <div id="combo" hidden></div>
     <div id="revenge-tag" class="revenge-tag" hidden>Revenge</div>
     <div id="hud-wrong" class="wrong" hidden>Wrong way</div>
   </div>
@@ -82,12 +84,13 @@
   </div>
 
   <div id="results" class="overlay" hidden>
-    <div class="panel card wide">
+    <div class="panel card wide race-results">
       <p class="eyebrow">Race result</p>
       <h2 id="results-title">1st place</h2>
       <p id="results-sub" class="muted"></p>
       <table id="results-table" class="results"></table>
       <p id="results-note" class="muted small" hidden>* still racing: an estimate from their pace so far</p>
+      <div id="results-score" class="score-break"></div>
       <div class="actions"><button id="btn-again" class="btn primary">Race again</button><button id="btn-replay" class="btn">Watch your last crash</button><a class="btn" href="Car Crash Simulation.html">Home</a></div>
     </div>
   </div>
@@ -155,6 +158,7 @@
 <script src="js/race/ai.js"></script>
 <script src="js/race/props.js"></script>
 <script src="js/race/rules.js"></script>
+<script src="js/race/score.js"></script>
 <script src="media/race/assets.js"></script>
 <script type="module">
   // three.js is an ES module from the CDN; the game's scripts are classic scripts so the page also

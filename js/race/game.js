@@ -4,13 +4,17 @@
  * circuit is the nearest point on its centre line; a lap counts when a car crosses the start line
  * going forward, having been round the rest of the loop. Position is laps plus distance.
  *
- * Boost fills from near misses (passing traffic within a metre), driving in the oncoming lanes,
- * drifting, slams and takedowns, and is spent holding the boost button. Slams and takedowns follow
+ * Boost fills from near misses (passing traffic within 1.2 m), runs in the oncoming lanes, drifting
+ * and in the air, slams and takedowns, and is spent holding the boost button. Slams and takedowns follow
  * Burnout 3's rules (rules.js): a slam never wrecks a rival by itself; a full one (side, or a shunt
  * from behind) puts it out of control for a moment, and its wreck within two seconds of your hit is
  * your takedown. A slam takes a little of the rival's boost for you. The aggressive rivals slam you
  * too (ai.js picks their fights): a full one turns your wheel away for a moment, and a crash soon
  * after is that rival's takedown of you, and it becomes your revenge target.
+ *
+ * The score (score.js) adds points for all of it: near misses in chains, runs in the oncoming
+ * lanes, drifting and in the air (paid by the metre), slams, takedowns, lucky escapes and props. A
+ * crash loses what isn't banked yet. The results show the breakdown and the best score so far.
  *
  * Crashes: when a hit is hard enough (world.js), the cars go back one step (to just before they
  * touched) and are handed to the full crash solver (crash.js), which runs in the background. The
@@ -127,6 +131,8 @@ const RaceGame = (() => {
   // ---------------------------------------------------------------- boost, near misses, takedowns
   let boost = 0.3, takedowns = 0, slowmo = 0;
   const rules = RaceRules.create();   // slams, takedowns, doubles, sprees, psyche-outs, revenge
+  const score = RaceScore.create();   // points
+  const RUNS = [['oncoming', 'Oncoming'], ['drift', 'Drift'], ['air', 'Air']];
   let ooc = null;                     // the player out of control after a rival's full slam: { t, dur, kick }
   function gainBoost(x, label) { boost = Math.min(1, boost + x); if (label) chip(label); }
 
@@ -153,12 +159,16 @@ const RaceGame = (() => {
     if (h.prop.T.metal) { FX.clank(Math.min(30, h.prop.T.m / 4) * Math.min(1, h.vrel / 12), pos); sparks.spawn(h.x, h.y, h.z, Math.min(18, 3 + Math.round(h.vrel)), 'spark', [0, 0.5, 0]); }
     else { FX.hit(Math.min(8000, h.prop.T.m * h.vrel * 20), pos); if (SPLINTERS[h.type]) sparks.spawn(h.x, h.y, h.z, 10, 'chip', [0, 0.6, 0]); }
     if (h.first && h.type === 'hydrant') geysers.push({ x: h.x, z: h.z, y: level.terrain(h.x, h.z), t: 6 });
-    if (mine && h.first && state === 'race') { gainBoost(0.02, null); RaceInput.rumble(0.25, 0.4, 70); }
+    if (mine && h.first && state === 'race') { gainBoost(0.02, null); score.prop(); RaceInput.rumble(0.25, 0.4, 70); }
   }
   function nearMisses() {
     for (const t of traffic.cars) {
       const kind = RaceAI.nearMiss(car, t);
-      if (kind) { gainBoost(kind === 'oncoming' ? 0.15 : 0.1, kind === 'oncoming' ? 'Oncoming near miss' : 'Near miss'); FX.hit(1500, [t.body.car.x, 0.6, t.body.car.z]); }
+      if (kind) {
+        const n = score.nearMiss(kind, simT);   // its place in the chain
+        gainBoost(kind === 'oncoming' ? 0.15 : 0.1, (kind === 'oncoming' ? 'Oncoming near miss' : 'Near miss') + (n > 1 ? ` ×${n}` : ''));
+        FX.hit(1500, [t.body.car.x, 0.6, t.body.car.z]);
+      }
     }
   }
   // a takedown that counts (rules.update: half a second after the wreck): { r, psyche, double, spree }.
@@ -166,6 +176,7 @@ const RaceGame = (() => {
   function takedown(td) {
     takedowns++;
     gainBoost(1, null);
+    score.takedown(td);
     toast(td.spree >= 3 ? `Takedown spree ×${td.spree}` : td.revenge ? 'Revenge!' : td.double ? 'Double takedown!' : td.psyche ? 'Psyche-out!' : 'Takedown!', 1600);
     RaceInput.rumble(0.8, 0.6, 300);
     if (TEST) (testOut.takedowns = testOut.takedowns || []).push({ t: +simT.toFixed(2), psyche: td.psyche, double: td.double, spree: td.spree, revenge: td.revenge });
@@ -180,6 +191,7 @@ const RaceGame = (() => {
     // a takedown not yet counted is lost; a rival that drove into the player just before took them down
     const by = rules.playerCrashed(simT);
     ooc = null;
+    score.crashed();   // the chain and runs under way are lost
     const other = e.b && e.b !== me ? e.b : (e.a !== me ? e.a : null);
     // back to the start of this step: just before the cars touched
     world.restore(me, 1);
@@ -324,6 +336,7 @@ const RaceGame = (() => {
   let autopilot = null;
   function finish(t) {
     prog.done = true; prog.time = t;
+    score.finish(t);
     car.arcade = false;   // the rivals' driver takes over: plain handling (it brakes and steers at once)
     autopilot = ai.adopt(me, prog.l > 3.5 ? 5.25 : 1.75, 0.95);
     autopilot.prog = { i: prog.i, s: prog.s, prevS: prog.s, lap: 99, dist: 0, done: true, time: t };
@@ -344,6 +357,12 @@ const RaceGame = (() => {
     $('#results-table').innerHTML = '<tr><th></th><th>Driver</th><th>Car</th><th>Time</th></tr>' + rows.map(r =>
       `<tr class="${r.you ? 'you' : ''}"><td>${r.pos}</td><td>${r.name}</td><td>${r.car}</td><td class="mono">${fmtTime(r.time)}${r.est ? ' *' : ''}</td></tr>`).join('');
     $('#results-note').hidden = !rows.some(r => r.est);
+    // the score: its breakdown, and the best so far in this browser (not for scripted runs)
+    let best = null;
+    if (!SCRIPTED) try { best = +localStorage.getItem('race-best') || 0; if (score.score > best) localStorage.setItem('race-best', String(score.score)); } catch (e) { best = null; }
+    const fmt = (n) => n.toLocaleString('en-US');
+    $('#results-score').innerHTML = `<h3>Score ${fmt(score.score)}${best === null ? '' : score.score > best ? ' · a new best' : ` · best ${fmt(best)}`}</h3>` +
+      `<table>${score.breakdown().map(b => `<tr><td>${b.label}</td><td class="n">×${b.n}</td><td class="p">${fmt(b.pts)}</td></tr>`).join('')}</table>`;
     $('#btn-replay').hidden = !crashes.length;
     $('#results').hidden = false;
   }
@@ -387,6 +406,12 @@ const RaceGame = (() => {
     if (hurtT > 0) hurtT = Math.max(0, hurtT - dt * 1.8);
     $('#hurt').style.opacity = hurtT.toFixed(3);
     $('#hud-td').textContent = takedowns;
+    const sc = score.score.toLocaleString('en-US');
+    if ($('#hud-score').textContent !== sc) $('#hud-score').textContent = sc;
+    // the runs under way (past their minimum) and the near-miss chain
+    const combo = RUNS.filter(([k]) => score.run(k) > 0).map(([k, l]) => `${l} ${Math.round(score.run(k))} m`).concat(score.chain > 1 ? [`Near miss ×${score.chain}`] : []).join(' · ');
+    if ($('#combo').textContent !== combo) $('#combo').textContent = combo;
+    if ($('#combo').hidden === !!combo) $('#combo').hidden = !combo;
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('#msg').hidden = true; }
     if (chipT > 0) { chipT -= dt; if (chipT <= 0) $('#chip').hidden = true; }
     $('#hud-wrong').hidden = prog.wrong < 1 || state !== 'race';
@@ -569,18 +594,25 @@ const RaceGame = (() => {
           if (r.wreck > 0) { r.wreck -= STEP; if (r.wreck <= 0) ai.respawn(r, r.body.track ? r.body.track.s - 10 : level.start.s); }
           else if (r.stuck > 3) ai.respawn(r, r.body.track ? r.body.track.s : level.start.s);
         }
-        // boost: spent while held, filled by driving in the oncoming lanes and by drifting
+        // boost: spent while held, filled by runs in the oncoming lanes, drifting and in the air (by
+        // the metre, once each is long enough: score.js), which score when they end
         if (state === 'race') {
           if (car.boosting) boost = Math.max(0, boost - 0.22 * STEP);
-          if (prog.l < -0.6 && car.forward > 20) boost = Math.min(1, boost + 0.07 * STEP);
-          if (car.drift > 0.35 && car.speed > 15) boost = Math.min(1, boost + 0.14 * STEP);
+          const on = { oncoming: prog.l < -0.6 && car.forward > 20, drift: (car.mode === 'drift' || car.drift > 0.35) && car.speed > 15, air: car.air };
+          for (const [kind, label] of RUNS) {
+            const r = score.step(kind, on[kind], car.speed * STEP);
+            if (r.boost) boost = Math.min(1, boost + r.boost);
+            if (r.banked) chip(`${label} +${r.banked}`);
+          }
+          const ch = score.update(simT);
+          if (ch && ch.n > 1) chip(`Near-miss chain ×${ch.n} +${ch.pts}`);
           if (stepN % 4 === 0) {
             nearMisses(); spinOuts();
             for (const r of ai.rivals) if (!(r.wreck > 0)) rules.tail(me, r, simT);   // for psyche-outs
           }
           for (const u of rules.update(simT)) {
             if (u.kind === 'takedown') takedown(u);
-            else if (u.kind === 'lucky') chip('Lucky escape');
+            else if (u.kind === 'lucky') { chip('Lucky escape'); score.lucky(); }
             else { chip('Takedown denied'); if (TEST) testOut.denied = (testOut.denied || 0) + 1; }
           }
         }
@@ -668,6 +700,7 @@ const RaceGame = (() => {
       // bears a grudge
       const x = slam.full ? 0.08 : 0.03;
       gainBoost(x, slam.full ? (slam.type === 'rear' ? 'Shunt' : 'Side slam') : 'Slam');
+      score.slam(slam.full);
       r.boost = Math.max(0, r.boost - x);
       if (slam.full) r.aggr = Math.min(1, r.aggr + 0.15);
       if (slam.full && !(r.stagger > 0)) {

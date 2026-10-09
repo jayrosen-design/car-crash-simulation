@@ -55,6 +55,15 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .health.critical .health-bar i { background: linear-gradient(90deg, #d8322a, #ff6a4d); }
 .hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(200, 20, 10, 0) 55%, rgba(200, 20, 10, 0.55) 100%); }
 .chip { position: absolute; bottom: 120px; right: 24px; padding: 6px 12px; border-radius: 8px; background: rgba(242, 178, 51, 0.92); color: #1a1205; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; }
+/* the run or chain under way (game.js), above the chip; the score breakdown on the results */
+#combo { position: absolute; bottom: 158px; right: 24px; padding: 4px 10px; border-radius: 8px; background: rgba(10, 12, 16, 0.7); color: #f2b233; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 13px; }
+body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
+#results .score-break { margin: 14px 0 2px; }
+.race-results { max-height: calc(100% - 24px); overflow-y: auto; }   /* with the breakdown it can be taller than the window */
+#results .score-break h3 { margin: 0 0 4px; font-size: 18px; }
+#results .score-break table { border-collapse: collapse; width: 100%; font-size: 14px; }
+#results .score-break td { padding: 3px 8px; border-top: 1px solid var(--line); }
+#results .score-break td.n, #results .score-break td.p { text-align: right; font-variant-numeric: tabular-nums; }
 /* over the rival that took you down, until you pay it back (placed by game.js with a transform) */
 .revenge-tag { position: absolute; left: 0; top: 0; padding: 3px 8px; border-radius: 6px; background: rgba(214, 40, 30, 0.92); color: #fff; font-weight: 800; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; pointer-events: none; will-change: transform; }
 .revenge-tag::after { content: ''; position: absolute; left: 50%; bottom: -5px; margin-left: -5px; border: 5px solid transparent; border-bottom: 0; border-top-color: rgba(214, 40, 30, 0.92); }
@@ -226,6 +235,7 @@ body.touch .overlay:not(.select) { padding-top: 56px; }
       <div class="hud-row"><span class="k">Time</span><span id="hud-time" class="v mono">0:00.00</span></div>
       <div class="hud-row"><span class="k">Best lap</span><span id="hud-best" class="v mono">--:--.--</span></div>
       <div class="hud-row"><span class="k">Takedowns</span><span id="hud-td" class="v">0</span></div>
+      <div class="hud-row"><span class="k">Score</span><span id="hud-score" class="v">0</span></div>
     </div>
     <canvas id="minimap" class="minimap panel" width="200" height="170"></canvas>
     <div id="hurt" class="hurt"></div>
@@ -236,6 +246,7 @@ body.touch .overlay:not(.select) { padding-top: 56px; }
     </div>
     <div id="msg" class="msg" hidden></div>
     <div id="chip" class="chip" hidden></div>
+    <div id="combo" hidden></div>
     <div id="revenge-tag" class="revenge-tag" hidden>Revenge</div>
     <div id="hud-wrong" class="wrong" hidden>Wrong way</div>
   </div>
@@ -285,12 +296,13 @@ body.touch .overlay:not(.select) { padding-top: 56px; }
   </div>
 
   <div id="results" class="overlay" hidden>
-    <div class="panel card wide">
+    <div class="panel card wide race-results">
       <p class="eyebrow">Race result</p>
       <h2 id="results-title">1st place</h2>
       <p id="results-sub" class="muted"></p>
       <table id="results-table" class="results"></table>
       <p id="results-note" class="muted small" hidden>* still racing: an estimate from their pace so far</p>
+      <div id="results-score" class="score-break"></div>
       <div class="actions"><button id="btn-again" class="btn primary">Race again</button><button id="btn-replay" class="btn">Watch your last crash</button><a class="btn" href="Car Crash Simulation.html">Home</a></div>
     </div>
   </div>
@@ -5451,9 +5463,9 @@ const RaceAI = (() => {
   }
 
   // A near miss: the player's car passes traffic car t (lane-bound, untouched) side by side with
-  // less than a metre between them, at least 10 m/s faster. Called every few steps; keeps its state
-  // on t. Returns 'near', 'oncoming' (t drives the other way) or null.
-  const NEAR_GAP = 1.0;
+  // less than 1.2 m between them, at least 10 m/s faster and itself over 15 m/s (54 km/h). Called
+  // every few steps; keeps its state on t. Returns 'near', 'oncoming' (t drives the other way) or null.
+  const NEAR_GAP = 1.2;
   function nearMiss(car, t) {
     if (!t.body.kinematic || t.touched) { t.nm = null; return null; }
     const o = t.body.car, dx = o.x - car.x, dz = o.z - car.z;
@@ -5464,7 +5476,7 @@ const RaceAI = (() => {
     if (t.nm === null || t.nm === undefined || along > 0) return null;
     const min = t.nm, rel = Math.hypot(car.vx - o.vx, car.vz - o.vz);
     t.nm = null;
-    if (min > 0.05 && min < NEAR_GAP && rel > 10) return t.dir < 0 ? 'oncoming' : 'near';
+    if (min > 0.05 && min < NEAR_GAP && rel > 10 && car.speed > 15) return t.dir < 0 ? 'oncoming' : 'near';
     return null;
   }
 
@@ -5940,6 +5952,93 @@ const RaceRules = (() => {
   return { create, classify, attacker, along, SLAM, WINDOW, FRAGILE, COMMIT, DOUBLE, SPREE };
 })();
 if (typeof module === 'object' && module.exports) module.exports = RaceRules;
+
+</script>
+<script>/* js/race/score.js */
+/* The Race game's score: points for driving dangerously, after Burnout 3's.
+ *
+ * Single events score at once: slams, takedowns (more for a double, a spree, a revenge takedown or a
+ * psyche-out), a lucky escape, props knocked over. Near misses chain: each one within 2.5 s of the
+ * last counts one more time over (the second double, the third triple ...), and the chain is
+ * banked when it runs out. Driving in the oncoming lanes, drifting and flying are runs, paid by the
+ * metre once they're long enough (40, 20 and 5 m; then the metres before count too), banked when
+ * they end. A crash loses whatever isn't banked yet. The runs also fill the boost, by the metre,
+ * from the same point on.
+ *
+ * The numbers are this game's own. DOM-free: global RaceScore in the browser, module.exports in Node.
+ */
+const RaceScore = (() => {
+  'use strict';
+  const POINTS = { near: 50, oncoming: 80, slam: 25, fullSlam: 100, takedown: 500, double: 500, spree: 250, revenge: 1000, psyche: 750, lucky: 150, prop: 10 };
+  const RUNS = {
+    oncoming: { min: 40, pts: 2, boost: 0.0035 },   // per metre in the oncoming lanes
+    drift: { min: 20, pts: 3, boost: 0.007 },       // per metre drifting
+    air: { min: 5, pts: 5, boost: 0.004 },          // per metre in the air
+  };
+  const CHAIN = 2.5;   // s between near misses to keep a chain going
+  const LABEL = { near: 'Near misses', oncoming: 'Oncoming lanes', drift: 'Drifting', air: 'Air', slam: 'Slams', takedown: 'Takedowns', lucky: 'Lucky escapes', prop: 'Street furniture' };
+
+  function create() {
+    let score = 0, chain = null;
+    const totals = {};   // kind -> { n, pts }
+    const runs = {};     // kind -> metres so far in the run under way
+    const bank = (kind, pts, n = 1) => { const T = totals[kind] || (totals[kind] = { n: 0, pts: 0 }); T.n += n; T.pts += pts; score += pts; return pts; };
+    return {
+      get score() { return score; },
+      get chain() { return chain ? chain.n : 0; },
+      // the run under way of each kind (metres, once past its minimum; else 0)
+      run: (kind) => (runs[kind] >= RUNS[kind].min ? runs[kind] : 0),
+      /* a near miss at time t ('near' or 'oncoming'): into the chain; returns its place in the chain */
+      nearMiss(kind, t) {
+        if (!chain || t - chain.last > CHAIN) chain = { n: 0, pts: 0, last: t };
+        chain.n++; chain.last = t; chain.pts += POINTS[kind] * chain.n;
+        return chain.n;
+      },
+      /* a slam ({ full }), a takedown ({ double, spree, revenge, psyche }), a lucky escape or a prop:
+       * banked at once; returns the points */
+      slam: (full) => bank('slam', full ? POINTS.fullSlam : POINTS.slam),
+      takedown(td) {
+        let p = td.psyche ? POINTS.psyche : POINTS.takedown;
+        if (td.double) p += POINTS.double;
+        if (td.spree >= 3) p += POINTS.spree * (td.spree - 2);
+        if (td.revenge) p += POINTS.revenge;
+        return bank('takedown', p);
+      },
+      lucky: () => bank('lucky', POINTS.lucky),
+      prop: () => bank('prop', POINTS.prop),
+      /* this step, run `kind` is on (or not) and covered `m` metres: returns the boost it earns (none
+       * before its minimum, then the metres so far at once); when it ends, it's banked: returns
+       * { boost: 0, banked: points } then */
+      step(kind, on, m) {
+        const R = RUNS[kind];
+        if (!on) {
+          const got = runs[kind] >= R.min ? bank(kind, Math.round(runs[kind] * R.pts)) : 0;
+          runs[kind] = 0;
+          return { boost: 0, banked: got };
+        }
+        const before = runs[kind] || 0;
+        runs[kind] = before + m;
+        if (runs[kind] < R.min) return { boost: 0, banked: 0 };
+        return { boost: (before < R.min ? runs[kind] : m) * R.boost, banked: 0 };
+      },
+      /* at time t: a near-miss chain that has run out is banked: returns { n, pts } then, else null */
+      update(t) {
+        if (!chain || t - chain.last <= CHAIN) return null;
+        const c = chain; chain = null;
+        bank('near', c.pts, c.n);
+        return { n: c.n, pts: c.pts };
+      },
+      // the player crashed: what isn't banked is lost (the chain, the runs under way)
+      crashed() { chain = null; for (const k in runs) runs[k] = 0; },
+      // the finish: anything still under way is banked
+      finish(t) { this.update(t + CHAIN + 1); for (const k in RUNS) this.step(k, false, 0); },
+      /* the breakdown: [{ kind, label, n, pts }] in a fixed order, only the kinds that scored */
+      breakdown: () => Object.keys(LABEL).filter(k => totals[k]).map(k => ({ kind: k, label: LABEL[k], n: totals[k].n, pts: totals[k].pts })),
+    };
+  }
+  return { create, POINTS, RUNS, CHAIN };
+})();
+if (typeof module === 'object' && module.exports) module.exports = RaceScore;
 
 </script>
 <script>/* media/race/assets.js */
@@ -8598,13 +8697,17 @@ float lnoise(vec3 p) {
  * circuit is the nearest point on its centre line; a lap counts when a car crosses the start line
  * going forward, having been round the rest of the loop. Position is laps plus distance.
  *
- * Boost fills from near misses (passing traffic within a metre), driving in the oncoming lanes,
- * drifting, slams and takedowns, and is spent holding the boost button. Slams and takedowns follow
+ * Boost fills from near misses (passing traffic within 1.2 m), runs in the oncoming lanes, drifting
+ * and in the air, slams and takedowns, and is spent holding the boost button. Slams and takedowns follow
  * Burnout 3's rules (rules.js): a slam never wrecks a rival by itself; a full one (side, or a shunt
  * from behind) puts it out of control for a moment, and its wreck within two seconds of your hit is
  * your takedown. A slam takes a little of the rival's boost for you. The aggressive rivals slam you
  * too (ai.js picks their fights): a full one turns your wheel away for a moment, and a crash soon
  * after is that rival's takedown of you, and it becomes your revenge target.
+ *
+ * The score (score.js) adds points for all of it: near misses in chains, runs in the oncoming
+ * lanes, drifting and in the air (paid by the metre), slams, takedowns, lucky escapes and props. A
+ * crash loses what isn't banked yet. The results show the breakdown and the best score so far.
  *
  * Crashes: when a hit is hard enough (world.js), the cars go back one step (to just before they
  * touched) and are handed to the full crash solver (crash.js), which runs in the background. The
@@ -8721,6 +8824,8 @@ const RaceGame = (() => {
   // ---------------------------------------------------------------- boost, near misses, takedowns
   let boost = 0.3, takedowns = 0, slowmo = 0;
   const rules = RaceRules.create();   // slams, takedowns, doubles, sprees, psyche-outs, revenge
+  const score = RaceScore.create();   // points
+  const RUNS = [['oncoming', 'Oncoming'], ['drift', 'Drift'], ['air', 'Air']];
   let ooc = null;                     // the player out of control after a rival's full slam: { t, dur, kick }
   function gainBoost(x, label) { boost = Math.min(1, boost + x); if (label) chip(label); }
 
@@ -8747,12 +8852,16 @@ const RaceGame = (() => {
     if (h.prop.T.metal) { FX.clank(Math.min(30, h.prop.T.m / 4) * Math.min(1, h.vrel / 12), pos); sparks.spawn(h.x, h.y, h.z, Math.min(18, 3 + Math.round(h.vrel)), 'spark', [0, 0.5, 0]); }
     else { FX.hit(Math.min(8000, h.prop.T.m * h.vrel * 20), pos); if (SPLINTERS[h.type]) sparks.spawn(h.x, h.y, h.z, 10, 'chip', [0, 0.6, 0]); }
     if (h.first && h.type === 'hydrant') geysers.push({ x: h.x, z: h.z, y: level.terrain(h.x, h.z), t: 6 });
-    if (mine && h.first && state === 'race') { gainBoost(0.02, null); RaceInput.rumble(0.25, 0.4, 70); }
+    if (mine && h.first && state === 'race') { gainBoost(0.02, null); score.prop(); RaceInput.rumble(0.25, 0.4, 70); }
   }
   function nearMisses() {
     for (const t of traffic.cars) {
       const kind = RaceAI.nearMiss(car, t);
-      if (kind) { gainBoost(kind === 'oncoming' ? 0.15 : 0.1, kind === 'oncoming' ? 'Oncoming near miss' : 'Near miss'); FX.hit(1500, [t.body.car.x, 0.6, t.body.car.z]); }
+      if (kind) {
+        const n = score.nearMiss(kind, simT);   // its place in the chain
+        gainBoost(kind === 'oncoming' ? 0.15 : 0.1, (kind === 'oncoming' ? 'Oncoming near miss' : 'Near miss') + (n > 1 ? ` ×${n}` : ''));
+        FX.hit(1500, [t.body.car.x, 0.6, t.body.car.z]);
+      }
     }
   }
   // a takedown that counts (rules.update: half a second after the wreck): { r, psyche, double, spree }.
@@ -8760,6 +8869,7 @@ const RaceGame = (() => {
   function takedown(td) {
     takedowns++;
     gainBoost(1, null);
+    score.takedown(td);
     toast(td.spree >= 3 ? `Takedown spree ×${td.spree}` : td.revenge ? 'Revenge!' : td.double ? 'Double takedown!' : td.psyche ? 'Psyche-out!' : 'Takedown!', 1600);
     RaceInput.rumble(0.8, 0.6, 300);
     if (TEST) (testOut.takedowns = testOut.takedowns || []).push({ t: +simT.toFixed(2), psyche: td.psyche, double: td.double, spree: td.spree, revenge: td.revenge });
@@ -8774,6 +8884,7 @@ const RaceGame = (() => {
     // a takedown not yet counted is lost; a rival that drove into the player just before took them down
     const by = rules.playerCrashed(simT);
     ooc = null;
+    score.crashed();   // the chain and runs under way are lost
     const other = e.b && e.b !== me ? e.b : (e.a !== me ? e.a : null);
     // back to the start of this step: just before the cars touched
     world.restore(me, 1);
@@ -8918,6 +9029,7 @@ const RaceGame = (() => {
   let autopilot = null;
   function finish(t) {
     prog.done = true; prog.time = t;
+    score.finish(t);
     car.arcade = false;   // the rivals' driver takes over: plain handling (it brakes and steers at once)
     autopilot = ai.adopt(me, prog.l > 3.5 ? 5.25 : 1.75, 0.95);
     autopilot.prog = { i: prog.i, s: prog.s, prevS: prog.s, lap: 99, dist: 0, done: true, time: t };
@@ -8938,6 +9050,12 @@ const RaceGame = (() => {
     $('#results-table').innerHTML = '<tr><th></th><th>Driver</th><th>Car</th><th>Time</th></tr>' + rows.map(r =>
       `<tr class="${r.you ? 'you' : ''}"><td>${r.pos}</td><td>${r.name}</td><td>${r.car}</td><td class="mono">${fmtTime(r.time)}${r.est ? ' *' : ''}</td></tr>`).join('');
     $('#results-note').hidden = !rows.some(r => r.est);
+    // the score: its breakdown, and the best so far in this browser (not for scripted runs)
+    let best = null;
+    if (!SCRIPTED) try { best = +localStorage.getItem('race-best') || 0; if (score.score > best) localStorage.setItem('race-best', String(score.score)); } catch (e) { best = null; }
+    const fmt = (n) => n.toLocaleString('en-US');
+    $('#results-score').innerHTML = `<h3>Score ${fmt(score.score)}${best === null ? '' : score.score > best ? ' · a new best' : ` · best ${fmt(best)}`}</h3>` +
+      `<table>${score.breakdown().map(b => `<tr><td>${b.label}</td><td class="n">×${b.n}</td><td class="p">${fmt(b.pts)}</td></tr>`).join('')}</table>`;
     $('#btn-replay').hidden = !crashes.length;
     $('#results').hidden = false;
   }
@@ -8981,6 +9099,12 @@ const RaceGame = (() => {
     if (hurtT > 0) hurtT = Math.max(0, hurtT - dt * 1.8);
     $('#hurt').style.opacity = hurtT.toFixed(3);
     $('#hud-td').textContent = takedowns;
+    const sc = score.score.toLocaleString('en-US');
+    if ($('#hud-score').textContent !== sc) $('#hud-score').textContent = sc;
+    // the runs under way (past their minimum) and the near-miss chain
+    const combo = RUNS.filter(([k]) => score.run(k) > 0).map(([k, l]) => `${l} ${Math.round(score.run(k))} m`).concat(score.chain > 1 ? [`Near miss ×${score.chain}`] : []).join(' · ');
+    if ($('#combo').textContent !== combo) $('#combo').textContent = combo;
+    if ($('#combo').hidden === !!combo) $('#combo').hidden = !combo;
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('#msg').hidden = true; }
     if (chipT > 0) { chipT -= dt; if (chipT <= 0) $('#chip').hidden = true; }
     $('#hud-wrong').hidden = prog.wrong < 1 || state !== 'race';
@@ -9163,18 +9287,25 @@ const RaceGame = (() => {
           if (r.wreck > 0) { r.wreck -= STEP; if (r.wreck <= 0) ai.respawn(r, r.body.track ? r.body.track.s - 10 : level.start.s); }
           else if (r.stuck > 3) ai.respawn(r, r.body.track ? r.body.track.s : level.start.s);
         }
-        // boost: spent while held, filled by driving in the oncoming lanes and by drifting
+        // boost: spent while held, filled by runs in the oncoming lanes, drifting and in the air (by
+        // the metre, once each is long enough: score.js), which score when they end
         if (state === 'race') {
           if (car.boosting) boost = Math.max(0, boost - 0.22 * STEP);
-          if (prog.l < -0.6 && car.forward > 20) boost = Math.min(1, boost + 0.07 * STEP);
-          if (car.drift > 0.35 && car.speed > 15) boost = Math.min(1, boost + 0.14 * STEP);
+          const on = { oncoming: prog.l < -0.6 && car.forward > 20, drift: (car.mode === 'drift' || car.drift > 0.35) && car.speed > 15, air: car.air };
+          for (const [kind, label] of RUNS) {
+            const r = score.step(kind, on[kind], car.speed * STEP);
+            if (r.boost) boost = Math.min(1, boost + r.boost);
+            if (r.banked) chip(`${label} +${r.banked}`);
+          }
+          const ch = score.update(simT);
+          if (ch && ch.n > 1) chip(`Near-miss chain ×${ch.n} +${ch.pts}`);
           if (stepN % 4 === 0) {
             nearMisses(); spinOuts();
             for (const r of ai.rivals) if (!(r.wreck > 0)) rules.tail(me, r, simT);   // for psyche-outs
           }
           for (const u of rules.update(simT)) {
             if (u.kind === 'takedown') takedown(u);
-            else if (u.kind === 'lucky') chip('Lucky escape');
+            else if (u.kind === 'lucky') { chip('Lucky escape'); score.lucky(); }
             else { chip('Takedown denied'); if (TEST) testOut.denied = (testOut.denied || 0) + 1; }
           }
         }
@@ -9262,6 +9393,7 @@ const RaceGame = (() => {
       // bears a grudge
       const x = slam.full ? 0.08 : 0.03;
       gainBoost(x, slam.full ? (slam.type === 'rear' ? 'Shunt' : 'Side slam') : 'Slam');
+      score.slam(slam.full);
       r.boost = Math.max(0, r.boost - x);
       if (slam.full) r.aggr = Math.min(1, r.aggr + 0.15);
       if (slam.full && !(r.stagger > 0)) {

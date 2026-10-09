@@ -329,9 +329,9 @@ const RaceAI = (() => {
   }
 
   // A near miss: the player's car passes traffic car t (lane-bound, untouched) side by side with
-  // less than a metre between them, at least 10 m/s faster. Called every few steps; keeps its state
-  // on t. Returns 'near', 'oncoming' (t drives the other way) or null.
-  const NEAR_GAP = 1.0;
+  // less than 1.2 m between them, at least 10 m/s faster and itself over 15 m/s (54 km/h). Called
+  // every few steps; keeps its state on t. Returns 'near', 'oncoming' (t drives the other way) or null.
+  const NEAR_GAP = 1.2;
   function nearMiss(car, t) {
     if (!t.body.kinematic || t.touched) { t.nm = null; return null; }
     const o = t.body.car, dx = o.x - car.x, dz = o.z - car.z;
@@ -342,7 +342,7 @@ const RaceAI = (() => {
     if (t.nm === null || t.nm === undefined || along > 0) return null;
     const min = t.nm, rel = Math.hypot(car.vx - o.vx, car.vz - o.vz);
     t.nm = null;
-    if (min > 0.05 && min < NEAR_GAP && rel > 10) return t.dir < 0 ? 'oncoming' : 'near';
+    if (min > 0.05 && min < NEAR_GAP && rel > 10 && car.speed > 15) return t.dir < 0 ? 'oncoming' : 'near';
     return null;
   }
 

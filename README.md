@@ -188,7 +188,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
 - **The circuit.** A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, street lights, trees and closed side streets, rolling hills on three stretches and three jump ramps across the street. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
 - **Eight cars.** You start sixth on the grid, against seven rivals in Lexus and Mustang models, each with a name, a paint colour, a skill level and an aggression level.
 - **Traffic, both ways.** Cars keep to their lanes and follow the car ahead with the Intelligent Driver Model \[[77](#ref-77)\]: $\dot v = a\big[1 - (v/v_0)^4 - (s^*/s)^2\big]$, $s^* = s_0 + vT + \frac{v\,\Delta v}{2\sqrt{ab}}$. Here $s$ is the gap to the car ahead and $\Delta v$ the closing speed. The game uses $a = 1.6$ m/s², $b = 3$ m/s², $s_0 = 4$ m, a time gap $T = 1.4$ s, and cruising speeds $v_0$ of 13–19 m/s (47–68 km/h). They are added ahead of you and removed behind you, so the street is busy wherever the race is. They move on rails until something hits them, then become free cars that brake to a stop.
-- **Boost.** Hold Shift for 1.65× engine power, with a surge as it kicks in (up to 1.4 times that, fading over 0.6 s) that also widens the view. It fills from near misses (passing a traffic car within a metre; more for oncoming ones), driving in the oncoming lanes, drifting, slams and takedowns.
+- **Boost.** Hold Shift for 1.65× engine power, with a surge as it kicks in (up to 1.4 times that, fading over 0.6 s) that also widens the view. It fills from near misses (passing a traffic car within 1.2 m at over 54 km/h; more for oncoming ones), slams and takedowns, and by the metre from runs in the oncoming lanes (from 40 m on), drifting (from 20 m) and in the air (from 5 m); once a run is long enough, the metres before count too.
 - **Drifting,** as in Burnout. Above 60 km/h, tap the brake or the handbrake while steering (or hold full lock above 135 km/h, or land a jump sideways), and the rear lets go. Then the steering sets the slide angle: steer in for up to about 40°, let go and the car straightens up, counter-steer to take it in faster, brake to widen it. On the throttle the tyres don't slow the car down (a drift keeps about 85% of its speed over 2.5 s). It ends when the slide swings the other way, when you let go with little slide left, below 43 km/h, on a hard hit or in the air.
 - **Slams and takedowns,** as in Burnout 3 (`rules.js`). A slam never wrecks a rival by itself.
   - **Slams.** Each contact you make with a rival is a rub, a light slam or a full slam, by how hard you drove into it along the contact normal. Your nose into its tail is a shunt (light from 3 m/s, full from 7 m/s); anything else is a side slam (2.5 and 5 m/s). A slam takes a little of the rival's boost for you. Two cars can't slam each other again within a second.
@@ -207,7 +207,8 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Rivals** have no health bar. They still wreck at fixed impact speeds (13 m/s into a wall nose or tail first, 20 m/s into another rival).
 - **Things to knock over.** Street lights and signal posts break off their bases and topple. Cones, bins, newspaper boxes, hydrants, benches, crates and barrels fly and tumble. They are along the pavements, in roadworks by the kerb and stacked at the side streets' barriers. A burst hydrant sprays water. They cost no health and little speed: a street light about 5 km/h, a cone almost none. Each one you hit adds a little boost. Trees, buildings and the concrete barriers stay solid.
 - **Hills and jumps.** The ramps are 1.3–1.5 m high. From 144 km/h, the first one gives 1.2 s and about 50 m in the air. Taken slowly, you only hop. Over the crest of the steepest hill you stay on the road at 108 km/h and fly at 180 km/h and up. In the air there's no grip, so steer before the lip. A car in the air clears the barriers, the props and the other cars.
-- **Results.** Positions, lap times and takedowns. Rivals still racing get an estimated time from their pace. **Watch your last crash** replays it with the simulator's bullet-time.
+- **Score** (`score.js`), as in Burnout 3. Points for near misses (50, oncoming 80), which chain: each one within 2.5 s of the last counts one more time over (the second double, the third triple), banked when the chain runs out. Runs in the oncoming lanes, drifting and in the air pay 2, 3 and 5 points a metre once they're long enough, banked when they end. Slams score 25 (full 100), takedowns 500 (a double +500, each takedown in a spree past the second +250, revenge +1,000, a psyche-out 750), a lucky escape 150 and each prop 10. A crash loses whatever isn't banked yet. The HUD shows the score, and the run or chain under way above the chips.
+- **Results.** Positions, lap times and takedowns, and the score with its breakdown and the best score so far in this browser. Rivals still racing get an estimated time from their pace. **Watch your last crash** replays it with the simulator's bullet-time.
 
 ### How it works
 
@@ -258,7 +259,8 @@ node tools/headless-check.js world      the crash solver's world barrier
 - **`race-check.js`** checks:
   - **the level:** the circuit's length and tightest radius, that no building or post reaches into the road, and that the same seed gives the same city;
   - **the cars:** the car-select screen's figures (`RaceCar.measure`): 0–100 km/h, top speed, braking and cornering grip are in plausible bands, and boost raises the top speed. A head-on into a wall is a crash and a shallow scrape isn't;
-  - **near misses:** passing within a metre counts and 1.5 m doesn't;
+  - **near misses:** passing within 1.2 m counts (0.8 and 1.1 m) and 1.5 m doesn't;
+  - **score:** `score.js` on its own: near misses chain (and a crash loses the chain), the runs pay nothing before their minimum and then the metres before too (and the boost likewise), and bank when they end; takedown points add up; the breakdown sums to the score;
   - **props:** each kind is driven into on its own. It must be knocked more than 3 m (the poles past 45°), with no crash, the car less than 8 km/h slower, and the prop settled again within 12 s;
   - **jump:** airtime off the first ramp from 144 km/h (0.8–1.6 s, and it lands), less from 43 km/h; over the steepest crest none at 108 km/h, but a take-off at 216 km/h;
   - **damage:** a scrape is free, an 8 m/s nudge into a car costs under 3%, a 13 m/s wall 12–35%, and 28 m/s is a wreck;
@@ -2405,6 +2407,7 @@ js/
     world.js      collisions between cars and with the city, hills, jumps and flight, damage, step history
     props.js      street lights, cones, bins, hydrants, benches, crates ...: rigid bodies to knock over
     rules.js      slams and takedowns: rubs, light and full slams, the window, doubles, sprees, psyche-outs, revenge
+    score.js      the score: near-miss chains, runs paid by the metre, slams, takedowns; the breakdown
     ai.js         traffic (Intelligent Driver Model) and the rivals, who also pick fights
     input.js      keyboard and gamepad, rumble
     crash.js      the crash solver in a Web Worker, streaming frames to the crash camera
@@ -2423,7 +2426,7 @@ media/            the home page's trailers (crash tests and Race), background lo
 media/race/       the Race game's textures and sky (generated by fetch-race-assets.py)
 tools/
   headless-check.js     physics and lab checks in Node
-  race-check.js         the Race game's level, cars, near misses, walls, slams, takedown rules and a full AI race, in Node
+  race-check.js         the Race game's level, cars, near misses, walls, slams, takedown rules, score and a full AI race, in Node
   destruction-check.js  the Destruction mode's junction, traffic, pile-up, wrecks and score, in Node
   gpu-check.js          the GPU solver against the CPU solver, in headless Chrome
   build-standalone.js   builds the four single-file pages

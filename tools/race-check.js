@@ -7,7 +7,7 @@
  * car:     the car-select screen's figures (RaceCar.measure): 0-100 km/h, top speed, braking from
  *          100 and cornering grip in plausible bands, boost faster, for both cars; a crash is
  *          detected head-on into a wall and not in a shallow scrape
- * nearmiss: passing traffic within a metre counts, 1.5 m doesn't, oncoming is told apart
+ * nearmiss: passing traffic within 1.2 m counts (0.8 and 1.1 m), 1.5 m doesn't, oncoming is told apart
  * props:   each kind, driven into: knocked over (or away), no crash, the car only a little slower,
  *          settled again
  * jump:    airtime off the first ramp (fast and slow) and over a hill's crest (stays down at
@@ -34,6 +34,9 @@
  *          slam and comes through had a lucky escape
  * attack:  an aggressive rival (ai.js) 15 m behind the player's car in the next lane catches it and
  *          drives into it within 8 s; a calm one never does
+ * score:   score.js on its own: near misses chain (and are lost in a crash), the runs pay nothing
+ *          before their minimum and then the metres before too, boost likewise, and bank when they
+ *          end; takedown points add up; the breakdown sums to the score
  * drift:   the player's handling (vehicle.js, car.arcade) at 90 km/h: a brake tap with full lock,
  *          then throttle steering in, holds a 20-45 degree slide for at least 1.5 s keeping over 80%
  *          of the speed, and straightens up within 1.5 s of letting go (both cars); the same
@@ -54,6 +57,7 @@ const RaceWorld = require(path.join(__dirname, '../js/race/world.js'));
 const RaceAI = require(path.join(__dirname, '../js/race/ai.js'));
 const RaceProps = require(path.join(__dirname, '../js/race/props.js'));
 const RaceRules = require(path.join(__dirname, '../js/race/rules.js'));
+const RaceScore = require(path.join(__dirname, '../js/race/score.js'));
 const filter = process.argv[2];
 let failures = 0;
 const check = (name, ok, detail) => { console.log(`=== ${name}: ${detail} ${ok ? 'OK' : 'PROBLEM'}`); if (!ok) failures++; };
@@ -113,9 +117,9 @@ if (want('nearmiss')) {
     }
     return got;
   };
-  const a = pass(0.8, 1), b = pass(1.5, 1), c = pass(0.6, -1), d = pass(0.03, 1);
-  check('nearmiss', a === 'near' && b === null && c === 'oncoming' && d === null,
-    `0.8 m alongside: ${a} (must count); 1.5 m: ${b} (must not); 0.6 m past an oncoming car: ${c} (must count as oncoming); 3 cm (a touch): ${d} (must not)`);
+  const a = pass(0.8, 1), a2 = pass(1.1, 1), b = pass(1.5, 1), c = pass(0.6, -1), d = pass(0.03, 1);
+  check('nearmiss', a === 'near' && a2 === 'near' && b === null && c === 'oncoming' && d === null,
+    `0.8 m alongside: ${a} and 1.1 m: ${a2} (must count); 1.5 m: ${b} (must not); 0.6 m past an oncoming car: ${c} (must count as oncoming); 3 cm (a touch): ${d} (must not)`);
 }
 
 if (want('props')) {
@@ -392,6 +396,37 @@ if (want('drift')) {
   const fmt = (d) => `${d.held.toFixed(1)} s at 20-45 degrees (up to ${d.maxSlip.toFixed(0)}), ${(d.kept * 100).toFixed(0)}% of the speed kept, straight ${d.back < 0 ? 'never' : d.back.toFixed(1) + ' s'} after letting go`;
   check('drift', good(lx) && good(mu) && rv.maxSlip < 10,
     `Lexus: ${fmt(lx)}; Mustang: ${fmt(mu)} (at least 1.5 s, over 80%, within 1.5 s); a rival's Lexus: slides up to ${rv.maxSlip.toFixed(0)} degrees (under 10: no drift)`);
+}
+
+if (want('score')) {
+  const P = RaceScore.POINTS, U = RaceScore.RUNS, S = RaceScore.create(), log = [];
+  // a chain of three near misses (the third oncoming), banked once 2.5 s pass without another
+  S.nearMiss('near', 1); S.nearMiss('near', 2.5); S.nearMiss('oncoming', 4);
+  log.push(['a chain of three', S.chain === 3 && S.update(6.4) === null]);
+  const ch = S.update(6.6);
+  log.push(['banked when it runs out', !!ch && ch.n === 3 && ch.pts === P.near + 2 * P.near + 3 * P.oncoming && S.score === ch.pts]);
+  // an oncoming run: nothing before its minimum, then the metres so far at once, banked when it ends
+  let b1 = 0; for (let i = 0; i < 39; i++) b1 += S.step('oncoming', true, 1).boost;
+  const at = S.step('oncoming', true, 2).boost;   // 41 m
+  log.push(['no boost before the minimum, then the backlog', b1 === 0 && Math.abs(at - 41 * U.oncoming.boost) < 1e-9 && S.run('oncoming') === 41]);
+  const before = S.score, end = S.step('oncoming', false, 0);
+  log.push(['banked when the run ends', end.banked === Math.round(41 * U.oncoming.pts) && S.score === before + end.banked]);
+  log.push(['a run short of its minimum scores nothing', (() => { for (let i = 0; i < 10; i++) S.step('drift', true, 1); return S.step('drift', false, 0).banked === 0; })()]);
+  // a crash loses the chain and the run under way
+  const s0 = S.score;
+  S.nearMiss('near', 20); S.nearMiss('near', 21); for (let i = 0; i < 30; i++) S.step('drift', true, 1);
+  S.crashed();
+  log.push(['a crash loses what is not banked', S.update(30) === null && S.step('drift', false, 0).banked === 0 && S.score === s0]);
+  // takedowns: plain, double, a spree of four, revenge, psyche-out
+  const t0 = S.score;
+  const got = S.takedown({}) + S.takedown({ double: true, spree: 2 }) + S.takedown({ spree: 4 }) + S.takedown({ revenge: true, spree: 1 }) + S.takedown({ psyche: true, spree: 1 });
+  log.push(['takedown points', got === P.takedown + (P.takedown + P.double) + (P.takedown + 2 * P.spree) + (P.takedown + P.revenge) + P.psyche && S.score === t0 + got]);
+  S.slam(true); S.slam(false); S.lucky(); S.prop();
+  S.step('air', true, 30); S.finish(40);
+  const sum = S.breakdown().reduce((a, r) => a + r.pts, 0);
+  log.push(['the breakdown sums to the score', sum === S.score && S.breakdown().some(r => r.kind === 'air')]);
+  const bad = log.filter(([, ok]) => !ok).map(([k]) => k);
+  check('score', !bad.length, `${log.length - bad.length}/${log.length} hold${bad.length ? '; failing: ' + bad.join(', ') : ''} (final score ${S.score})`);
 }
 
 console.log(failures ? `\n${failures} check(s) with problems` : '\nall race checks passed');
