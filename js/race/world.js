@@ -275,7 +275,7 @@ const RaceWorld = (() => {
     }
 
     // ---------------------------------------------------------------- history for the hand-over
-    const FIELDS = ['x', 'z', 'h', 'vx', 'vz', 'yaw', 'steer', 'ax', 'ay', 'pitch', 'roll'];
+    const FIELDS = ['x', 'z', 'h', 'vx', 'vz', 'yaw', 'steer', 'ax', 'ay', 'pitch', 'roll', 'y', 'vy', 'air', 'gPitch', 'gRoll'];   // (height and flight too: a crash in the air)
     function snapshot() {
       const snap = { tick, cars: bodies.map(b => { const o = { kinematic: b.kinematic }; for (const f of FIELDS) o[f] = b.car[f]; return o; }) };
       hist.push(snap);

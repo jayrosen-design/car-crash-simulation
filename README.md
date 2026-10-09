@@ -234,7 +234,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Lane choice.** They pick lanes by time to collision with the traffic ahead. They keep out of oncoming lanes with traffic in them, and don't change lanes mid-corner.
   - **Pace.** Their pace is rubber-banded to yours, and they boost on the straights.
 - **The crash camera** (`js/race/crash.js`).
-  - **Hand-over.** The world steps back one tick, to just before the cars touched. Each car involved goes to the crash solver with its pose, velocity and yaw rate.
+  - **Hand-over.** The world steps back one tick, to just before the cars touched. Each car involved goes to the crash solver with its pose, velocity and yaw rate; a car in the air (off a ramp or a crest) also with its height over the ground, vertical speed, pitch and roll, so the crash starts in the air.
   - **The street.** Nearby buildings, barriers and trees become a `world` barrier: boxes and cylinders combined into one distance field, with horizontal normals.
   - **On a hill.** The solver's ground is flat, so a crash on a hill runs at height 0 and is drawn raised to the ground's height at the impact. That applies to the cars, the parts that come off and the sparks.
   - **The worker.** The solver runs in a Web Worker built from the physics scripts' own text, so it also works from a file opened from disk. Without a worker, it runs on the main thread a few milliseconds per frame.

@@ -5104,7 +5104,7 @@ const RaceWorld = (() => {
     }
 
     // ---------------------------------------------------------------- history for the hand-over
-    const FIELDS = ['x', 'z', 'h', 'vx', 'vz', 'yaw', 'steer', 'ax', 'ay', 'pitch', 'roll'];
+    const FIELDS = ['x', 'z', 'h', 'vx', 'vz', 'yaw', 'steer', 'ax', 'ay', 'pitch', 'roll', 'y', 'vy', 'air', 'gPitch', 'gRoll'];   // (height and flight too: a crash in the air)
     function snapshot() {
       const snap = { tick, cars: bodies.map(b => { const o = { kinematic: b.kinematic }; for (const f of FIELDS) o[f] = b.car[f]; return o; }) };
       hist.push(snap);
@@ -8890,13 +8890,20 @@ const RaceGame = (() => {
     world.restore(me, 1);
     if (other) world.restore(other, 1);
     const bodies = other ? [me, other] : [me];
-    const units = bodies.map(b => ({ key: b.car.key, massKg: b.car.m, pose: b.car.pose, velocity: b.car.originVelocity(), yawRate: b.car.yaw }));
+    // a car in the air (off a ramp or a crest) starts the crash in the air: its height over the
+    // ground here, its vertical speed and attitude (the solver's ground is flat, drawn at this height)
+    const ground = level.groundAt(car.x, car.z).h;
+    const units = bodies.map(b => {
+      const c = b.car, u = { key: c.key, massKg: c.m, pose: c.pose, velocity: c.originVelocity(), yawRate: c.yaw };
+      if (c.air || c.y - ground > 0.05) Object.assign(u, { lift: c.y - ground, vy: c.vy, pitch: c.pitch + c.gPitch, roll: c.roll + c.gRoll });
+      return u;
+    });
     const near = level.collidersNear(e.x, e.z, 32);
     const shapes = { boxes: near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height })), cyls: near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height })) };
     crash = RaceCrash.start({ units, world: shapes, duration: 1.6, damage: DAMAGE });
     crash.impactKmh = e.vn * 3.6;
     // the solver's ground is flat at 0: the crash is drawn at the ground's height here
-    crash.lift = level.groundAt(car.x, car.z).h;
+    crash.lift = ground;
     R.setCrashLift(crash.lift); PT.y = crash.lift;
     crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: paintOf(b) }));
     for (const U of crashUnits) { U.body.frozen = true; if (U.model !== R.player) { U.model.group.visible = true; if (U.paint !== undefined) U.model.setPaint(U.paint); } }
@@ -9239,6 +9246,7 @@ const RaceGame = (() => {
     }
     return inp;
   }
+  const earDir = new THREE.Vector3();
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     if (TEST) testOut.frames.push([state, Math.round(dt * 1000), crash ? crash.F.t.length : -1, crash ? crash.debris.length : -1]);
@@ -9276,7 +9284,7 @@ const RaceGame = (() => {
         const racing = state === 'race' || state === 'finished' || state === 'crash';
         ctxAI.racing = racing;
         if (stepN % 4 === 0 && state !== 'countdown') traffic.step(STEP * 4, prog.s, [me].concat(ai.rivals.map(r => r.body)));
-        const ev = world.step(STEP, (b) => b === me ? playerInput() : b.rival ? (racing ? ai.drive(b.rival, STEP, ctxAI) : { brake: 1 }) : (b.traffic && !b.kinematic ? { brake: 0.5 } : null));
+        const ev = world.step(STEP, (b) => b === me ? playerInput() : b.rival ? (racing ? ai.drive(b.rival, STEP, ctxAI) : { brake: 1 }) : b.drive ? b.drive() : (b.traffic && !b.kinematic ? { brake: 0.5 } : null));
         if (state === 'race' || state === 'finished' || state === 'crash') simT += STEP;
         acc -= STEP;
         for (const e of ev) handleContact(e);
@@ -9344,6 +9352,7 @@ const RaceGame = (() => {
     if (audio && (state === 'race' || state === 'countdown' || state === 'finished')) FX.engineUpdate(car.forward * 3.6, Math.max(car.throttle, input.throttle || 0), state === 'countdown' ? 900 + 4500 * (input.throttle || 0) : car.rpm);
     hud(dt, simT);
     if (director.camera) director.camera(dt, state);
+    FX.listen(R.camera.position, R.camera.getWorldDirection(earDir), R.camera.up);   // positioned sounds are heard from the camera
     R.render();
     requestAnimationFrame(frame);
   }
