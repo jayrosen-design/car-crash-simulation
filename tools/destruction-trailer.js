@@ -221,7 +221,8 @@ const TITLES = [
   [F(35), { kind: 'title', title: 'Destruction', tag: 'Gas tankers · chain reactions · Crashbreaker' }, 'card'],
   [F(36), { kind: 'title', title: 'Destruction', tag: 'Play free in your browser', cta: 'Play now', url: 'car-crash-simulation.vercel.app/destruction' }, 'title'],
 ];
-const POSTER = { take: 'gold', cam: 'pileLow', ref: 'cbReady', off: 10 };
+// the poster: the car overhead, flying off the ramp at the tanker and the bus crossing below
+const POSTER = { take: 'gold', cam: 'rampUnder', ref: 'ramp', off: 178 };
 const edit = { E, TITLES };
 
 // the game's own overlay parts: the car's speed, the impact readout, the damage counter

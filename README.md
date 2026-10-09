@@ -10,21 +10,18 @@ The replay slows to 1/40× around the peak deceleration, the camera shakes with 
 
 It runs in any modern browser from plain files: no install, no server, no build step needed to use it.
 
-<p>
-  <img src="media/shot-rigid.jpg" width="49%" alt="The Lexus pressed into the rigid barrier at maximum crush">
-  <img src="media/lab-side.jpg" width="49%" alt="A side-impact barrier trolley pushed into the driver's door">
-</p>
+<a href="https://car-crash-simulation.vercel.app"><img src="media/readme/hero.jpg" width="100%" alt="The website's home page: Car Crash Simulation, over the trailer's background of a Lexus bursting through a brick wall, with Play now, Play Race and Watch the trailer"></a>
 
 There are eight simulations: the two **barrier tests** (a free simulator with full control) and six **crash labs**, each set up like a test protocol:
 
 | | | | |
 |---|---|---|---|
-| <img src="media/shot-rigid.jpg" width="200" alt="Rigid barrier"><br>**Rigid barrier** | <img src="media/shot-brick.jpg" width="200" alt="Brick wall"><br>**Brick wall** | <img src="media/lab-overlap.jpg" width="200" alt="Frontal overlap"><br>**Frontal overlap** | <img src="media/lab-multi.jpg" width="200" alt="Two-vehicle collision"><br>**Two-vehicle collision** |
-| <img src="media/lab-side.jpg" width="200" alt="Side impact"><br>**Side impact** | <img src="media/lab-whiplash.jpg" width="200" alt="Whiplash sled"><br>**Whiplash sled** | <img src="media/lab-restraint.jpg" width="200" alt="Occupant restraints"><br>**Occupant restraints** | <img src="media/lab-pedestrian.jpg" width="200" alt="Pedestrian and braking"><br>**Pedestrian & braking** |
+| <a href="https://car-crash-simulation.vercel.app/Simulator.html?preset=rigid"><img src="media/readme/card-1.jpg" width="200" alt="Full-frontal barrier test: the Lexus at 56 km/h into a rigid barrier"></a> | <a href="https://car-crash-simulation.vercel.app/Simulator.html?preset=brick"><img src="media/readme/card-2.jpg" width="200" alt="Through a brick wall: 366 mortared bricks"></a> | <a href="https://car-crash-simulation.vercel.app/Simulator.html?lab=overlap"><img src="media/readme/card-3.jpg" width="200" alt="Frontal overlap lab: 40% or 25% overlap, rigid or honeycomb barrier"></a> | <a href="https://car-crash-simulation.vercel.app/Simulator.html?lab=multi"><img src="media/readme/card-4.jpg" width="200" alt="Two-vehicle collision lab: a Mustang and a Lexus head-on"></a> |
+| <a href="https://car-crash-simulation.vercel.app/Simulator.html?lab=side"><img src="media/readme/card-5.jpg" width="200" alt="Side impact lab: a barrier trolley into the driver's door"></a> | <a href="https://car-crash-simulation.vercel.app/Simulator.html?lab=whiplash"><img src="media/readme/card-6.jpg" width="200" alt="Whiplash sled lab: the dummy's head against the head restraint"></a> | <a href="https://car-crash-simulation.vercel.app/Simulator.html?lab=restraint"><img src="media/readme/card-7.jpg" width="200" alt="Occupant restraint lab: belt and airbag in an X-ray view"></a> | <a href="https://car-crash-simulation.vercel.app/Simulator.html?lab=pedestrian"><img src="media/readme/card-8.jpg" width="200" alt="Pedestrian and emergency braking lab"></a> |
 
 There are also two game modes, with crashes worked out by the same solver:
-- **[Race](#race-game-mode):** drive it yourself, three laps of a city street circuit against seven rivals through two-way traffic.
-- **[Destruction](#destruction-game-mode):** drive into a busy junction at dusk and cause as much damage as you can, Burnout-style, with gas tankers that explode.
+- **[Race](#race-game-mode):** drive it yourself, three laps of a city street circuit against seven rivals through two-way traffic, on three tracks.
+- **[Destruction](#destruction-game-mode):** drive into a busy junction (three of them) and cause as much damage as you can, Burnout-style, with gas tankers that explode.
 
 > **A teaching model.** It is not validated against physical crash tests. Use it to compare settings and see trends, not to predict real injuries.
 
@@ -151,7 +148,7 @@ In playback:
 
 ## Race (game mode)
 
-<img src="media/race.jpg" width="640" alt="Race mode: the player's Lexus in a pack of rival cars on a city street, with a rival spun round by a takedown">
+<a href="https://car-crash-simulation.vercel.app/#games"><img src="media/readme/race.jpg" width="640" alt="The website's Race trailer player: a head-on crash in the city at dusk, with Watch the Race trailer, 1:00 with sound"></a>
 
 `Race.html` puts you behind the wheel: three laps of a city street circuit against seven rivals, through traffic going both ways, in the spirit of arcade street racers. There are three tracks, each at its own time of day. A crash is worked out by the same lattice solver as the simulations, starting from your car's real position, speed and spin at the moment of impact. While it computes in the background, a slow-motion crash camera plays it back. Open it from the home page, the **Simulation** menu in the simulator, or `/race` on the website. For development, open `game.html`.
 
@@ -297,7 +294,7 @@ node tools/headless-check.js world      the crash solver's world barrier
 
 ## Destruction (game mode)
 
-<img src="media/destruction.jpg" width="640" alt="Destruction mode: a gas tanker exploding in a busy junction at dusk, a wrecked car flipped over in front, the damage adding up in dollars">
+<a href="https://car-crash-simulation.vercel.app/#games"><img src="media/readme/destruction.jpg" width="640" alt="The website's Destruction trailer player: a car flying off the ramp over the junction at dusk, toward a gas tanker and a bus, with Watch the Destruction trailer, 1:00 with sound"></a>
 
 `Destruction.html` is a crash mode in the spirit of Burnout 3's. You drive down into a busy junction and cause as much damage as you can. There are three junctions (the **Junction** row on the select screen, or `?level=`): the crossroads at dusk (below), the docklands at night and a boulevard at noon.
 - **The impact.** The full crash solver works out your car's impact, as in Race, played back in slow motion.
@@ -2271,6 +2268,12 @@ blender -b -Y --factory-startup --python tools/fetch-race-assets.py
 
 Downloads the Race game's textures and street HDRI from Poly Haven and writes `media/race/assets.js`. Diffuse maps are 1024 px; normal and roughness maps are scaled to 512 px. All are recompressed as JPEG, and the HDRI is kept at 1k. Rebuild afterwards.
 
+```
+node tools/readme-images.js
+```
+
+Captures this README's pictures from the website itself (`home.html` in headless Chrome), so the README looks like the site: the home page's hero, the eight simulations' cards (without their descriptions) and the two game trailers' players, in `media/readme/`. Re-run it when the home page's pictures or posters change. `.vercelignore` keeps them off the website.
+
 ### The website's reading pages
 
 ```
@@ -2455,6 +2458,7 @@ js/
 models/           generated car models (Draco GLB as base64) and physics data
 media/            the home page's trailers (crash tests, Race and Destruction, each also in 9:16 for phones), background loop, posters and pictures (destruction.jpg: the Destruction card)
 media/race/       the Race game's textures and sky (generated by fetch-race-assets.py)
+media/readme/     this README's pictures, captured from the website (readme-images.js)
 tools/
   headless-check.js     physics and lab checks in Node
   race-check.js         the Race game's level, cars, near misses, walls, slams, takedown rules, score and a full AI race, in Node
@@ -2464,6 +2468,7 @@ tools/
   build-site.js         builds physics.html and sources.html from this README
   fetch-race-assets.py  downloads and packs the Race game's textures (Blender)
   record-video.js       records the home page's media in headless Chrome
+  readme-images.js      captures the README's pictures from the website
   trailer.js            the trailer's shot list, cameras, titles and recorder
   trailer-music.js      the trailers' soundtracks, synthesised with Web Audio
   trailer-kit.js        the trailers' recorder, edit and compositor (16:9 and 9:16 from square takes)
