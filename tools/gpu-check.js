@@ -4,7 +4,8 @@
  *   node tools/gpu-check.js honeycomb  (scenarios whose name contains "honeycomb"; "scaling" for the timing)
  * Needs Chrome with WebGPU (the page is opened from disk, a secure context). The scenarios are
  * rigid-barrier crashes in which nothing comes off on the CPU either, so both solve the same thing,
- * then the crash labs' set-ups (offset barrier, honeycomb, two cars, side trolley, pole).
+ * then the crash labs' set-ups (offset barrier, honeycomb, two cars, side trolley, pole), then the
+ * game modes' world (a box wall, a moving box, two cars among a building and a post).
  * Differences come from the order the GPU works in (constraints in colour groups, car-to-car
  * contacts gathered per node) and its 32-bit floats. Fails if a GPU run errors or falls back to the
  * CPU, or if what a test reports differs by more than its tolerance. */
@@ -106,6 +107,20 @@ const want = (name) => !filter || name.includes(filter);
       return { barrier: 'pole', measure: true, duration: 0.5, sled: true, pole: { x: H[0] + 0.05, z: -W / 2 - Phys.POLE_RADIUS - 0.03 },
         vehicles: [{ vehicle: V, massKg: V.massKg, stiffness: 'standard', damage: 'realistic', pose: { x: 0, z: 0, heading: 0 }, speed: 0, velocity: [0, -20 * 0.44704], structure: { steel: 'uhss' } }] }; })()`,
       [['B-pillar intrusion', 'bpillar', 0.15, 'mm', 1000], ['car speed change', 'dv0', 0.08, 'km/h', 3.6], ['plastic energy', 'plastic', 0.12, '%', 100]]],
+    // the game modes' world (boxes and posts; a box that moves): Race and Destruction crashes
+    ['world: box wall turned 30 degrees, Lexus 56 km/h', `(() => { const V = CrashVehicles.get('lexus'), th = 30 * Math.PI / 180, c = Math.cos(th), s = Math.sin(th), x0 = -(V.xMin + V.length) - 0.25;
+      return { barrier: 'world', world: { boxes: [{ x: 1.5 * c, z: 1.5 * s, hx: 1.5, hz: 9, angle: th, height: 3 }] }, measure: true, duration: 0.6,
+        vehicles: [{ vehicle: V, massKg: V.massKg, stiffness: 'standard', damage: 'realistic', pose: { x: x0 * c, z: x0 * s, heading: th }, velocity: [56 / 3.6 * c, 56 / 3.6 * s] }] }; })()`,
+      [['peak deceleration', 'peak', 0.15, 'g', 1], ['max crush', 'crush0', 0.08, 'mm', 1000], ['speed change', 'dv0', 0.05, 'km/h', 3.6], ['plastic energy', 'plastic', 0.10, '%', 100]]],
+    ['world: a tanker-sized box at 15 m/s into a stopped Lexus', `(() => { const V = CrashVehicles.get('lexus');
+      return { barrier: 'world', measure: true, duration: 0.6, minDuration: 0.6, world: { boxes: [{ x: 0, z: -4.5, hx: 6, hz: 1.25, angle: 0, height: 3.2, vx: 0, vz: 15, top: true }] },
+        vehicles: [{ vehicle: V, massKg: V.massKg, stiffness: 'standard', damage: 'realistic', pose: { x: -V.xMin - V.length / 2, z: 0, heading: 0 }, velocity: [0, 0], structure: { steel: 'mild' } }] }; })()`,
+      [['car speed change', 'dv0', 0.10, 'km/h', 3.6], ['B-pillar intrusion', 'bpillar', 0.25, 'mm', 1000]]],   // (it starts still: no energy to share out)
+    ['world: Lexus and Mustang head-on, 2 x 80 km/h, by a building and a lamp post', `(() => { const V = CrashVehicles.get('lexus'), M = CrashVehicles.get('mustang'), v = 80 / 3.6, fa = V.xMin + V.length, fb = M.xMin + M.length, gap = 0.02 + 2 * v * 0.004;
+      return { barrier: 'world', measure: true, duration: 1.0, world: { boxes: [{ x: 1, z: 4.5, hx: 6, hz: 2, angle: 0.1, height: 12 }], cyls: [{ x: -2, z: -2.6, r: 0.16, height: 6 }] },
+        vehicles: [{ vehicle: V, massKg: V.massKg, stiffness: 'standard', damage: 'realistic', pose: { x: -gap / 2 - fa, z: 0, heading: 0 }, velocity: [v, 0] },
+          { vehicle: M, massKg: M.massKg, stiffness: 'standard', damage: 'realistic', pose: { x: gap / 2 + fb, z: 0.3, heading: Math.PI }, velocity: [-v, 0] }] }; })()`,
+      [['speed change, Lexus', 'dv0', 0.06, 'km/h', 3.6], ['speed change, Mustang', 'dv1', 0.06, 'km/h', 3.6], ['crush, Lexus', 'crush0', 0.12, 'mm', 1000], ['crush, Mustang', 'crush1', 0.12, 'mm', 1000]]],
   ];
   for (const [name, build, rows] of LABS) {
     if (!want(name)) continue;

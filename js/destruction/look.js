@@ -27,13 +27,8 @@ const DestructionLook = (() => {
   'use strict';
   const T = THREE;
 
-  // ---------------------------------------------------------------- the light at dusk
-  const DUSK = {
-    sky: 0x2b2440, fog: 0x7d6273, fogNear: 90, fogFar: 1150, hemiSky: 0x8d8fd0, hemiGround: 0x3c2b28, hemi: 0.75,
-    sun: 0xff8a4a, sunI: 2.4, sunDir: [-0.93, 0.16, 0.33], exposure: 0.92, hdr: false, windowGlow: '0.3', windowLit: '0.7',
-    domeFrag: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 hor = vec3(1.0,0.52,0.30), mid = vec3(0.55,0.32,0.52), zen = vec3(0.10,0.11,0.26); vec3 c = mix(hor, mid, smoothstep(0.0, 0.16, h)); c = mix(c, zen, smoothstep(0.12, 0.7, h)); float s = max(dot(vD, sunDir), 0.0); c += vec3(1.0,0.62,0.30) * (pow(s, 600.0) * 5.0 + pow(s, 10.0) * 0.55); c = mix(c, vec3(0.42,0.30,0.36), smoothstep(0.0, -0.05, vD.y)); gl_FragColor = vec4(c, 1.0); }',
-    envFrag: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.20,0.15,0.16), vec3(0.85,0.50,0.38), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.22,0.22,0.42), smoothstep(0.05, 0.6, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(1.0,0.6,0.3) * (pow(s, 400.0) * 30.0 + pow(s, 8.0) * 0.5); gl_FragColor = vec4(c, 1.0); }',
-  };
+  // ---------------------------------------------------------------- the light at dusk (RaceRender.DUSK)
+  const DUSK = RaceRender.DUSK;
   // the traffic's paints (sRGB)
   const PAINTS = [0xa3161f, 0x1d4fa3, 0xe9e9e6, 0x121315, 0x9ea3a8, 0xd9581c, 0xe6b81e, 0x1f6b43];
   const BUS_PAINTS = [0xd8a21c, 0xc22a22, 0x2a5fb0, 0x2d8a4e];
@@ -450,63 +445,6 @@ diffuseColor.rgb *= 1.0 - 0.25 * vCrush;`)
       shk.amp *= Math.exp(-dt * 2.2); shk.t += dt;
     }
 
-    // ------------------------------------------------ bloom (scene.js renderBloom, for this scene)
-    let bloom = null;
-    function buildBloom() {
-      const VS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
-      const mat = (fs, additive) => new T.ShaderMaterial({ vertexShader: VS, fragmentShader: fs, depthTest: false, depthWrite: false,
-        uniforms: { src: { value: null }, texel: { value: new T.Vector2() }, strength: { value: 1 } }, blending: additive ? T.AdditiveBlending : T.NoBlending, transparent: !!additive });
-      const DOWN = `uniform sampler2D src; uniform vec2 texel; varying vec2 vUv;
-        void main() { gl_FragColor = (4.0 * texture2D(src, vUv) + texture2D(src, vUv - texel) + texture2D(src, vUv + texel)
-          + texture2D(src, vUv + vec2(texel.x, -texel.y)) + texture2D(src, vUv - vec2(texel.x, -texel.y))) / 8.0; }`;
-      const UPS = `uniform sampler2D src; uniform vec2 texel; uniform float strength; varying vec2 vUv;
-        void main() { vec2 t = texel;
-          vec4 s = texture2D(src, vUv + vec2(-2.0 * t.x, 0.0)) + texture2D(src, vUv + vec2(2.0 * t.x, 0.0)) + texture2D(src, vUv + vec2(0.0, 2.0 * t.y)) + texture2D(src, vUv + vec2(0.0, -2.0 * t.y))
-            + 2.0 * (texture2D(src, vUv + vec2(-t.x, t.y)) + texture2D(src, vUv + t) + texture2D(src, vUv + vec2(t.x, -t.y)) + texture2D(src, vUv - t));
-          gl_FragColor = vec4(s.rgb / 12.0 * strength, 1.0); }`;
-      const quad = new T.Mesh(new T.PlaneGeometry(2, 2)); quad.frustumCulled = false;
-      return { quad, cam: new T.OrthographicCamera(-1, 1, 1, -1, 0, 1), down: mat(DOWN), up: mat(UPS, true), black: new T.MeshBasicMaterial({ color: 0x000000 }), glow: null, levels: [], w: 0, h: 0, swap: [] };
-    }
-    function pass(B, m, src, dst) {
-      m.uniforms.src.value = src.texture; m.uniforms.texel.value.set(1 / src.width, 1 / src.height);
-      B.quad.material = m; renderer.setRenderTarget(dst); renderer.render(B.quad, B.cam);
-    }
-    function renderBloom() {
-      const B = bloom || (bloom = buildBloom()), w = renderer.domElement.width, h = renderer.domElement.height;
-      const W = Math.max(8, Math.round(w / 2)), H = Math.max(8, Math.round(h / 2));
-      if (W !== B.w || H !== B.h) {
-        if (B.glow) { B.glow.dispose(); B.levels.forEach(L => L.dispose()); }
-        B.glow = new T.WebGLRenderTarget(W, H, { type: T.HalfFloatType });
-        B.levels = [];
-        for (let lw = W >> 1, lh = H >> 1; lw >= 8 && lh >= 8 && B.levels.length < 5; lw >>= 1, lh >>= 1) B.levels.push(new T.WebGLRenderTarget(lw, lh, { type: T.HalfFloatType, depthBuffer: false }));
-        B.w = W; B.h = H;
-      }
-      const autoClear = renderer.autoClear, shadows = renderer.shadowMap.autoUpdate, mask = camera.layers.mask, bg = scene.background, fog = scene.fog;
-      const clear = renderer.getClearColor(new T.Color()), clearA = renderer.getClearAlpha();
-      renderer.autoClear = false; renderer.shadowMap.autoUpdate = false;
-      renderer.setRenderTarget(B.glow); renderer.setClearColor(0x000000, 1); renderer.clear();
-      // the big solid things in black, so what's behind them doesn't glow through
-      scene.background = null; scene.fog = null;
-      camera.layers.set(0); camera.layers.enable(1);
-      const sw = B.swap; sw.length = 0;
-      scene.traverseVisible(o => {
-        if (!o.isMesh) return;
-        if (!o.userData.occluder && !(o.layers.mask & 2)) { sw.push(o, null); o.visible = false; return; }
-        sw.push(o, o.material); o.material = o.userData.blackMat || B.black;
-      });
-      renderer.render(scene, camera);
-      for (let i = 0; i < sw.length; i += 2) { if (sw[i + 1]) sw[i].material = sw[i + 1]; else sw[i].visible = true; }
-      camera.layers.set(3);
-      renderer.render(scene, camera);
-      camera.layers.mask = mask; scene.background = bg; scene.fog = fog;
-      let src = B.glow;
-      for (const L of B.levels) { pass(B, B.down, src, L); src = L; }
-      B.up.uniforms.strength.value = 1;
-      for (let i = B.levels.length - 1; i > 0; i--) pass(B, B.up, B.levels[i], B.levels[i - 1]);
-      B.up.uniforms.strength.value = 1.25;
-      pass(B, B.up, B.levels[0], null);
-      renderer.setClearColor(clear, clearA); renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = shadows;
-    }
     // the buildings occlude the glow
     R.scene.traverse((o) => { if (o.isMesh && o.parent && o.parent !== scene && !o.isInstancedMesh && o.material && o.material.customProgramCacheKey && /facade/.test(o.material.customProgramCacheKey())) o.userData.occluder = true; });
 
@@ -524,7 +462,7 @@ diffuseColor.rgb *= 1.0 - 0.25 * vCrush;`)
       FX.listen(camera.position, camera.getWorldDirection(new T.Vector3()), camera.up);
       renderer.setRenderTarget(null);
       renderer.render(scene, camera);
-      if (useBloom) renderBloom();
+      if (useBloom) R.renderBloom();
       if (shaken) { camera.rotateZ(-shk.roll); camera.position.sub(shk.off); camera.updateMatrixWorld(); }
     }
 

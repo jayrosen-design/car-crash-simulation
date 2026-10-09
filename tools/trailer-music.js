@@ -3,8 +3,10 @@
  * OfflineAudioContext, so no samples or licensed music are involved.
  * renderMusic runs inside the page (record-video.js passes its source to headless Chrome):
  *   renderMusic({ bars, hits: [{ t, kind }], song }) -> resolves to the byte length of a 16-bit
- *   stereo WAV it leaves in window.__wav. song: 'crash' (the home page's trailer, E minor) or 'race'
- *   (the Race trailer, A minor, with a synth arpeggio, an engine and the start's countdown beeps)
+ *   stereo WAV it leaves in window.__wav. song: 'crash' (the home page's trailer, E minor), 'race'
+ *   (the Race trailer, A minor, with a synth arpeggio, an engine and the start's countdown beeps) or
+ *   'destruction' (the Destruction trailer, D minor: a dark intro over the flyover, the countdown in
+ *   bar 5, the start on the drop in bar 6, the impact stopping the band in bar 12)
  * The arrangement follows the trailer's bar grid (tools/trailer.js): a 150 BPM bar is 1.6 s,
  * exactly 48 video frames at 30 fps, so cuts and impacts land on the beat. `hits` are the sound
  * effects the picture asks for (impacts, whooshes, the intro's title cards). */
@@ -413,14 +415,14 @@ function renderMusic(opts) {
     const VR = ['a a a a F - G -', 'a a a a C - G -', 'a a a a F - G -', 'a a E - F - G -'];
     for (let b = 4; b < 12; b++) { riffR(b, VR[(b - 4) % 4]); beat(b, 'drive'); arpBar(b, (b - 4) % 4 === 3 ? 'E' : 'A', 0.55); }
     crash(T(4), 1.2); crash(T(8)); toms(11, 2);
-    // pre-chorus (bars 12-15): half-time, held chords, the takedown, then the run at the corner
+    // pre-chorus (bars 12-15): half-time, held chords, the takedown, then the run at the ramp
     riffR(12, 'F - - - - - - -'); riffR(13, 'G - - - - - - -'); riffR(14, 'A - - - - - - -'); riffR(15, 'a a a a a a a a', 1);
     for (let b = 12; b < 15; b++) beat(b, 'half');
     ['F', 'G', 'A', 'A'].forEach((c, i) => arpBar(12 + i, c, 0.6));
     crash(T(12)); crash(T(14), 0.8);
     lead(12, [[0, 4, 69]], 0.8); lead(13, [[0, 2, 71], [2, 2, 72]], 0.85); lead(14, [[0, 4, 76]], 0.9);
     roll(15, 0.3, 1.1, 0, 4); riser(T(14), T(16) - 0.01, 1); swell(T(16), 1.6, 1.1);
-    // chorus (bars 16-23): the crashes
+    // chorus (bars 16-23): the jump and the head-on
     const CHO = ['F', 'G', 'A', 'A', 'F', 'G', 'C', 'E'];
     CHO.forEach((c, i) => { strum(16 + i, c, 0.95); beat(16 + i, 'double'); crash(T(16 + i), i ? 0.8 : 1.3); arpBar(16 + i, c, 0.5); });
     const HOOK = [[[0, 3, 72], [3, 1, 74]], [[0, 2, 74], [2, 2, 71]], [[0, 3, 76], [3, 1, 74]], [[0, 2, 72], [2, 2, 69]],
@@ -499,12 +501,91 @@ function renderMusic(opts) {
     }
     lead(36, [[0, 5.5, 76]], 0.9);
   }
-  if (opts.song === 'race') raceSong(); else crashSong();
+  // ---------------------------------------------------------------- the destruction song (D minor)
+  function destructionSong() {
+    const DC = { D: [38, 45, 50], B: [34, 41, 46], C: [36, 43, 48], A: [33, 40, 45], F: [41, 48, 53], G: [43, 50, 55], E: [40, 47, 52] };
+    function riffD(bar, tokens, v = 1, withBass = true) {
+      const tk = tokens.replace(/\s+/g, '').split('');
+      for (let i = 0; i < tk.length; i++) {
+        const c = tk[i];
+        if (c === '-' || c === '.') continue;
+        let n = 1; while (tk[i + n] === '-') n++;
+        const t = T(bar) + i * E8, muted = c !== c.toUpperCase(), notes = DC[c.toUpperCase()];
+        chord(t, n * E8, notes, muted, v * (muted ? 0.9 : 1));
+        if (withBass) bass(t, n * E8 - 0.01, notes[0] - 12, v);
+      }
+    }
+    const ARP = { D: [62, 65, 69, 74, 77, 74, 69, 65], B: [58, 62, 65, 70, 74, 70, 65, 62], C: [60, 64, 67, 72, 76, 72, 67, 64], A: [57, 61, 64, 69, 73, 69, 64, 61], F: [53, 57, 60, 65, 69, 65, 60, 57] };
+    const arpBar = (bar, c, v) => { for (let i = 0; i < 16; i++) arp(T(bar) + i * E16, ARP[c][i % 8], v); };
+    const strum = (bar, c, v) => riffD(bar, `${c} ${c} ${c} ${c} ${c} ${c} ${c} ${c}`, v);
+    const cut = synthCut.frequency;
+    cut.setValueAtTime(320, 0); cut.exponentialRampToValueAtTime(1800, T(5)); cut.setValueAtTime(2600, T(6)); cut.setValueAtTime(2600, T(24)); cut.exponentialRampToValueAtTime(600, T(24, 2)); cut.exponentialRampToValueAtTime(3000, T(28));
+    // intro (bars 0-4): the flyover. A low horn, the arpeggio behind a filter, a clock-like tick, the
+    // muted riff coming in, a riser into the countdown
+    braam(T(0), 0.55, 3.2); braam(T(2), 0.6, 3.2);
+    for (let b = 0; b < 5; b++) arpBar(b, b === 4 ? 'A' : 'D', 0.45 + 0.08 * b);
+    for (let b = 1; b < 5; b++) for (let i = 0; i < 8; i++) hat(T(b) + i * E8, i % 2 ? 0.35 : 0.55);
+    for (let b = 2; b < 5; b++) for (const i of [0, 2]) kick(T(b, i), 0.7);
+    riffD(3, 'd d d d d d d d', 0.75, false); riffD(4, 'd d d d b b c c', 0.85);
+    riser(T(3), T(5) - 0.01, 0.8);
+    // the countdown (bar 5): beeps on beats 1-3 and the engine revving; the start on the drop (bar 6)
+    const eng = engine(T(4), T(7, 2), (p, mul) => {
+      p.setValueAtTime(30 * mul, T(4));
+      for (const i of [0, 1, 2]) { const t = T(5, i); p.setValueAtTime(30 * mul, t); p.exponentialRampToValueAtTime((95 + 25 * i) * mul, t + 0.12); p.exponentialRampToValueAtTime(34 * mul, t + 0.38); }
+      p.setValueAtTime(34 * mul, T(6)); p.exponentialRampToValueAtTime(80 * mul, T(6) + 0.08); p.exponentialRampToValueAtTime(200 * mul, T(7));
+    });
+    eng.gain.setValueAtTime(0.0001, T(4)); eng.gain.exponentialRampToValueAtTime(0.25, T(5)); eng.gain.linearRampToValueAtTime(0.45, T(6)); eng.gain.linearRampToValueAtTime(0.5, T(6, 2)); eng.gain.exponentialRampToValueAtTime(0.0001, T(7, 2));
+    for (const i of [0, 1, 2]) beep(T(5, i), 440);
+    beep(T(6), 880);
+    roll(5, 0.25, 1.0, 3, 1); swell(T(6), 1.4);
+    // down the hill (bars 6-9): drive
+    const RUN = ['d d d d B - C -', 'd d d d F - A -', 'd d d d B - C -', 'd d A - B - C -'];
+    for (let b = 6; b < 10; b++) { riffD(b, RUN[b - 6]); beat(b, 'drive'); arpBar(b, 'D', 0.5); }
+    crash(T(6), 1.3); crash(T(8));
+    // the ramp in slow motion (bars 10-11): half time, held chords, a riser to the impact
+    riffD(10, 'B - - - - - - -'); riffD(11, 'C - - - A - - -');
+    beat(10, 'half'); for (let i = 0; i < 4; i++) snare(T(11, i), 0.5 + 0.15 * i);
+    lead(10, [[0, 4, 74]], 0.8); lead(11, [[0, 2, 76], [2, 2, 77]], 0.85);
+    riser(T(10), T(12) - 0.01, 1.1);
+    // the impact (bar 12): everything stops but one ringing chord; the wreck in slow motion (bar 13)
+    chord(T(12), BAR * 1.9, DC.D, false, 1.15); bass(T(12), BAR * 1.9, 26); crash(T(12), 1.4, 1.4); braam(T(12), 0.9, 3);
+    for (let i = 0; i < 2; i++) kick(T(13, 2 * i), 0.8);
+    // the pile-up builds (bars 14-15)
+    riffD(14, 'd d d d d d d d'); riffD(15, 'd d d d B - C -');
+    beat(14, 'rock'); roll(15, 0.3, 1.15, 0, 4); riser(T(14), T(16) - 0.01, 1); swell(T(16), 1.6, 1.1);
+    // chorus (bars 16-23): double kick, the hook
+    const CHO = ['D', 'B', 'F', 'C', 'D', 'B', 'C', 'A'];
+    CHO.forEach((c, i) => { strum(16 + i, c, 0.95); beat(16 + i, 'double'); crash(T(16 + i), i ? 0.8 : 1.3); arpBar(16 + i, c === 'A' ? 'A' : c === 'B' ? 'B' : c === 'F' ? 'F' : c === 'C' ? 'C' : 'D', 0.45); });
+    const HOOK = [[[0, 3, 74], [3, 1, 77]], [[0, 2, 77], [2, 2, 74]], [[0, 3, 72], [3, 1, 74]], [[0, 4, 72]],
+      [[0, 3, 74], [3, 1, 77]], [[0, 2, 81], [2, 2, 77]], [[0, 2, 79], [2, 2, 76]], [[0, 4, 73]]];
+    HOOK.forEach((n, i) => lead(16 + i, n));
+    toms(23, 3);
+    // breakdown (bars 24-27): syncopated low chugs under the burning junction
+    const BREAK = 'x x . x . . x . x . x x . . . .';
+    for (let b = 24; b < 27; b++) {
+      BREAK.split(' ').forEach((c, i) => { if (c === 'x') { const t = T(b) + i * E16; chord(t, E16 * 1.6, DC.D, true, 1.1); bass(t, E16 * 1.5, 26); kick(t, 0.95); } });
+      snare(T(b, 2), 1.1); crash(T(b), 0.55, 0.4); arpBar(b, 'D', 0.45);
+    }
+    riffD(27, 'D - - - d d . .'); roll(27, 0.3, 1.1, 0, 3); riser(T(26), T(28) - 0.01, 1.1); swell(T(28), 1.6, 1.2);
+    // last chorus (bars 28-33): the total counted up, the medal on bar 30
+    ['D', 'B', 'F', 'C', 'D', 'A'].forEach((c, i) => { strum(28 + i, c, 1); beat(28 + i, i < 5 ? 'double' : 'drive'); crash(T(28 + i), i ? 0.85 : 1.3); });
+    HOOK.slice(0, 4).forEach((n, i) => lead(28 + i, n));
+    lead(32, [[0, 2, 81], [2, 2, 79]]); lead(33, [[0, 2, 77], [2, 2, 74]]);
+    roll(33, 0.4, 1.2, 2, 2);
+    // ending (bars 34-37.5): three hits under the titles, then the ring-out
+    for (const [b, c, len] of [[34, 'D', BAR], [35, 'B', BAR], [36, 'D', LEN - T(36)]]) {
+      chord(T(b), len, DC[c], false, 1.05); bass(T(b), len - 0.05, DC[c][0] - 12);
+      kick(T(b), 1.1); snare(T(b), 0.8); crash(T(b), 1.2, 1.1);
+    }
+    lead(36, [[0, 5.5, 74]], 0.85);
+  }
+  if (opts.song === 'race') raceSong(); else if (opts.song === 'destruction') destructionSong(); else crashSong();
 
   // the picture's sound effects
   for (const h of opts.hits) {
     if (h.kind === 'impact') { boom(h.t, h.v || 1); crunch(h.t + 0.01, h.v || 1); if (h.glass) glass(h.t + 0.02, 0.9); }
     else if (h.kind === 'card') { boom(h.t, 0.75); braam(h.t, 0.55, 1.4); }
+    else if (h.kind === 'boom') { boom(h.t, 1.25 * (h.v || 1)); boom(h.t + 0.04, 0.8 * (h.v || 1)); crunch(h.t + 0.02, 0.7 * (h.v || 1)); }
     else if (h.kind === 'title') { boom(h.t, 1.1); braam(h.t, 0.9, 2.6); }
     else if (h.kind === 'whoosh') whoosh(h.t, h.dur || 0.45, h.v || 1);
     else if (h.kind === 'tick') tick(h.t, h.v || 1);
@@ -518,7 +599,7 @@ function renderMusic(opts) {
     for (let i = 0; i < n; i++) { peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); sum += L[i] * L[i] + R[i] * R[i]; }
     // peak at -3 dBFS (AAC overshoots the crash song by up to 2 dB); the race song's dense saws by
     // up to 5 dB, so it peaks at -6 dBFS
-    const target = opts.song === 'race' ? 0.5 : 0.7, gain = peak > 0 ? target / peak : 1;
+    const target = opts.song === 'race' || opts.song === 'destruction' ? 0.5 : 0.7, gain = peak > 0 ? target / peak : 1;
     const bytes = new Uint8Array(44 + n * 4), dv = new DataView(bytes.buffer);
     const str = (o, s) => { for (let i = 0; i < s.length; i++) bytes[o + i] = s.charCodeAt(i); };
     str(0, 'RIFF'); dv.setUint32(4, 36 + n * 4, true); str(8, 'WAVE'); str(12, 'fmt ');

@@ -164,7 +164,8 @@
       <p class="sub">Take the wheel yourself. Crashes go through the same crash physics as the simulations.</p>
       <div class="race-trailer">
         <video id="race" src="media/race-trailer.mp4" poster="media/race-poster.jpg" playsinline preload="none"
-          aria-label="One-minute trailer of the Race game mode: the start, the pack, oncoming traffic, a takedown and three crashes"></video>
+          data-portrait="media/race-trailer-mobile.mp4" data-portrait-poster="media/race-poster-mobile.jpg"
+          aria-label="One-minute trailer of the Race game mode at dusk: the start, the pack, near misses with oncoming traffic, a takedown, a jump in slow motion and a head-on crash"></video>
         <button class="race-play" id="race-play" type="button"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg><span>Watch the Race trailer<small>1:00 · with sound</small></span></button>
       </div>
       <a class="card game" href="Race.html"><div class="in">
@@ -179,6 +180,12 @@
           <span class="go">Play Race &rarr;</span>
         </div>
           </div></a>
+      <div class="race-trailer">
+        <video id="destruction" src="media/destruction-trailer.mp4" poster="media/destruction-poster.jpg" playsinline preload="none"
+          data-portrait="media/destruction-trailer-mobile.mp4" data-portrait-poster="media/destruction-poster-mobile.jpg"
+          aria-label="One-minute trailer of the Destruction game mode: a flight over the junction at dusk, then a run over the ramp into the traffic, the crash in slow motion, exploding tankers, the Crashbreaker and a gold medal"></video>
+        <button class="race-play" id="destruction-play" type="button"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg><span>Watch the Destruction trailer<small>1:00 · with sound</small></span></button>
+      </div>
       <a class="card game" href="Destruction.html"><div class="in">
         <div class="shot">
           <img src="media/destruction.jpg" alt="Destruction mode: a gas tanker exploding in a busy junction at dusk, a wrecked car flipped over in front, the damage adding up in dollars">
@@ -295,7 +302,8 @@
 <script>
   // Behind the title runs a silent loop of crash footage (unless the visitor prefers reduced
   // motion). "Watch the trailer" swaps it for the trailer, with its soundtrack and the controls.
-  // The Race trailer plays in place, with sound, when its button is pressed. In the single-file
+  // The game trailers play in place, with sound, when their buttons are pressed; on a phone held
+  // upright they are the 9:16 cuts (data-portrait). In the single-file
   // build (Car Crash Simulation.html) the videos are embedded as base64 (#<video id>-data) and
   // turned into blob URLs here.
   (function () {
@@ -325,13 +333,18 @@
     reel.addEventListener('ended', leave);
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && hero.classList.contains('cinema')) leave(); });
     if (!still) play(loop);
-    var race = document.getElementById('race'), racePlay = document.getElementById('race-play');
-    racePlay.addEventListener('click', function () {
-      racePlay.hidden = true; race.controls = true; race.muted = false;
-      if (hero.classList.contains('cinema')) leave();
-      loop.pause(); play(race);
+    var upright = window.matchMedia && window.matchMedia('(orientation: portrait) and (max-width: 760px)').matches;
+    ['race', 'destruction'].forEach(function (id) {
+      var v = document.getElementById(id), btn = document.getElementById(id + '-play');
+      if (!v || !btn) return;
+      if (upright && v.dataset.portrait) { v.src = v.dataset.portrait; v.poster = v.dataset.portraitPoster; v.parentNode.classList.add('portrait'); }
+      btn.addEventListener('click', function () {
+        btn.hidden = true; v.controls = true; v.muted = false;
+        if (hero.classList.contains('cinema')) leave();
+        loop.pause(); play(v);
+      });
+      v.addEventListener('ended', function () { btn.hidden = false; v.controls = false; if (!still) play(loop); });
     });
-    race.addEventListener('ended', function () { racePlay.hidden = false; race.controls = false; if (!still) play(loop); });
   })();
 </script>
 </body>

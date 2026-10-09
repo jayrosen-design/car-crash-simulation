@@ -25,6 +25,15 @@ const RaceRender = (() => {
   const UP = new T.Vector3(0, 1, 0), ZAXIS = new T.Vector3(0, 0, 1);
   const LOOK = { sky: 0xc8b9a6, fog: 0xbfb4a6, fogNear: 220, fogFar: 1700, hemiSky: 0xdfe7f2, hemiGround: 0x5a524a, hemi: 1.05, sun: 0xffe3c2, sunI: 2.6,
     sunDir: [-0.55, 0.52, -0.65], exposure: 1.0, hdr: true, domeFrag: null, envFrag: null, windowGlow: '0.05', windowLit: '0.78' };
+  // dusk (both games): a low orange sun, a violet-blue sky, warm haze, more windows lit. lampPools:
+  // pools of light on the ground under the street lights; carLights: how much brighter the cars'
+  // head and tail lights glow
+  const DUSK = {
+    sky: 0x2b2440, fog: 0x7d6273, fogNear: 90, fogFar: 1150, hemiSky: 0x8d8fd0, hemiGround: 0x3c2b28, hemi: 0.75,
+    sun: 0xff8a4a, sunI: 2.4, sunDir: [-0.93, 0.16, 0.33], exposure: 0.92, hdr: false, windowGlow: '0.3', windowLit: '0.7',
+    domeFrag: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 hor = vec3(1.0,0.52,0.30), mid = vec3(0.55,0.32,0.52), zen = vec3(0.10,0.11,0.26); vec3 c = mix(hor, mid, smoothstep(0.0, 0.16, h)); c = mix(c, zen, smoothstep(0.12, 0.7, h)); float s = max(dot(vD, sunDir), 0.0); c += vec3(1.0,0.62,0.30) * (pow(s, 600.0) * 5.0 + pow(s, 10.0) * 0.55); c = mix(c, vec3(0.42,0.30,0.36), smoothstep(0.0, -0.05, vD.y)); gl_FragColor = vec4(c, 1.0); }',
+    envFrag: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.20,0.15,0.16), vec3(0.85,0.50,0.38), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.22,0.22,0.42), smoothstep(0.05, 0.6, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(1.0,0.6,0.3) * (pow(s, 400.0) * 30.0 + pow(s, 8.0) * 0.5); gl_FragColor = vec4(c, 1.0); }',
+  };
 
   function create(opts) {
     const { level, container } = opts;
@@ -93,6 +102,8 @@ const RaceRender = (() => {
     buildFurniture(city, level);
     if (level.start) buildStart(city, level);
     buildRamps(city, level);
+    if (level.rails) buildRails(city, level);
+    if (look.lampPools) buildLampPools(city, level);
     // the deformable car models (player, wrecks) and what breaks off them: raised to the ground's
     // height for a crash on a hill (the crash solver works at height 0), else at 0
     const crashRoot = new T.Group();
@@ -102,7 +113,7 @@ const RaceRender = (() => {
     // ------------------------------------------------ cars
     const carMeshes = {};   // key -> instanced set
     async function prepareCars(keys, capacity) {
-      for (const key of keys) carMeshes[key] = await instancedCar(key, capacity, scene);
+      for (const key of keys) carMeshes[key] = await instancedCar(key, capacity, scene, look.carLights || 1);
     }
     // draw car `i` of model `key` (pose, steer, wheel spins, pitch and roll, paint)
     const M = new T.Matrix4(), Mw = new T.Matrix4(), Mr = new T.Matrix4(), Q = new T.Quaternion(), Qs = new T.Quaternion(), E = new T.Euler(), S1 = new T.Vector3(1, 1, 1), P = new T.Vector3(), O = new T.Vector3(), C = new T.Color();
@@ -254,7 +265,93 @@ const RaceRender = (() => {
       camera.aspect = w / h; camera.updateProjectionMatrix();
     }
     window.addEventListener('resize', resize);
-    function render() { renderer.render(scene, camera); }
+    // ------------------------------------------------ bloom (opts.bloom, or a page calls renderBloom)
+    // The simulator's selective bloom (scene.js renderBloom): what's on layer 3 (glowing sparks,
+    // lights, neon) is drawn over the scene drawn in black (the buildings and cars marked
+    // userData.occluder, and the deformable models on layer 1, hide what's behind them), blurred down
+    // and back up, and added onto the frame.
+    let bloom = null;
+    function buildBloom() {
+      const VS = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+      const mat = (fs, additive) => new T.ShaderMaterial({ vertexShader: VS, fragmentShader: fs, depthTest: false, depthWrite: false,
+        uniforms: { src: { value: null }, texel: { value: new T.Vector2() }, strength: { value: 1 } }, blending: additive ? T.AdditiveBlending : T.NoBlending, transparent: !!additive });
+      const DOWN = `uniform sampler2D src; uniform vec2 texel; varying vec2 vUv;
+        void main() { gl_FragColor = (4.0 * texture2D(src, vUv) + texture2D(src, vUv - texel) + texture2D(src, vUv + texel)
+          + texture2D(src, vUv + vec2(texel.x, -texel.y)) + texture2D(src, vUv - vec2(texel.x, -texel.y))) / 8.0; }`;
+      const UPS = `uniform sampler2D src; uniform vec2 texel; uniform float strength; varying vec2 vUv;
+        void main() { vec2 t = texel;
+          vec4 s = texture2D(src, vUv + vec2(-2.0 * t.x, 0.0)) + texture2D(src, vUv + vec2(2.0 * t.x, 0.0)) + texture2D(src, vUv + vec2(0.0, 2.0 * t.y)) + texture2D(src, vUv + vec2(0.0, -2.0 * t.y))
+            + 2.0 * (texture2D(src, vUv + vec2(-t.x, t.y)) + texture2D(src, vUv + t) + texture2D(src, vUv + vec2(t.x, -t.y)) + texture2D(src, vUv - t));
+          gl_FragColor = vec4(s.rgb / 12.0 * strength, 1.0); }`;
+      const quad = new T.Mesh(new T.PlaneGeometry(2, 2)); quad.frustumCulled = false;
+      return { quad, cam: new T.OrthographicCamera(-1, 1, 1, -1, 0, 1), down: mat(DOWN), up: mat(UPS, true), black: new T.MeshBasicMaterial({ color: 0x000000 }), glow: null, levels: [], w: 0, h: 0, swap: [] };
+    }
+    function pass(B, m, src, dst) {
+      m.uniforms.src.value = src.texture; m.uniforms.texel.value.set(1 / src.width, 1 / src.height);
+      B.quad.material = m; renderer.setRenderTarget(dst); renderer.render(B.quad, B.cam);
+    }
+    function renderBloom() {
+      const B = bloom || (bloom = buildBloom()), w = renderer.domElement.width, h = renderer.domElement.height;
+      const W = Math.max(8, Math.round(w / 2)), H = Math.max(8, Math.round(h / 2));
+      if (W !== B.w || H !== B.h) {
+        if (B.glow) { B.glow.dispose(); B.levels.forEach(L => L.dispose()); }
+        B.glow = new T.WebGLRenderTarget(W, H, { type: T.HalfFloatType });
+        B.levels = [];
+        for (let lw = W >> 1, lh = H >> 1; lw >= 8 && lh >= 8 && B.levels.length < 5; lw >>= 1, lh >>= 1) B.levels.push(new T.WebGLRenderTarget(lw, lh, { type: T.HalfFloatType, depthBuffer: false }));
+        B.w = W; B.h = H;
+      }
+      const autoClear = renderer.autoClear, shadows = renderer.shadowMap.autoUpdate, mask = camera.layers.mask, bg = scene.background, fog = scene.fog;
+      const clear = renderer.getClearColor(new T.Color()), clearA = renderer.getClearAlpha();
+      renderer.autoClear = false; renderer.shadowMap.autoUpdate = false;
+      renderer.setRenderTarget(B.glow); renderer.setClearColor(0x000000, 1); renderer.clear();
+      // the big solid things in black, so what's behind them doesn't glow through
+      scene.background = null; scene.fog = null;
+      camera.layers.set(0); camera.layers.enable(1);
+      const sw = B.swap; sw.length = 0;
+      scene.traverseVisible(o => {
+        if (!o.isMesh) return;
+        if (!o.userData.occluder && !(o.layers.mask & 2)) { sw.push(o, null); o.visible = false; return; }
+        sw.push(o, o.material); o.material = o.userData.blackMat || B.black;
+      });
+      renderer.render(scene, camera);
+      for (let i = 0; i < sw.length; i += 2) { if (sw[i + 1]) sw[i].material = sw[i + 1]; else sw[i].visible = true; }
+      camera.layers.set(3);
+      renderer.render(scene, camera);
+      camera.layers.mask = mask; scene.background = bg; scene.fog = fog;
+      let src = B.glow;
+      for (const L of B.levels) { pass(B, B.down, src, L); src = L; }
+      B.up.uniforms.strength.value = 1;
+      for (let i = B.levels.length - 1; i > 0; i--) pass(B, B.up, B.levels[i], B.levels[i - 1]);
+      B.up.uniforms.strength.value = 1.25;
+      pass(B, B.up, B.levels[0], null);
+      renderer.setClearColor(clear, clearA); renderer.autoClear = autoClear; renderer.shadowMap.autoUpdate = shadows;
+    }
+    function render() { renderer.render(scene, camera); if (opts.bloom) renderBloom(); }
+
+    // ------------------------------------------------ the cars' head and tail lights (glows)
+    // lights: [{ x, y, z, r, g, b, size }] each frame; drawn as camera-facing points, and on the glow
+    // layer for the bloom
+    let glowPts = null;
+    function carLights(list) {
+      if (!glowPts) {
+        const max = 640, g = new T.BufferGeometry();
+        g.setAttribute('position', new T.BufferAttribute(new Float32Array(3 * max), 3).setUsage(T.DynamicDrawUsage));
+        g.setAttribute('color', new T.BufferAttribute(new Float32Array(3 * max), 3).setUsage(T.DynamicDrawUsage));
+        const tex = canvasTex(64, 64, (c, w, h) => { const gr = c.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+        tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping;
+        const mat = new T.PointsMaterial({ size: 0.5, map: tex, vertexColors: true, color: 0xb3b3b3, transparent: true, depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true });
+        const pts = new T.Points(g, mat); pts.frustumCulled = false;
+        // (fainter and a little larger on the glow layer: a soft halo, not a flare)
+        const twin = new T.Points(g, new T.PointsMaterial({ size: 0.8, map: tex, vertexColors: true, color: 0x2e2e2e, transparent: true, depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true }));
+        twin.frustumCulled = false; twin.layers.set(3);
+        scene.add(pts, twin);
+        glowPts = { g, pts, twin, max };
+      }
+      const P = glowPts.g.attributes.position.array, Cc = glowPts.g.attributes.color.array, n = Math.min(list.length, glowPts.max);
+      for (let i = 0; i < n; i++) { const o = list[i]; P[3 * i] = o.x; P[3 * i + 1] = o.y; P[3 * i + 2] = o.z; Cc[3 * i] = o.r; Cc[3 * i + 1] = o.g; Cc[3 * i + 2] = o.b; }
+      glowPts.g.setDrawRange(0, n);
+      glowPts.g.attributes.position.needsUpdate = true; glowPts.g.attributes.color.needsUpdate = true;
+    }
 
     // ------------------------------------------------ props (props.js): one instanced set per kind
     const propSets = {}, PQ = new T.Quaternion(), PP = new T.Vector3(), PO = new T.Matrix4();
@@ -291,7 +388,7 @@ const RaceRender = (() => {
     }
 
     return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift,
-      carMeshes, hemi, crashRoot, sunDir: SUN_DIR };
+      carMeshes, hemi, crashRoot, sunDir: SUN_DIR, renderBloom, carLights };
   }
 
   const MIRROR = new T.Matrix4().makeScale(1, 1, -1);
@@ -632,6 +729,7 @@ float winMask; float frameMask; float litMask;`)
       g.setAttribute('seed', new T.Float32BufferAttribute(A.seed, 1));
       g.setIndex(A.idx);
       const mesh = new T.Mesh(g, facadeMaterial(i, look));
+      mesh.userData.occluder = true;
       mesh.material.side = T.DoubleSide;
       mesh.castShadow = true; mesh.receiveShadow = true;
       group.add(mesh);
@@ -643,6 +741,41 @@ float winMask; float frameMask; float litMask;`)
     const rm = new T.Mesh(rg, new T.MeshStandardMaterial({ color: 0x55534f, roughness: 0.95, side: T.DoubleSide }));
     rm.castShadow = true; rm.receiveShadow = true;
     group.add(rm);
+  }
+
+  // ---------------------------------------------------------------- guard rails (level.rails)
+  // a galvanised W-beam on posts, each straight piece following the ground
+  function buildRails(group, level) {
+    const steel = new T.MeshStandardMaterial({ color: 0xaab1b8, metalness: 0.75, roughness: 0.4 });
+    const beam = new T.BoxGeometry(1, 0.32, 0.08); beam.translate(0.5, 0.62, 0);
+    const lip = new T.BoxGeometry(1, 0.05, 0.14); lip.translate(0.5, 0.46, 0);
+    const lip2 = lip.clone(); lip2.translate(0, 0.32, 0);
+    const beamGeo = window.mergeGeometries([beam, lip, lip2]);
+    const post = new T.BoxGeometry(0.1, 0.8, 0.1); post.translate(0, 0.4, -0.1 * 0);
+    const R = level.rails, M = new T.Matrix4(), Q = new T.Quaternion(), E = new T.Euler(), P = new T.Vector3(), S = new T.Vector3();
+    const beams = new T.InstancedMesh(beamGeo, steel, R.length), posts = new T.InstancedMesh(post, steel, 2 * R.length);
+    let np = 0;
+    R.forEach((r, i) => {
+      const y0 = groundY(level, r.x0, r.z0), y1 = groundY(level, r.x1, r.z1), len = Math.hypot(r.x1 - r.x0, r.z1 - r.z0), h = Math.atan2(r.z1 - r.z0, r.x1 - r.x0);
+      E.set(0, -h, Math.atan2(y1 - y0, len), 'YXZ'); Q.setFromEuler(E);
+      beams.setMatrixAt(i, M.compose(P.set(r.x0, y0, r.z0), Q, S.set(Math.hypot(len, y1 - y0), 1, 1)));
+      for (const f of [0, 0.5]) { const x = r.x0 + (r.x1 - r.x0) * f, z = r.z0 + (r.z1 - r.z0) * f, off = r.side * 0.1; posts.setMatrixAt(np++, M.makeRotationY(-h).setPosition(x - Math.sin(h) * off, groundY(level, x, z), z + Math.cos(h) * off)); }
+    });
+    posts.count = np;
+    for (const im of [beams, posts]) { im.castShadow = true; im.receiveShadow = true; group.add(im); }
+  }
+  // pools of warm light on the ground under the street lights (lamps among level.props)
+  function buildLampPools(group, level) {
+    const lamps = (level.props || []).filter(p => p.type === 'lamp');
+    if (!lamps.length) return;
+    const tex = canvasTex(128, 128, (c, w, h) => { const g = c.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); g.addColorStop(0, 'rgba(255,214,150,0.55)'); g.addColorStop(0.5, 'rgba(255,190,120,0.2)'); g.addColorStop(1, 'rgba(255,170,100,0)'); c.fillStyle = g; c.fillRect(0, 0, w, h); });
+    tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping;
+    const g = new T.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2);
+    const im = new T.InstancedMesh(g, new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4 }), lamps.length);
+    const M = new T.Matrix4();
+    // the lamp's head hangs about 2.1 m out over the street from the post
+    lamps.forEach((p, i) => { const x = p.x + Math.cos(p.h) * 2.1, z = p.z + Math.sin(p.h) * 2.1; M.makeScale(13, 1, 13).setPosition(x, groundY(level, x, z) + 0.05, z); im.setMatrixAt(i, M); });
+    im.renderOrder = 2; group.add(im);
   }
 
   // ---------------------------------------------------------------- street furniture (instanced)
@@ -821,7 +954,7 @@ float lnoise(vec3 p) {
 
   // ---------------------------------------------------------------- instanced cars
   // one merged copy of model `key`: the body by material class, the wheel (tyre and rim) separately
-  async function instancedCar(key, capacity, scene) {
+  async function instancedCar(key, capacity, scene, lights = 1) {
     const b64 = window.CAR_ASSETS[key], bin = atob(b64), buf = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
     const draco = new DRACOLoader(); draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/gltf/');
@@ -849,13 +982,13 @@ float lnoise(vec3 p) {
         case 'paint': mat = new T.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.38, clearcoat: 1, clearcoatRoughness: 0.08, envMap: env }); break;
         case 'chrome': mat = new T.MeshStandardMaterial({ color: 0xd8dde3, metalness: 1, roughness: 0.16, envMap: env }); break;
         case 'glass': mat = new T.MeshPhysicalMaterial({ color: 0x0d141c, roughness: 0.04, transparent: true, opacity: 0.5, envMap: env, depthWrite: false }); break;
-        case 'light': mat = new T.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar(info.emit ? 0.35 : 0.08), roughness: 0.15, envMap: env }); break;
+        case 'light': mat = new T.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar((info.emit ? 0.35 : 0.08) * lights), roughness: 0.15, envMap: env }); break;
         case 'tire': mat = new T.MeshStandardMaterial({ color: 0x141517, roughness: 0.92 }); break;
         case 'rim': mat = new T.MeshStandardMaterial({ color: col, metalness: 0.9, roughness: 0.28, envMap: env }); break;
         default: mat = new T.MeshStandardMaterial({ color: col, metalness: info.metal > 0.5 ? 0.8 : 0.1, roughness: Math.max(0.3, info.rough || 0.5), envMap: env });
       }
       const im = new T.InstancedMesh(g, mat, count);
-      im.castShadow = info.cls !== 'glass'; im.receiveShadow = true;
+      im.castShadow = info.cls !== 'glass'; im.receiveShadow = true; im.userData.occluder = info.cls !== 'glass';
       im.frustumCulled = false;
       im.count = 0;
       if (info.cls === 'paint') { im.instanceColor = new T.InstancedBufferAttribute(new Float32Array(3 * count).fill(1), 3); }
@@ -868,5 +1001,5 @@ float lnoise(vec3 p) {
     return { body: bodyMeshes, wheelMeshes, wheels, paint: bodyMeshes.find(m => m.instanceColor), used: 0 };
   }
 
-  return { create };
+  return { create, DUSK };
 })();

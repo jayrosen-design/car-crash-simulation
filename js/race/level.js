@@ -2,7 +2,8 @@
  *
  * The circuit is a polygon of street corners, each rounded with its own radius (tight city corners,
  * one sweeping bend), sampled every metre. Along it: a four-lane two-way street (two lanes each
- * way), pavements, side streets closed off with barriers, street lights, trees and traffic lights,
+ * way), pavements with guard rails along their outer edge, side streets closed off with barriers,
+ * street lights, trees and traffic lights,
  * buildings set back from the pavement, and more buildings filling the blocks behind them. Rolling
  * hills on some straights (terrain), jump ramps across the street (groundAt adds them), and props to
  * knock over (props.js). The crash solver works on flat ground: the game runs a crash at the local
@@ -298,6 +299,22 @@ const CrashLevel = (() => {
         signals.push({ x: c.x, z: c.z, h: c.h + (q.side > 0 ? -Math.PI / 2 : Math.PI / 2), arm: e < 0 });
       }
     }
+    // guard rails along the outer edge of both pavements, all the way round (open at the side
+    // streets, which their barriers close): the blocks behind them are out of bounds. Straight
+    // pieces about 4 m long, as colliders 0.85 m high
+    const rails = [];
+    const RAIL_L = WALK_OUT - 0.35;
+    for (const side of [-1, 1]) {
+      const seg = (L / Math.round(L / 4));
+      for (let s0 = 0; s0 < L - 1e-6; s0 += seg) {
+        const sm = s0 + seg / 2;
+        if (nearSide(sm, side, seg / 2 + 0.5)) continue;
+        const a = poseAt(s0, side * RAIL_L), b = poseAt(Math.min(L, s0 + seg), side * RAIL_L);
+        const len = Math.hypot(b.x - a.x, b.z - a.z), angle = Math.atan2(b.z - a.z, b.x - a.x);
+        rails.push({ x0: a.x, z0: a.z, x1: b.x, z1: b.z, side });
+        boxes.push({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, hx: len / 2 + 0.05, hz: 0.12, angle, height: 0.85, rail: true });
+      }
+    }
 
     // ------------------------------------------------ things to knock over (props.js moves them)
     // { type, x, z, h (yaw), y (stacked on another, m) }. The street lights and signal posts; along
@@ -356,7 +373,7 @@ const CrashLevel = (() => {
     return {
       seed: opts.seed || 20261007, circuit: C, length: L, laps: 3, lanes: LANES, laneWidth: LANE_W, roadHalf: ROAD_HALF, walkOut: WALK_OUT,
       start: { s: START_S }, corners,
-      buildings, skyline, sideStreets, lamps, trees, signals, barriers, stops, props, ramps, hills: HILLS,
+      buildings, skyline, sideStreets, lamps, trees, signals, barriers, rails, stops, props, ramps, hills: HILLS,
       colliders: { boxes, cyls }, collidersNear, nearest, poseAt, sampleAt, wrapDiff, terrain, groundAt, rampProfile,
       bounds: { x0, x1, z0, z1 },
     };

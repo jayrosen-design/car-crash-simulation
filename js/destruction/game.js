@@ -24,6 +24,8 @@ const DestructionGame = (() => {
   const q = new URLSearchParams(location.search);
   const $ = (s) => document.querySelector(s);
   const TEST = q.get('test');
+  // the crash physics: on the CPU (in a worker) or the GPU (WebGPU); ?solver=gpu, or the select screen's button
+  const solverPick = RaceCrash.solverChoice(document.getElementById('btn-solver'));
   const money = (v) => '$' + Math.round(v).toLocaleString('en-US');
   const short = (v) => v >= 1e6 ? '$' + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + 'M' : '$' + Math.round(v / 1000) + 'k';
 
@@ -87,7 +89,15 @@ const DestructionGame = (() => {
   const P0 = level.player;
   // on the select screen the car waits down the street, facing back up it: the junction behind it
   const SHOW = { x: 1.75, z: -95, h: -Math.PI / 2 };
-  car.place(SHOW.x, SHOW.z, SHOW.h, 0);
+  // put the car at (x, z) facing h, standing on the ground there (the start is 9 m up the hill, and
+  // a car held still before the start isn't moved onto the ground by the world's step)
+  function placeCar(p) {
+    car.place(p.x, p.z, p.h, 0);
+    const g = level.groundAt(car.x, car.z);
+    car.y = g.h; car.vy = 0; car.air = false;
+    car.gPitch = Math.atan(g.gx * Math.cos(p.h) + g.gz * Math.sin(p.h)); car.gRoll = -Math.atan(-g.gx * Math.sin(p.h) + g.gz * Math.cos(p.h));
+  }
+  placeCar(SHOW);
   const bestKey = 'destruction-best';
   let best = (() => { try { return JSON.parse(localStorage.getItem(bestKey)) || null; } catch (e) { return null; } })();
 
@@ -128,7 +138,7 @@ const DestructionGame = (() => {
     wrecks = W.create(level, { damage: RaceWorld.damage, values: VALUES, seed: 11 });
     adapters = new Map(); taken = new Set(); pumpsLit = new Set(); pending = [];
     look.reset();
-    car.place(P0.x, P0.z, P0.h, 0); me.frozen = true; me.ghost = 0;
+    placeCar(P0); me.frozen = true; me.ghost = 0;
     boost = 1; boostAtImpact = 0; health = 1; hurtAt = -1; cbReady = false; cbUsed = false; lastCash = 0; tally = null;
     simT = -3; countdown = 4; tRun = 0; acc = 0; stepN = 0;
     R.setCrashLift(0); R.cam.init = false;
@@ -220,7 +230,7 @@ const DestructionGame = (() => {
     const cyls = near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height }));
     const movers = traffic.vehicles.concat(parked).filter(v => (!lattice || v !== other) && Math.hypot(v.body.car.x - ex, v.body.car.z - ez) < 20);
     for (const v of movers) { const d = driverBox(v); boxes.push({ x: d.x, z: d.z, hx: d.hl, hz: d.hw, angle: d.h, height: d.height, vx: d.vx, vz: d.vz, top: true }); }
-    crash = RaceCrash.start({ units, world: { boxes, cyls }, duration: 0.9, damage: DAMAGE });
+    crash = RaceCrash.start({ units, world: { boxes, cyls }, duration: 0.9, damage: DAMAGE, solver: solverPick.solver });
     crash.impactKmh = e.vn * 3.6; crash.lift = ground;
     R.setCrashLift(ground); PT.y = ground;
     crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: u === 0 ? PAINTS[paintIdx].hex : paintOf(other), spec: specs[b.car.key], v: b === me ? null : other }));
@@ -563,7 +573,7 @@ const DestructionGame = (() => {
     const token = ++selToken;
     carKey = key;
     car = RaceCar.create(specs[key]); me.car = car;
-    car.place(SHOW.x, SHOW.z, SHOW.h, 0);
+    placeCar(SHOW);
     selBusy = true; showSelect();
     await R.preparePlayer(key, specs[key], PAINTS[paintIdx].hex);
     if (token !== selToken) return;
@@ -577,16 +587,19 @@ const DestructionGame = (() => {
     else if (inp.nav.x) pickPaint(paintIdx + inp.nav.x);
     if (inp.start) startAttempt();
   }
-  function startAttempt() {
+  // preroll (s, optional; the trailer recorder): the countdown starts that long before the start, the
+  // traffic already flowing
+  function startAttempt(preroll) {
     if (selBusy) return;
     if (!TEST) { try { localStorage.setItem('destruction-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not kept */ } }
     resetAttempt();
+    if (preroll > 3) { traffic.reset(-preroll); simT = -preroll; }
     state = 'countdown';
     $('#select').hidden = true; $('#hud').hidden = false;
     setupHud();
   }
   function retry() { if (state === 'select') return; startAttempt(); }
-  function toSelect() { resetAttempt(); car.place(SHOW.x, SHOW.z, SHOW.h, 0); state = 'select'; $('#results').hidden = true; $('#hud').hidden = true; $('#select').hidden = false; showSelect(); }
+  function toSelect() { resetAttempt(); placeCar(SHOW); state = 'select'; $('#results').hidden = true; $('#hud').hidden = true; $('#select').hidden = false; showSelect(); }
 
   // ---------------------------------------------------------------- the run: driving down
   function handleContact(e) {
@@ -659,8 +672,12 @@ const DestructionGame = (() => {
     const steer = Math.max(-0.4, Math.min(0.4, (c.x - lane) * 0.25 - Math.sin(c.h - Math.PI / 2) * 1.2));
     return { throttle: 1, steer, boost: TEST === 'tanker' || TEST === 'ramp' ? boost > 0.01 : false };
   }
+  // a director (the trailer recorder, tools/destruction-trailer.js) can drive the player and place the
+  // camera; both stay null in the game
+  const director = { input: null, camera: null };
   function playerInput() {
     if (state !== 'run') return { brake: 1 };
+    if (director.input) return director.input(STEP);
     if (TEST) return testInput();
     return Object.assign({}, input, { boost: !!input.boost && boost > 0.01 });
   }
@@ -686,7 +703,7 @@ const DestructionGame = (() => {
       // every attempt starts from the same street
       if (state === 'countdown') {
         const n = Math.ceil(-simT - 1e-6);
-        if (n !== countdown && n > 0) { callout(String(n), '', 800); if (audio) FX.beep(440); }
+        if (n !== countdown && n > 0 && n <= 3) { callout(String(n), '', 800); if (audio) FX.beep(440); }
         countdown = n;
       }
       // the junction's own time: real time, but the impact's playback pace while the solver runs it
@@ -778,6 +795,7 @@ const DestructionGame = (() => {
       FX.ambience(state === 'select' ? 0.6 : 1);
       if (state === 'run' || state === 'countdown') FX.engineUpdate(car.forward * 3.6, Math.max(car.throttle, input.throttle || 0), state === 'countdown' ? 900 + 4500 * (input.throttle || 0) : car.rpm);
     }
+    if (director.camera) director.camera(dtReal, state);
     updatePopups(dtReal);
     if (wrecks) hud(dtReal);
     look.render();
@@ -877,10 +895,11 @@ const DestructionGame = (() => {
     $('#loading').hidden = true;
     setupHud();
     if (TEST) { $('#hud').hidden = false; state = 'countdown'; }
-    else { buildSelect(); showSelect(); car.place(SHOW.x, SHOW.z, SHOW.h, 0); $('#hud').hidden = true; $('#select').hidden = false; state = 'select'; }
+    else { buildSelect(); showSelect(); placeCar(SHOW); $('#hud').hidden = true; $('#select').hidden = false; state = 'select'; }
     requestAnimationFrame((t) => { last = t; frame(t); });
   }
   start().catch((err) => { $('#loading').textContent = 'Could not start: ' + err.message; console.error(err); });
 
-  return { level, world, traffic, look, R, get wrecks() { return wrecks; }, get car() { return car; }, get state() { return state; }, get crash() { return crash; }, get simT() { return simT; }, get boost() { return boost; }, retry };
+  return { level, world, traffic, look, R, director, get wrecks() { return wrecks; }, get car() { return car; }, get state() { return state; }, get crash() { return crash; }, get simT() { return simT; }, get boost() { return boost; }, retry,
+    start: startAttempt, popupsFor: () => updatePopups(0), get playerWreck() { return playerWreck; }, crashFocus: PT, get focus() { return focus; } };
 })();

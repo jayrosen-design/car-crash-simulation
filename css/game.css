@@ -100,6 +100,8 @@ body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
 .btn.big { padding: 12px 30px; font-size: 18px; }
 .btn:disabled { opacity: 0.5; cursor: wait; }
 .btn.big small { margin-left: 8px; font-size: 13px; font-weight: 500; opacity: 0.7; }
+.btn.solver { margin-left: 10px; vertical-align: middle; font-size: 13px; padding: 8px 12px; background: rgba(10, 12, 16, 0.72); }
+.btn.solver.on { border-color: #7cf0b5; color: #c9ffe4; }
 .sel-keys { max-width: 520px; margin: 12px auto 0; padding: 6px 12px; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .sel-keys summary { color: var(--muted); font-size: 14px; cursor: pointer; }
 .sel-keys .keys { margin: 6px 0 4px; }

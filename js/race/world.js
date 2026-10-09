@@ -204,7 +204,10 @@ const RaceWorld = (() => {
       if (c.snap || b.kinematic) { c.y = g.h; c.vy = 0; c.air = false; c.snap = false; }
       else if (!c.air) {
         c.vx -= G * g.gx * dt; c.vz -= G * g.gz * dt;
-        const vyG = (g.h - c.y) / dt;
+        // the vertical speed the ground asks for: how far it rose this step, but no more than its slope
+        // gives (2 m/s either way). Driving onto a ramp from the side, the ground jumps up by the
+        // ramp's height in one step: the car climbs onto it, but isn't fired upward at hundreds of m/s
+        const vyS = g.gx * c.vx + g.gz * c.vz, vyG = Math.max(vyS - 2, Math.min(vyS + 2, (g.h - c.y) / dt));
         if ((c.vy - vyG) / dt > G * 1.05) { c.air = true; c.vy -= G * dt; c.y += c.vy * dt; }   // takes off
         else { c.vy = vyG; c.y = g.h; }
       } else {

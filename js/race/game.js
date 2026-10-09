@@ -41,13 +41,15 @@ const RaceGame = (() => {
   const fmtTime = (t) => { if (!(t >= 0)) return '--:--.--'; const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s < 10 ? '0' : ''}${s.toFixed(2)}`; };
   const ord = (n) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
   const TEST = q.get('test');
+  // the crash physics: on the CPU (in a worker) or the GPU (WebGPU); ?solver=gpu, or the select screen's button
+  const solverPick = RaceCrash.solverChoice(document.getElementById('btn-solver'));
 
   const level = CrashLevel.build({ seed: +q.get('seed') || undefined });
   const L = level.length;
   // a touch screen (or ?touch=1): on-screen buttons, and a lighter picture for a phone's GPU
   const TOUCH = q.get('touch') === '1' || (q.get('touch') !== '0' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   if (TOUCH) document.body.classList.add('touch');
-  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048 });
+  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: Object.assign({}, RaceRender.DUSK, { lampPools: true, carLights: 3 }), bloom: !TOUCH });   // at dusk, as the Destruction mode
   const world = RaceWorld.create(level);
   const props = RaceProps.create(level);   // street lights, signals, cones, bins ... to knock over
   const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
@@ -207,7 +209,7 @@ const RaceGame = (() => {
     });
     const near = level.collidersNear(e.x, e.z, 32);
     const shapes = { boxes: near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height })), cyls: near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height })) };
-    crash = RaceCrash.start({ units, world: shapes, duration: 1.6, damage: DAMAGE });
+    crash = RaceCrash.start({ units, world: shapes, duration: 1.6, damage: DAMAGE, solver: solverPick.solver });
     crash.impactKmh = e.vn * 3.6;
     // the solver's ground is flat at 0: the crash is drawn at the ground's height here
     crash.lift = ground;
@@ -646,6 +648,18 @@ const RaceGame = (() => {
     const slots = { lexus: 0, mustang: 0 };
     for (const d of draws) R.drawCar(d.key, slots[d.key]++, d);
     R.endCars();
+    // head and tail lights glowing at dusk (everyone's, the player's too, but not in a crash)
+    const glow = [];
+    const lamps = (key, x, z, h, y) => {
+      const S = specs[key], c = Math.cos(h), s = Math.sin(h), f = S.xMin + S.length + 0.02, b = S.xMin - 0.02, w = S.width / 2 - 0.32;
+      for (const sd of [-1, 1]) {
+        glow.push({ x: x + c * f - s * sd * w, y: y + 0.7, z: z + s * f + c * sd * w, r: 1, g: 0.9, b: 0.72 });
+        glow.push({ x: x + c * b - s * sd * w, y: y + 0.86, z: z + s * b + c * sd * w, r: 0.95, g: 0.08, b: 0.04 });
+      }
+    };
+    for (const d of draws) lamps(d.key, d.x, d.z, d.h, d.lift || 0);
+    if (state !== 'crash' && state !== 'replay') { const p = car.pose; lamps(carKey, p.x, p.z, p.heading, car.y); }
+    R.carLights(glow);
     // burst hydrants spray for a few seconds
     for (let i = geysers.length - 1; i >= 0; i--) {
       const g = geysers[i];

@@ -2283,13 +2283,16 @@ function createImpactSim(cfg) {
   // can't take this set-up, the CPU solves it (gpuFallback says why).
   let gpu = null, gpuRunning = false, gpuMs = 0, gpuBatches = 0, gpuSteps = 0, gpuError = null, gpuFallback = null;
   if (cfg.gpu && wall) gpuFallback = 'the GPU solver has no brick wall';
-  else if (cfg.gpu && world) gpuFallback = 'the GPU solver has no world obstacles';
+  else if (cfg.gpu && world && world.shapes.length > 160) gpuFallback = 'too many world obstacles for the GPU solver';
   else if (cfg.gpu) {
     const floor = new Float64Array(n);
     for (let a = 0; a < n; a++) floor[a] = wheelNode[a] ? wheelFloor[a] : clear[a];
     const obstacle = rigid ? { kind: 'rigid', height: RIGID_BARRIER.height, halfWidth: RIGID_BARRIER.halfWidth }
       : offset ? { kind: 'offset', side: offset.side, zEdge: offset.zEdge, width: offset.width, height: offset.height, edgeRadius: offset.edgeRadius }
-      : pole ? { kind: 'pole', x: pole.x, z: pole.z, r: pole.r, height: pole.height } : { kind: 'none' };
+      : pole ? { kind: 'pole', x: pole.x, z: pole.z, r: pole.r, height: pole.height }
+      // the world's shapes where they are at time 0 (a moving box from its start)
+      : world ? { kind: 'world', shapes: world.shapes.map(q => q.box ? { box: true, x: q.vx !== undefined ? q.bx : q.x, z: q.vx !== undefined ? q.bz : q.z, c: q.c, s: q.s, hx: q.hx, hz: q.hz, height: q.height, top: !!q.top, vx: q.vx || 0, vz: q.vz || 0 }
+        : { box: false, x: q.x, z: q.z, c: 1, s: 0, hx: q.r, hz: q.r, height: q.height }) } : { kind: 'none' };
     const honeycomb = hc ? { h: hc.h, nzc: hc.nzc, nyc: hc.nyc, y0: hc.y0, depth: hc.depth, crush: hc.crush, padY: 0.5 * car.sy, padZ: 0.5 * car.sz,
       solid: HONEYCOMB.solid, mainDepth: HONEYCOMB.main.depth, bumperDepth: HONEYCOMB.bumper.depth, mainStress: HONEYCOMB.main.stress, bumperStress: HONEYCOMB.bumper.stress,
       ijk: car.ijk, ny: spec.ny, nz: spec.nz } : null;
@@ -2310,7 +2313,7 @@ function createImpactSim(cfg) {
         } while (tt < nextRecordT - 1e-9 && dts.length < gpu.maxSteps);
         const rolls = units.map(U => { const fh = Math.hypot(U.frame.f[0], U.frame.f[2]) || 1; return [U.frame.f[0] / fh, U.frame.f[2] / fh]; });
         const t1 = now();
-        const st = await gpu.run(dts, rolls, gpuSteps);
+        const st = await gpu.run(dts, rolls, gpuSteps, t);
         gpuMs += now() - t1; gpuBatches++;
         if (cancelled) break;
         X.set(st.X); V.set(st.V);

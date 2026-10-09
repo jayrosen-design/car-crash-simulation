@@ -11,6 +11,7 @@
  * traffic:    two minutes without the player: no vehicle touches another, the red light holds the
  *             queue, everyone who enters leaves at the far end, and a rerun is identical
  * pileup:     with a wreck left in the junction, the traffic runs into it
+ * ramps:      cars driven onto the Race game's ramp and the junction's from every side never fly
  * wrecks:     a dropped wreck settles without sinking or gaining energy; a wreck dropped on another
  *             stays on top and both go to sleep; one at 30 m/s stops at a wall; two cars colliding
  *             keep their momentum (but for friction with the ground); an explosion pushes harder near
@@ -147,6 +148,25 @@ if (want('pileup')) {
     }
   }
   check('pileup', hitBy >= 3, `a wreck across the eastbound lanes for 40 s: ${hitBy} vehicles ran into the pile (at least 3), ${W.bodies.length} wrecks, ${W.ledger.total.toLocaleString('en-US')} $ of damage`);
+}
+
+if (want('ramps')) {
+  // onto a ramp from the side, the front, at any angle (the Race game's first ramp and the junction's):
+  // a car may hop and jump, but never fly (the ground once fired it up at the ramp's height per step)
+  global.CrashLevel = global.CrashLevel || require(path.join(__dirname, '../js/race/level.js'));
+  let worst = 0, n = 0, where = '';
+  for (const [lv, r] of [[CrashLevel.build(), null], [level, null]]) {
+    const ramp = r || lv.ramps[0], c0 = Math.cos(ramp.h), s0 = Math.sin(ramp.h);
+    const l0 = ramp.l0 !== undefined ? ramp.l0 : -7.5, l1 = ramp.l1 !== undefined ? ramp.l1 : 7.5;
+    for (const kmh of [60, 140, 260]) for (let ang = -80; ang <= 80; ang += 20) for (let lat = l0 - 3; lat <= l1 + 3; lat += 2) {
+      const u = 0.5 * ramp.len, px = ramp.x + c0 * u - s0 * lat, pz = ramp.z + s0 * u + c0 * lat, h = ramp.h + ang * Math.PI / 180;
+      const w = RaceWorld.create({ collidersNear: () => [], groundAt: lv.groundAt, terrain: lv.terrain }), car = RaceCar.create(specs.lexus);
+      car.place(px - Math.cos(h) * 25, pz - Math.sin(h) * 25, h, kmh / 3.6); w.add(car);
+      for (let i = 0; i < 240 * 2.5; i++) { w.step(STEP, () => ({ throttle: 0.5 })); const up = car.y - lv.groundAt(car.x, car.z).h; if (up > worst) { worst = up; where = `${kmh} km/h at ${ang} degrees`; } }
+      n++;
+    }
+  }
+  check('ramps', worst < 12, `${n} runs onto the two games' ramps from every side: highest ${worst.toFixed(1)} m above the ground (${where}; under 12 m)`);
 }
 
 if (want('wrecks')) {

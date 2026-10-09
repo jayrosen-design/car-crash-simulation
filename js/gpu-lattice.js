@@ -1,7 +1,8 @@
 /* The car lattice on the GPU (WebGPU compute, WGSL): an opt-in alternative to the inner loop of
  * physics.js createImpactSim (cfg.gpu). It covers the rigid barrier, the offset barrier with or
- * without its honeycomb face, the pole, and several cars colliding with each other; not the brick
- * wall, and parts don't come off.
+ * without its honeycomb face, the pole, the game modes' world of boxes and posts (boxes can move
+ * at a steady speed and have a roof to land on), and several cars colliding with each other; not
+ * the brick wall, and parts don't come off.
  *
  * Each step runs the same equations as the CPU solver: predict; the lattice's distance constraints
  * (XPBD with damping, plastic yield and its rest-length limits); contacts with the ground, the
@@ -130,7 +131,30 @@ struct Range { off: u32, cnt: u32, pad0: u32, pad1: u32 };
       IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + imp;
       FIRST[a] = min(FIRST[a], S.idx);
     }` : '';
-    out.ground = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + `
+    // the game modes' world (physics.js worldSDF): each shape is (x, z, cos, sin) at time 0, (half
+    // length or radius, half width, height, flags: 1 a cylinder, 2 a roof) and (vx, vz) its speed
+    const W = ob.kind === 'world' ? ob.shapes : null;
+    const arr = (list) => `array<vec4<f32>, ${W.length}>(${list.map(v => `vec4<f32>(${v.map(f).join(', ')})`).join(', ')})`;
+    const worldDecl = W ? `
+const NS: u32 = ${W.length}u;
+var<private> SA: array<vec4<f32>, ${W.length}> = ${arr(W.map(q => [q.x, q.z, q.c, q.s]))};
+var<private> SB: array<vec4<f32>, ${W.length}> = ${arr(W.map(q => [q.hx, q.hz, q.height, (q.box ? 0 : 1) + (q.top ? 2 : 0)]))};
+var<private> SC: array<vec4<f32>, ${W.length}> = ${arr(W.map(q => [q.vx || 0, q.vz || 0, 0, 0]))};
+fn stime() -> f32 { return bitcast<f32>(S.p0); }
+` : '';
+    // a roof is a floor for a node over it that came down from above it
+    const roofs = W && W.some(q => q.top) ? `
+    let tt = stime(); let py = P[i + 1u];
+    for (var k = 0u; k < NS; k++) {
+      let sb = SB[k];
+      if ((u32(sb.w) & 2u) == 0u || py < sb.z - 0.25) { continue; }
+      let sa = SA[k]; let sc = SC[k];
+      let dx = x.x - (sa.x + sc.x * tt); let dz = x.z - (sa.y + sc.y * tt);
+      if (abs(dx * sa.z + dz * sa.w) > sb.x || abs(-dx * sa.w + dz * sa.z) > sb.y) { continue; }
+      let fl = sb.z + ni.y;
+      if (x.y < fl) { ct.x = max(ct.x, fl - x.y); x.y = fl; }
+    }` : '';
+    out.ground = head + worldDecl + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + `
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   let a = g.x;
   if (a >= N) { return; }
@@ -139,7 +163,7 @@ struct Range { off: u32, cnt: u32, pad0: u32, pad1: u32 };
   if ((u32(ni.z) & 1u) == 0u) {
     let i = 3u * a;
     var x = vec3<f32>(X[i], X[i + 1u], X[i + 2u]);
-    if (x.y < ni.y) { ct.x = ni.y - x.y; x.y = ni.y; }${rigid}
+    if (x.y < ni.y) { ct.x = ni.y - x.y; x.y = ni.y; }${rigid}${roofs}
     X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;
   }
   CT[a] = ct;
@@ -213,16 +237,40 @@ fn work(c0: f32, c1: f32, dep: f32) -> f32 {   // crushing a cell from c0 to c1 
     X[i3] = x.x; X[i3 + 1u] = x.y; X[i3 + 2u] = x.z;
   }
 }`;
-    // the offset barrier's block or the pole, as a signed distance (physics.js obstacleSDF)
-    if (ob.kind === 'offset' || ob.kind === 'pole') {
-      const sdf = ob.kind === 'pole' ? `
-fn sdf(x: vec3<f32>) -> vec3<f32> {
+    // the offset barrier's block, the pole or the world, as a signed distance (physics.js obstacleSDF):
+    // (distance, nx, nz, the world shape's index)
+    if (ob.kind === 'offset' || ob.kind === 'pole' || W) {
+      const sdf = W ? worldDecl + `
+fn sdf(x: vec3<f32>) -> vec4<f32> {
+  let tt = stime();
+  var best = 1e9; var bn = vec2<f32>(-1.0, 0.0); var bi = 0.0;
+  for (var k = 0u; k < NS; k++) {
+    let sa = SA[k]; let sb = SB[k]; let sc = SC[k];
+    if (x.y > sb.z) { continue; }
+    let dx = x.x - (sa.x + sc.x * tt); let dz = x.z - (sa.y + sc.y * tt);
+    var d: f32; var nn: vec2<f32>;
+    if ((u32(sb.w) & 1u) != 0u) {
+      let l = max(length(vec2<f32>(dx, dz)), 1e-9); d = l - sb.x; nn = vec2<f32>(dx / l, dz / l);
+    } else {
+      let u = dx * sa.z + dz * sa.w; let w = -dx * sa.w + dz * sa.z;
+      let qu = abs(u) - sb.x; let qw = abs(w) - sb.y; let su = select(1.0, -1.0, u < 0.0); let sw = select(1.0, -1.0, w < 0.0);
+      var nu: f32; var nw: f32;
+      if (qu > 0.0 || qw > 0.0) { let ou = max(qu, 0.0); let ow = max(qw, 0.0); let l = max(length(vec2<f32>(ou, ow)), 1e-9); d = l; nu = su * ou / l; nw = sw * ow / l; }
+      else if (qu > qw) { d = qu; nu = su; nw = 0.0; }
+      else { d = qw; nu = 0.0; nw = sw; }
+      nn = vec2<f32>(nu * sa.z - nw * sa.w, nu * sa.w + nw * sa.z);
+    }
+    if (d < best) { best = d; bn = nn; bi = f32(k); }
+  }
+  return vec4<f32>(best, bn.x, bn.y, bi);
+}` : ob.kind === 'pole' ? `
+fn sdf(x: vec3<f32>) -> vec4<f32> {
   let dx = x.x - ${f(ob.x)}; let dz = x.z - ${f(ob.z)}; let d = max(length(vec2<f32>(dx, dz)), 1e-9);
-  if (x.y > ${f(ob.height)}) { return vec3<f32>(1e9, dx / d, dz / d); }
-  return vec3<f32>(d - ${f(ob.r)}, dx / d, dz / d);
+  if (x.y > ${f(ob.height)}) { return vec4<f32>(1e9, dx / d, dz / d, 0.0); }
+  return vec4<f32>(d - ${f(ob.r)}, dx / d, dz / d, 0.0);
 }` : `
-fn sdf(x: vec3<f32>) -> vec3<f32> {
-  if (x.y > ${f(ob.height)}) { return vec3<f32>(1e9, -1.0, 0.0); }
+fn sdf(x: vec3<f32>) -> vec4<f32> {
+  if (x.y > ${f(ob.height)}) { return vec4<f32>(1e9, -1.0, 0.0, 0.0); }
   let s = -(${f(ob.side)}); let w = s * (x.z - ${f(ob.zEdge)}); let rho = ${f(ob.edgeRadius)};
   var d: f32; var nx: f32; var nw: f32;
   if (x.x < rho && w > -rho) { let ex = x.x - rho; let ew = w + rho; let l = max(length(vec2<f32>(ex, ew)), 1e-9); d = l - rho; nx = ex / l; nw = ew / l; }
@@ -230,9 +278,9 @@ fn sdf(x: vec3<f32>) -> vec3<f32> {
   else if (x.x < rho || x.x < -w) { d = -x.x; nx = -1.0; nw = 0.0; }
   else { d = w; nx = 0.0; nw = 1.0; }
   if (-(${f(ob.width)}) - w > d) { d = -(${f(ob.width)}) - w; nx = 0.0; nw = -1.0; }
-  return vec3<f32>(d, nx, s * nw);
+  return vec4<f32>(d, nx, s * nw, 0.0);
 }`;
-      out.surface = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['NRM', 'array<vec2<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + sdf + `
+      out.surface = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>', 1], ['NRM', 'array<vec4<f32>>', 1], ['IMPS', 'array<vec4<f32>>', 1], ['FIRST', 'array<u32>', 1]]) + sdf + `
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   let a = g.x;
   if (a >= N) { return; }
@@ -243,15 +291,16 @@ fn sdf(x: vec3<f32>) -> vec3<f32> {
   let p = vec3<f32>(P[i], P[i + 1u], P[i + 2u]);
   let gq = sdf(x);
   if (gq.x >= R) { return; }
-  // cancel this step's approach, but never push the node out faster than MAXSEP
-  let pen = min(R - gq.x, max(0.0, -((x.x - p.x) * gq.y + (x.z - p.z) * gq.z) + MAXSEP * S.dt));
+  // cancel this step's approach (relative to a moving box), but never push the node out faster than MAXSEP
+  ${W ? 'let sv = SC[u32(gq.w)].xy;' : 'let sv = vec2<f32>(0.0);'}
+  let pen = min(R - gq.x, max(0.0, -((x.x - p.x - sv.x * S.dt) * gq.y + (x.z - p.z - sv.y * S.dt) * gq.z) + MAXSEP * S.dt));
   if (pen <= 0.0) { return; }
   x.x = x.x + pen * gq.y; x.z = x.z + pen * gq.z;
   var ct = CT[a]; ct.z = pen; CT[a] = ct;
-  NRM[a] = vec2<f32>(gq.y, gq.z);
+  NRM[a] = vec4<f32>(gq.y, gq.z, sv.x, sv.y);
   let imp = pen / (ni.x * S.dt);
   IMPS[2u * a] = IMPS[2u * a] + vec4<f32>(imp, imp * x.x, imp * x.y, imp * x.z);
-  IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + ${ob.kind === 'pole' ? 'imp' : 'imp * max(0.0, -gq.y)'};
+  IMPS[2u * a + 1u].x = IMPS[2u * a + 1u].x + ${ob.kind === 'offset' ? 'imp * max(0.0, -gq.y)' : 'imp'};
   FIRST[a] = min(FIRST[a], S.idx);
   X[i] = x.x; X[i + 1u] = x.y; X[i + 2u] = x.z;
 }`;
@@ -319,13 +368,13 @@ var<workgroup> TP: array<vec4<f32>, ${WG}>;
     const surfFr = out.surface ? `
     if (ct.z > 0.0) {
       let nn = NRM[a];
-      var t = x - p;
+      var t = x - p - vec3<f32>(nn.z, 0.0, nn.w) * S.dt;
       let dn = t.x * nn.x + t.z * nn.y; t.x = t.x - dn * nn.x; t.z = t.z - dn * nn.y;
       let len = length(t); let lim = ${f(d.MU_WALL)} * ct.z;
       x = x - select(lim / len, 1.0, len <= lim) * t;
     }` : '';
     out.friction = head + store([['X', 'array<f32>', 1], ['P', 'array<f32>'], ['V', 'array<f32>', 1], ['NI', 'array<vec4<f32>>'], ['CT', 'array<vec4<f32>>'],
-      ...(out.surface ? [['NRM', 'array<vec2<f32>>']] : []), ...(multi ? [['DC', 'array<vec4<f32>>']] : [])]) + `
+      ...(out.surface ? [['NRM', 'array<vec4<f32>>']] : []), ...(multi ? [['DC', 'array<vec4<f32>>']] : [])]) + `
 @compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g: vec3<u32>) {
   let a = g.x;
   if (a >= N) { return; }
@@ -404,7 +453,8 @@ var<workgroup> TP: array<vec4<f32>, ${WG}>;
    *      damp, cey, ck, r (node radius), G, MU_BODY, MU_WALL, MU_LAT, MU_CAR, MIN_RATIO, MAX_RATIO,
    *      MAX_SEPARATION, NODE_SEPARATION,
    *      obstacle: { kind: 'rigid' (height, halfWidth) | 'offset' (side, zEdge, width, height,
-   *                  edgeRadius) | 'pole' (x, z, r, height) | 'none' },
+   *                  edgeRadius) | 'pole' (x, z, r, height) | 'world' (shapes: physics.js buildWorld's,
+   *                  at time 0) | 'none' },
    *      honeycomb: null or { h, nzc, nyc, y0, depth, crush, padY, padZ, solid, mainDepth,
    *                  bumperDepth, mainStress, bumperStress, ijk (the nodes' lattice indices), ny, nz },
    *      maxSteps } */
@@ -431,7 +481,7 @@ var<workgroup> TP: array<vec4<f32>, ${WG}>;
     put(B.NI, ni);
     const noFirst = new Uint32Array(n).fill(0xffffffff), zerosI = new Float32Array(8 * n);
     put(B.FIRST, noFirst);
-    if (d.obstacle.kind === 'offset' || d.obstacle.kind === 'pole') B.NRM = buf(8 * n, SU);
+    if (d.obstacle.kind === 'offset' || d.obstacle.kind === 'pole' || d.obstacle.kind === 'world') B.NRM = buf(16 * n, SU);
     if (multi) { B.DC = buf(16 * n, SU); B.PR = buf(32 * PAIRS * n, SU); B.D2 = buf(16 * n, SU); }
     // the honeycomb: lanes of nodes (same lattice row and column, front to back as the CPU visits
     // them), and its cells (crush, depth), claims and crush work
@@ -515,12 +565,15 @@ var<workgroup> TP: array<vec4<f32>, ${WG}>;
     let lost = false;
 
     // rolls: each vehicle's forward direction in the ground plane [x, z], for its wheels
-    async function run(dts, rolls, base) {
+    // t0: the time at the first step's start (moving boxes are where they are at each step's end)
+    async function run(dts, rolls, base, t0 = 0) {
       if (lost) throw new Error('the GPU solver was stopped');
       const k = Math.min(dts.length, maxSteps), su = new ArrayBuffer(STEP_STRIDE * k), sf = new Float32Array(su), si = new Uint32Array(su);
+      let tt = t0;
       for (let s = 0; s < k; s++) {
         const o = s * STEP_STRIDE / 4;
-        sf[o] = dts[s]; si[o + 1] = base + s;
+        tt += dts[s];
+        sf[o] = dts[s]; si[o + 1] = base + s; sf[o + 2] = tt;
         rolls.forEach((r, u) => { sf[o + 4 + 4 * u] = r[0]; sf[o + 5 + 4 * u] = r[1]; });
       }
       dev.queue.writeBuffer(B.step, 0, su);

@@ -8,14 +8,20 @@
  * arrive. When the run ends it posts the final result (pulse, metrics, the full glass list) for the
  * replay. Without a worker, the same runs on the main thread a few milliseconds per frame.
  *
- * start(cfg): cfg = { units: [{ key, massKg, pose, velocity, yawRate }], world: { boxes, cyls },
+ * On the GPU (cfg.solver 'gpu', after useGPU(a device from CrashGPU.init())): the lattice steps run on
+ * the graphics card (WebGPU compute, gpu-lattice.js) from the page, and the frames come back as they
+ * are done. Parts don't come off there. If the GPU can't take a crash, it runs on the CPU as usual.
+ *
+ * start(cfg): cfg = { units: [{ key, massKg, pose, velocity, yawRate, (in the air: lift, vy, pitch, roll) }], world: { boxes, cyls },
  *   duration, damage } -> a crash: { F (frames so far), debris, glass, events, T0, t, done, result,
  *   unitView(u) }. No race logic here: the Destruction mode can use it as it is.
  */
 const RaceCrash = (() => {
   'use strict';
   const SOURCES = ['models/lexus.phys.js', 'models/mustang.phys.js', 'js/occupant.js', 'js/vehicles.js', 'js/physics.js'];
-  let workerUrl = null, spare = null, mode = 'none';
+  let workerUrl = null, spare = null, mode = 'none', gpuDev = null;
+  // the GPU device for crashes asked for on the GPU (null: none)
+  function useGPU(g) { gpuDev = g || null; }
 
   // a script's text: inline in the single-file build (it starts with a comment naming it), else fetched
   async function sourceOf(path) {
@@ -49,7 +55,7 @@ const RaceCrash = (() => {
       if (m.type === 'run') {
         const V = self.CrashVehicles;
         sim = self.CrashPhysics.createImpactSim({ barrier: 'world', world: m.cfg.world, duration: m.cfg.duration, minDuration: m.cfg.minDuration || 0.3,
-          vehicles: m.cfg.units.map(u => ({ vehicle: V.get(u.key), massKg: u.massKg, stiffness: 'standard', damage: m.cfg.damage || 'realistic', pose: u.pose, velocity: u.velocity, yawRate: u.yawRate })) });
+          vehicles: m.cfg.units.map(u => ({ vehicle: V.get(u.key), massKg: u.massKg, stiffness: 'standard', damage: m.cfg.damage || 'realistic', pose: u.pose, velocity: u.velocity, yawRate: u.yawRate, lift: u.lift, vy: u.vy, pitch: u.pitch, roll: u.roll })) });
         sent = sentDebris = sentEvents = 0; stop = false;
         ch.port2.postMessage(0);
       } else if (m.type === 'stop') stop = true;
@@ -86,7 +92,7 @@ const RaceCrash = (() => {
       debris: [], glass: [], events: [],
       offs: null,                // node offsets of the units in the joined lattice
       views: [],                 // per unit: frames, debris and glass of that car (see unitView)
-      stop() { if (worker) worker.postMessage({ type: 'stop' }); else if (sim) crash.done = true; },
+      stop() { if (worker) worker.postMessage({ type: 'stop' }); else if (sim) { if (crash.mode === 'gpu') sim.cancel(); crash.done = true; } },
       // advance the main-thread fallback (call every frame); a no-op with the worker
       tick(budgetMs) { if (sim && !crash.done) { sim.advance(budgetMs); take(); } },
       unitView,
@@ -110,9 +116,18 @@ const RaceCrash = (() => {
         if (worker) { worker.onmessage = null; worker.terminate(); }
       }
     }
-    // the worker (a warm one if there is one), else the main thread
+    // the GPU if asked for and it can take this crash; else the worker (a warm one if there is one),
+    // else the main thread
     let worker = null, sim = null;
-    if (mode === 'worker') {
+    if (cfg.solver === 'gpu' && gpuDev) {
+      const V = CrashVehicles;
+      const s = CrashPhysics.createImpactSim({ barrier: 'world', world: cfg.world, duration: cfg.duration, minDuration: cfg.minDuration || 0.3, gpu: gpuDev,
+        vehicles: cfg.units.map(u => ({ vehicle: V.get(u.key), massKg: u.massKg, stiffness: 'standard', damage: cfg.damage || 'realistic', pose: u.pose, velocity: u.velocity, yawRate: u.yawRate, lift: u.lift, vy: u.vy, pitch: u.pitch, roll: u.roll })) });
+      if (s.gpu) { sim = s; crash.mode = 'gpu'; }
+      else crash.gpuFallback = s.gpuFallback;
+    }
+    if (sim) { /* on the GPU */ }
+    else if (mode === 'worker') {
       worker = spare || new Worker(workerUrl);
       spare = new Worker(workerUrl);   // warm up the next one
       worker.onmessage = (e) => receive(e.data);
@@ -120,7 +135,7 @@ const RaceCrash = (() => {
     } else {
       const V = CrashVehicles;
       sim = CrashPhysics.createImpactSim({ barrier: 'world', world: cfg.world, duration: cfg.duration, minDuration: cfg.minDuration || 0.3,
-        vehicles: cfg.units.map(u => ({ vehicle: V.get(u.key), massKg: u.massKg, stiffness: 'standard', damage: cfg.damage || 'realistic', pose: u.pose, velocity: u.velocity, yawRate: u.yawRate })) });
+        vehicles: cfg.units.map(u => ({ vehicle: V.get(u.key), massKg: u.massKg, stiffness: 'standard', damage: cfg.damage || 'realistic', pose: u.pose, velocity: u.velocity, yawRate: u.yawRate, lift: u.lift, vy: u.vy, pitch: u.pitch, roll: u.roll })) });
       crash.mode = 'main';
     }
     let mSent = 0, mDebris = 0, mEvents = 0;
@@ -158,5 +173,34 @@ const RaceCrash = (() => {
     return crash;
   }
 
-  return { prepare, start, get mode() { return mode; } };
+  // A game page's choice of crash physics, 'cpu' or 'gpu': ?solver=cpu|gpu, else the last choice in
+  // this browser. button (optional) switches it and shows it. The GPU is set up when it's chosen; if
+  // this browser can't (no WebGPU), the button says so and crashes run on the CPU.
+  function solverChoice(button) {
+    const q = new URLSearchParams(location.search).get('solver');
+    let want = q === 'gpu' || q === 'cpu' ? q : (() => { try { return localStorage.getItem('crash-solver') === 'gpu' ? 'gpu' : 'cpu'; } catch (e) { return 'cpu'; } })();
+    let status = 'off', reason = '';
+    const label = () => {
+      if (!button) return;
+      button.innerHTML = want !== 'gpu' ? 'Crash physics: <b>CPU</b>' : status === 'ready' ? 'Crash physics: <b>WebGPU</b>' : status === 'failed' ? 'WebGPU unavailable: <b>CPU</b>' : 'Crash physics: <b>WebGPU</b>…';
+      button.title = want !== 'gpu' ? 'The crash solver runs on the CPU, in the background: parts come off. Click for WebGPU.'
+        : status === 'failed' ? reason : 'The crash lattice is solved on the graphics card (WebGPU compute); parts don\'t come off. Click for the CPU.';
+      button.classList.toggle('on', want === 'gpu' && status === 'ready');
+    };
+    async function arm() {
+      if (want === 'gpu' && status !== 'ready') {
+        if (!window.CrashGPU) { status = 'failed'; reason = 'the WebGPU solver is not loaded'; }
+        else {
+          status = 'starting'; label();
+          try { useGPU(await CrashGPU.init()); status = 'ready'; } catch (e) { status = 'failed'; reason = e.message; useGPU(null); }
+        }
+      }
+      label();
+    }
+    if (button) button.addEventListener('click', () => { button.blur(); want = want === 'gpu' ? 'cpu' : 'gpu'; if (want === 'cpu') status = status === 'ready' ? 'ready' : 'off'; try { localStorage.setItem('crash-solver', want); } catch (e) { /* not kept */ } arm(); });
+    arm();
+    return { get solver() { return want === 'gpu' && status === 'ready' ? 'gpu' : 'cpu'; }, get status() { return status; } };
+  }
+
+  return { prepare, start, useGPU, solverChoice, get mode() { return mode; }, get gpu() { return gpuDev; } };
 })();

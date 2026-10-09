@@ -519,7 +519,8 @@ gl_Position = projectionMatrix * mvPosition;`);
       const box = (sx, sy, sz, x, y, z, name) => { const g = new T.BoxGeometry(sx, sy, sz); g.translate(x, y, z); addSkinned(g, name, 'RIGID_Mech_Engine'); };
       box(x1 - x0, yt - yb, 0.62, 0.5 * (x0 + x1), 0.5 * (yb + yt), 0, 'mech:engine');
       box(0.75 * (x1 - x0), 0.06, 0.5, 0.5 * (x0 + x1), yt + 0.03, 0, 'mech:cover');
-      box(0.06, 0.45, 1.25, x1 + 0.12, spec.yBottom + 0.3, 0, 'mech:engine');
+      // the radiator: behind the grille, no wider than it (a wider one showed through the bumper's curved corners)
+      box(0.06, 0.42, 0.84, x1 + 0.02, spec.yBottom + 0.3, 0, 'mech:engine');
     }
 
     // wheels: hub at the origin, axle along +z (outboard on the right); mirrored for the left

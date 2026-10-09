@@ -170,6 +170,7 @@ img, video { display: block; max-width: 100%; }
 /* the Race trailer: a poster with a play button, then the video in place */
 .race-trailer { position: relative; margin: 0 0 26px; aspect-ratio: 16 / 9; background: #000; clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut))); }
 .race-trailer video { width: 100%; height: 100%; object-fit: cover; }
+.race-trailer.portrait { aspect-ratio: 9 / 16; width: min(100%, calc(84vh * 9 / 16)); margin-inline: auto; }
 .race-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 22px; border: 0; cursor: pointer; color: #fff; background: linear-gradient(0deg, rgba(6, 7, 10, 0.55), rgba(6, 7, 10, 0.15)); }
 .race-play svg { width: clamp(64px, 9vw, 104px); height: clamp(64px, 9vw, 104px); padding: clamp(16px, 2.2vw, 26px); color: var(--ink); background: var(--hz); clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%); transition: transform 0.2s; }
 .race-play span { text-align: left; font: italic 900 clamp(28px, 4.4vw, 58px)/0.95 var(--display); text-transform: uppercase; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7); }
