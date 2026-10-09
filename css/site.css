@@ -158,12 +158,13 @@ img, video { display: block; max-width: 100%; }
 .specs li { padding: 4px 9px; font: 600 11.5px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--hz); background: rgba(255, 196, 0, 0.08); border: 1px solid rgba(255, 196, 0, 0.22); }
 .card .go { margin-top: auto; padding-top: 6px; font: italic 800 17px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--hz); transition: letter-spacing 0.22s; }
 .card:hover .go { letter-spacing: 0.2em; }
-/* the game mode: one wide card */
+/* the game modes: one wide card each */
 .card.game > .in { display: grid; grid-template-columns: 3fr 2fr; }
 .card.game .shot { aspect-ratio: auto; min-height: 340px; }
 .card.game .shot::after { background: linear-gradient(90deg, transparent 55%, rgba(19, 23, 30, 0.95) 100%); }
 .card.game .body { padding: 34px 34px 32px 8px; justify-content: center; }
 .card.game h3 { font-size: 54px; }
+.card.game + .card.game { margin-top: 26px; }
 @media (max-width: 860px) { .card.game > .in { grid-template-columns: 1fr; } .card.game .shot { aspect-ratio: 16 / 9; min-height: 0; } .card.game .shot::after { background: linear-gradient(0deg, rgba(19, 23, 30, 0.95) 0%, transparent 45%); } .card.game .body { padding: 4px 24px 26px; } .card.game h3 { font-size: 40px; } }
 
 /* the Race trailer: a poster with a play button, then the video in place */

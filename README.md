@@ -22,7 +22,9 @@ There are eight simulations: the two **barrier tests** (a free simulator with fu
 | <img src="media/shot-rigid.jpg" width="200" alt="Rigid barrier"><br>**Rigid barrier** | <img src="media/shot-brick.jpg" width="200" alt="Brick wall"><br>**Brick wall** | <img src="media/lab-overlap.jpg" width="200" alt="Frontal overlap"><br>**Frontal overlap** | <img src="media/lab-multi.jpg" width="200" alt="Two-vehicle collision"><br>**Two-vehicle collision** |
 | <img src="media/lab-side.jpg" width="200" alt="Side impact"><br>**Side impact** | <img src="media/lab-whiplash.jpg" width="200" alt="Whiplash sled"><br>**Whiplash sled** | <img src="media/lab-restraint.jpg" width="200" alt="Occupant restraints"><br>**Occupant restraints** | <img src="media/lab-pedestrian.jpg" width="200" alt="Pedestrian and braking"><br>**Pedestrian & braking** |
 
-There is also a game mode, **[Race](#race-game-mode)**: drive it yourself, three laps of a city street circuit against seven rivals through two-way traffic, with crashes worked out by the same solver.
+There are also two game modes, with crashes worked out by the same solver:
+- **[Race](#race-game-mode):** drive it yourself, three laps of a city street circuit against seven rivals through two-way traffic.
+- **[Destruction](#destruction-game-mode):** drive into a busy junction at dusk and cause as much damage as you can, Burnout-style, with gas tankers that explode.
 
 > **A teaching model.** It is not validated against physical crash tests. Use it to compare settings and see trends, not to predict real injuries.
 
@@ -34,26 +36,27 @@ There is also a game mode, **[Race](#race-game-mode)**: drive it yourself, three
 2. [The simulations](#the-simulations)
 3. [Using the simulator](#using-the-simulator)
 4. [Race (game mode)](#race-game-mode)
-5. [Technical architecture](#technical-architecture)
-6. [How the physics works](#how-the-physics-works)
-7. [Occupant and injury models](#occupant-and-injury-models)
-8. [How each crash lab works](#how-each-crash-lab-works)
-9. [Simulation diagrams](#simulation-diagrams): [rigid barrier](#rigid-barrier), [brick wall](#brick-wall), [frontal overlap](#frontal-overlap-lab), [two vehicles](#two-vehicle-collision-lab), [side impact](#side-impact-lab), [whiplash](#whiplash-sled-lab), [restraints](#occupant-restraint-lab), [pedestrian](#pedestrian-and-emergency-braking-lab)
-10. [Rendering the damage](#rendering-the-damage)
-11. [Equations and sources](#equations-and-sources)
-12. [Verification](#verification)
-13. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
-14. [Design decisions](#design-decisions)
-15. [Limitations](#limitations)
-16. [Project structure](#project-structure)
-17. [Credits](#credits)
-18. [References](#references)
+5. [Destruction (game mode)](#destruction-game-mode)
+6. [Technical architecture](#technical-architecture)
+7. [How the physics works](#how-the-physics-works)
+8. [Occupant and injury models](#occupant-and-injury-models)
+9. [How each crash lab works](#how-each-crash-lab-works)
+10. [Simulation diagrams](#simulation-diagrams): [rigid barrier](#rigid-barrier), [brick wall](#brick-wall), [frontal overlap](#frontal-overlap-lab), [two vehicles](#two-vehicle-collision-lab), [side impact](#side-impact-lab), [whiplash](#whiplash-sled-lab), [restraints](#occupant-restraint-lab), [pedestrian](#pedestrian-and-emergency-braking-lab)
+11. [Rendering the damage](#rendering-the-damage)
+12. [Equations and sources](#equations-and-sources)
+13. [Verification](#verification)
+14. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
+15. [Design decisions](#design-decisions)
+16. [Limitations](#limitations)
+17. [Project structure](#project-structure)
+18. [Credits](#credits)
+19. [References](#references)
 
 ---
 
 ## Getting started
 
-**Open `Car Crash Simulation.html`** (the home page), **`Simulator.html`** (the simulator) or **`Race.html`** (the Race game) in Chrome, Edge, Firefox or Safari. Each is a single self-contained file, so they work straight from disk (`file://`) or from any static web host, such as GitHub Pages.
+**Open `Car Crash Simulation.html`** (the home page), **`Simulator.html`** (the simulator), **`Race.html`** (the Race game) or **`Destruction.html`** (the Destruction mode) in Chrome, Edge, Firefox or Safari. Each is a single self-contained file, so they work straight from disk (`file://`) or from any static web host, such as GitHub Pages.
 
 Requirements:
 - **WebGL 2.** Any desktop or laptop GPU from the last decade works; phones work but the layout is cramped.
@@ -71,10 +74,10 @@ Simulator.html?lab=side&impactor=pole&steel=mild
 Simulator.html?solver=gpu                      the crash computed on the GPU (WebGPU); also with ?lab=
 ```
 
-For development, open `index.html` (or `game.html` for Race) instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`. Opened from disk, `game.html` runs its crashes on the main thread, because the browser won't let it read its own scripts for the worker; `Race.html` and any web server don't have that limit.
+For development, open `index.html` (or `game.html` for Race, `junction.html` for Destruction) instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`. Opened from disk, `game.html` and `junction.html` run their crashes on the main thread, because the browser won't let them read their own scripts for the worker; `Race.html`, `Destruction.html` and any web server don't have that limit.
 
 **Hosting.** The site is static and needs no build step.
-- **Vercel:** import the repository with the framework preset *Other*. `vercel.json` serves `home.html` at `/`; it loads the video and pictures from `media/` instead of embedding them, so it opens faster than the single-file home page. `.vercelignore` keeps the docs and tools off the site. It also leaves out `index.html` (the developer page), because Vercel serves a real file at `/` before it applies any rewrite, and `game.html` with `media/race/`, which `Race.html` embeds. `/race` serves `Race.html`.
+- **Vercel:** import the repository with the framework preset *Other*. `vercel.json` serves `home.html` at `/`; it loads the video and pictures from `media/` instead of embedding them, so it opens faster than the single-file home page. `.vercelignore` keeps the docs and tools off the site. It also leaves out `index.html` (the developer page), because Vercel serves a real file at `/` before it applies any rewrite, `game.html` with `media/race/`, which `Race.html` embeds, and `junction.html`. `/race` serves `Race.html`, and `/destruction` serves `Destruction.html`.
 - **Other static hosts** (GitHub Pages, Netlify and others) work too: open `home.html` or `Car Crash Simulation.html`.
 
 ---
@@ -269,6 +272,153 @@ node tools/headless-check.js world      the crash solver's world barrier
   - glass streamed live matches the batch result;
   - two cars at 160 km/h stay finite and gain no energy.
 - **In the browser,** `game.html?test=wall150`, `?test=headon` and `?test=takedown` run scripted crashes and a takedown. The results go in `window.__race.test`: time to the first frame, frame times, the respawn time and the parts that came off, and the slams, takedowns and denials. `?worker=0` forces the main-thread fallback.
+
+---
+
+## Destruction (game mode)
+
+<img src="media/destruction.jpg" width="640" alt="Destruction mode: a gas tanker exploding in a busy junction at dusk, a wrecked car flipped over in front, the damage adding up in dollars">
+
+`Destruction.html` is a crash mode in the spirit of Burnout 3's. You drive down into one busy crossroads at dusk and cause as much damage as you can.
+- **The impact.** The full crash solver works out your car's impact, as in Race, played back in slow motion.
+- **The pile-up.** Then the wrecks tumble on as rigid bodies while the traffic keeps piling in.
+- **Payouts.** Everything damaged pays out in dollars.
+- **Explosions.** Gas tankers and fuel pumps explode, and so do totalled cars after a while.
+- **Score.** Each attempt is scored against bronze, silver and gold targets, and your best is kept in the browser.
+
+Open it from the home page, the **Simulation** menu in the simulator, or `/destruction` on the website. For development, open `junction.html`.
+
+| | Keyboard | Controller (Xbox layout) |
+|---|---|---|
+| Steer | A / D, ← / → | Left stick |
+| Accelerate · brake | W · S, ↑ · ↓ | Triggers |
+| Boost; after the crash, the Crashbreaker | Shift | A or right bumper |
+| Handbrake | Space | X |
+| Retry (at any time) | R, or Enter on the results | View, or A |
+| Pause | Esc, P | Menu |
+
+On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once the Crashbreaker is ready, and Retry sits at the top. The running total moves to the top left.
+
+### An attempt
+
+- **Car and paint.** The same cars and eight paints as Race. The select screen also shows the junction's targets and your best.
+- **The junction: "Crossroads at dusk"** (`js/destruction/junction.js`).
+  - **Main St.** Two lanes each way. You start 340 m from the junction, at the top of a gentle hill (9 m of drop). The street is flat within 75 m of the junction, because the crash solver's ground is flat.
+  - **Harbor Blvd.** It crosses with three lanes each way and a painted median. It is on green for the whole run-up. Main St is on red, with a queue waiting on the far side.
+  - **The corners.** A gas station with four pumps under a lit canopy and two cars parked at the pumps. A bus stop, and a café with tables and shop windows. A roadworks yard. Traffic lights on every corner, showing red to Main St and green to Harbor Blvd.
+  - **The ramp.** A roadworks ramp in the right lane, 2 m high, with its lip 55 m before the junction. Taken fast, it throws you into the traffic in the air: in the scripted ramp attempt, at 136 km/h, the car is still airborne when it hits the tanker.
+- **The traffic is the same every attempt** (`js/destruction/traffic.js`).
+  - **The schedule.** About 120 vehicles, from 24 s before the start to a minute after it, so the street is already busy when the countdown starts.
+  - **Specials.** A gas tanker is timed to reach the middle of the junction when a car boosting from the start gets there. A bus arrives when a car that never boosts gets there. Box trucks are mixed in, and a second tanker comes into the pile-up later.
+  - **Driving.** The drivers use the Intelligent Driver Model \[[77](#ref-77)\] with $s_0 = 3$ m and $T = 1.3$ s.
+  - **Noticing wrecks.** They see a wreck in their lane only within their own attention distance: 6–18 m for most of them, 18–34 m for the rest. They brake no harder than 5.5 m/s², so many run into the pile.
+  - **The countdown** runs on the junction's own clock. Every attempt reaches "Go" with the traffic in exactly the same places.
+- **Boost** starts full. It is spent while held, and there are no near misses to refill it. What's left at the impact feeds the Crashbreaker.
+- **The crash.** The first hit that would cost a Race car 6% of its health or more is the crash; a light scrape isn't.
+  - **Slow motion.** As in Race, the cars go back one step and the crash solver takes them, with the same slow-motion playback.
+  - **The junction keeps time with it.** It runs on at the playback's pace, so the cross traffic moves in slow motion too.
+  - **Your car and a car you hit** are both lattices in the solver.
+  - **Buses, trucks, tankers and other vehicles within 20 m** go in as boxes moving at their own speed, with roofs.
+  - **From the air.** Off the ramp, your car starts the solver already in the air: its height, vertical speed, pitch and roll come from the flight.
+  - **A heavy vehicle you hit** is held to its speed while the solver sees it, then let go.
+- **The pile-up** (`js/destruction/wrecks.js`).
+  - **The hand-over.** After 0.9 s of crash, the solver's cars become rigid wrecks that keep the shape it left them in. Each wreck's mass centre comes from the node masses, its rotation from the cabin axes, and its velocity and spin from the last frames. Its collision shape is the box round its crushed nodes.
+  - **Your crushed car on screen** is the same deformed mesh, moved with its wreck. Parts that came off (panels, wheels) become small wrecks of their own.
+  - **The rest of the traffic** becomes wrecks at the first touch, with the speed it had.
+- **Fire and explosions.**
+  - **Totalled vehicles.** A vehicle at full damage catches fire and explodes 2.2–4.8 s later.
+  - **Tankers** go up at a third of that, within a second.
+  - **Fuel pumps** explode once knocked.
+  - **Chain reactions.** Explosions throw wrecks into the air and damage them, which sets off the next ones.
+- **The Crashbreaker.** Once five vehicles are wrecked, Boost blows up your own wreck. The blast's radius is 12 m plus 10 m for a full gauge left at the impact, and its push is 18 m/s plus 10. So saving boost is a real choice.
+- **Pickups.**
+  - ×2 in the empty oncoming lane, and +$25,000 in the right lane, on the way down.
+  - ×4 in the air in the ramp's flight path.
+  - +$100,000 in the middle of the junction, for your wreck.
+  - Multipliers stack, up to ×8, and scale the total.
+- **The end.** The attempt ends when nothing has paid out for 4 s, or 25 s after the crash. The total counts up against the targets, a medal is stamped, and the results show what was wrecked. Retry starts the same junction again at once.
+
+**What things are worth.** A vehicle pays its value times its damage (0 to 1) as the damage grows, and a quarter more when totalled. Explosions pay a bonus. Props pay their value the first time they're knocked.
+
+| Item | Value | Item | Value |
+|---|---|---|---|
+| Lexus | $48,000 | Gas tanker | $300,000 (+ $250,000 when it explodes) |
+| Mustang | $80,000 | Fuel pump | $30,000 (+ $20,000 when it explodes) |
+| Box truck | $95,000 (+ $30,000) | Traffic light | $18,000 |
+| Bus | $250,000 (+ $60,000) | Bus shelter | $12,000 |
+| A car exploding | $15,000 | Shop window | $6,000 |
+| Street light | $4,000 | Hydrant, bench, bin, newspaper box, table, cone, barrel, crate | $50–3,000 |
+
+**Targets:** bronze $300,000, silver $1,000,000, gold $3,000,000. They were set from scripted attempts in the browser:
+- **No boost** (into the bus): about $0.8 million, three runs within 2%.
+- **Boosting into the tanker,** with the Crashbreaker: about $1.3 million.
+- **Taking the ramp and its ×4:** about $4 million.
+- **Outliers.** A run scores well above its usual when the later tanker joins the pile-up: one no-boost run reached $2.4 million.
+
+### How it works
+
+- **The pile-up solver** (`js/destruction/wrecks.js`). Each wreck is a rigid body (position, quaternion, velocity, spin), with the inertia of a box of its size \[[7](#ref-7)\], stepped at 120 Hz.
+  - **Its shape.** A hull of spheres over the box's surface: rows along it, two across, and one or two high. A sedan has 24, a bus about 40.
+  - **Contacts.** Against the ground (the hill and the ramp), the buildings and posts, other wrecks, and the vehicles still driving (boxes moving on their lanes). They are solved by sequential impulses, 8 passes, with restitution, Coulomb friction and a little positional correction (Baumgarte 0.25).
+  - **Sleep.** A wreck that stays still for 0.6 s sleeps until something hits it.
+  - **Kinematic bodies.** The two cars inside the crash solver have kinematic stand-ins that push the wrecks but aren't pushed.
+- **Damage.** The approach speed of each touch along the contact normal, with the bounce, and against another wreck the share by mass, goes through the Race game's damage curve, $\max(0,\ \Delta v - 2.5)^2/650$. That is scaled by 1.6, since this is a game about damage. Within 0.15 s only the worst touch counts. Where a vehicle was hit (front, rear, either side, roof) dents it on screen.
+- **Explosions.** Each pushes every wreck within its radius $R$ away from a point 1.2 m below the blast, with a strong lift, and a little off-centre so it spins. The speed it gives a 1.5 t car at distance $d$ is $v_0(1 - d/R)^2$, less for heavier ones, by $(m/1500)^{-0.35}$. That is exaggerated: a car 4 m from a tanker flies about 8 m up. It also adds $1.3(1 - d/R)^2$ to their damage. Traffic within the radius is wrecked, and props are flung.
+
+  | Blast | Radius | Push |
+  |---|---|---|
+  | Car | 9 m | 14 m/s |
+  | Box truck | 11 m | 16 m/s |
+  | Bus | 12 m | 16 m/s |
+  | Gas tanker | 28 m | 26 m/s |
+  | Fuel pump | 15 m | 20 m/s |
+  | Crashbreaker | 12–22 m | 18–28 m/s |
+- **The crash solver's options for this mode** (`js/physics.js`; all opt-in, so existing runs are unchanged).
+  - **Moving boxes.** A box in the `world` barrier can move at a steady speed. Contacts and friction are then worked out relative to it, and the work it does on the cars is booked in the energy check.
+  - **Roofs.** A box can have a roof to land on.
+  - **Starting in the air.** A car can start with a height, vertical speed, pitch and roll.
+  - **Race unchanged.** `world.js` widens its car-pair broad phase for long vehicles, and `props.js` looks further round them. Both stay exactly as before for the Race cars.
+- **Rendering** (`js/destruction/look.js`, with the Race renderer).
+  - **Dusk.** A low orange sun down Harbor Blvd and a violet sky, through the renderer's `look` option. More windows are lit, and there are neon signs, pools of light under the street lights, steam from manholes, and headlights and tail lights on the traffic.
+  - **The heavy vehicles.** The bus, truck and tanker are built from boxes and cylinders, one instanced set each.
+  - **Dents.** Every instanced vehicle has per-instance crush amounts that a vertex shader applies: the end that hit something pushed back, a side pushed in, the roof flattened. A burnt wreck turns black.
+  - **Effects.** Explosions (fireball, smoke column, shockwave over the ground, flash, embers, scorch marks) and burning wrecks are camera-facing sprites. Each particle is a function of the time since it started.
+  - **Lights.** A fixed pool of four point lights (two on touch screens) follows the brightest fires and blasts. Adding a light would rebuild every shader.
+  - **Bloom and shake.** A selective bloom (the simulator's) makes fire, sparks and neon glow. It's off on touch screens. Camera shake follows the blasts.
+  - **Warm-up.** Every effect is drawn once at load.
+  - **Frame time.** In the single file, every stage of an attempt runs at 16.7 ms per frame (95th percentile 17 ms, longest 18 ms after the countdown) on the development machine. The number of compiled shaders is the same after a tanker explodes as at the start.
+
+### Checks
+
+```
+node tools/destruction-check.js         the Destruction mode's DOM-free parts, in Node
+node tools/headless-check.js world      includes the solver's moving boxes, roofs and airborne start
+```
+
+- **`destruction-check.js`** checks:
+  - **the junction:** no building, tree or post in a road; every lane inside the roads; the ground flat round the junction; the ramp's lip 2 m up in its lane only; the same seed builds the same junction;
+  - **the broad phase:** the Race cars keep `world.js`'s old 7 m limit; a car square into the end of a 12 m bus is found at first touch (the old limit found it only 75 cm in);
+  - **prop reach:** a bus's front corner knocks a cone over;
+  - **traffic:** two minutes without the player. No vehicle touches another, the red light holds the queue, everyone who enters leaves, and a rerun is identical;
+  - **the pile-up:** a wreck left across the lanes is run into;
+  - **the wrecks:**
+    - a dropped wreck settles (it sinks under 1 cm and never gains energy);
+    - one dropped on another stays on top and both sleep;
+    - at a wall at 30 m/s it stops at the wall;
+    - a T-bone changes its momentum by under 8% (ground friction included);
+    - a blast pushes harder near it and not at all beyond its radius;
+    - runs are deterministic;
+  - **the score:** what's shown is what was paid; multipliers; the totalled bonus; a tanker alight at a third of its damage.
+- **`world-moving`** in `headless-check.js`:
+  - a box at 15 m/s into a car's side carries it off at its speed;
+  - a car into the side of one crossing at 15 m/s is dragged along;
+  - a car started 2 m up lands;
+  - one dropped on a roof stays on it;
+  - none gains energy.
+- **In the browser,** `junction.html?test=plain|tbone|tanker|ramp` runs a scripted attempt: full throttle down the left lane without boost, the same with the Crashbreaker, boosting from the start, or boosting over the ramp. The results go in `window.__destruction`: the total and ledger, the pickups and explosions, frame times by stage, and how the wrecks carried on from the solver's last frame (4 cm and no change of speed in the first 60 ms). `?worker=0` forces the main-thread crash solver.
+- **Not verified:**
+  - **Hardware:** a real Xbox controller, and a real phone. The touch buttons were tested with simulated taps at phone size.
+  - **The pile-up's physics:** it is a game's rigid-body model, not the crash solver. Wrecks dent by shader, not by deforming.
 
 ---
 
@@ -2085,7 +2235,7 @@ The CPU solver is unchanged by the GPU option. With the GPU option off, eight cr
 node tools/build-standalone.js
 ```
 
-Writes `Simulator.html` (from `index.html` and every script), `Race.html` (from `game.html`, its scripts and the textures in `media/race/assets.js`) and `Car Crash Simulation.html` (from `home.html`, `css/site.css` and `media/`). Edit the sources, not these three files. It stops if any embedded file doesn't appear intact.
+Writes `Simulator.html` (from `index.html` and every script), `Race.html` (from `game.html`, its scripts and the textures in `media/race/assets.js`), `Destruction.html` (from `junction.html` the same way) and `Car Crash Simulation.html` (from `home.html`, `css/site.css` and `media/`). Edit the sources, not these four files. It stops if any embedded file doesn't appear intact. `node tools/build-standalone.js Destruction` builds only the files whose names contain the word.
 
 ```
 blender -b -Y --factory-startup --python tools/fetch-race-assets.py
@@ -2212,17 +2362,21 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
 Car Crash Simulation.html   generated single-file home page (edit home.html, then rebuild)
 Simulator.html              generated single-file simulator (edit the sources, then rebuild)
 Race.html                   generated single-file Race game (edit game.html and js/race/, then rebuild)
+Destruction.html            generated single-file Destruction mode (edit junction.html and js/destruction/, then rebuild)
 home.html                   home page source
 physics.html                generated physics page (edit README.md, then run tools/build-site.js)
 sources.html                generated references page (likewise)
 index.html                  simulator page source and script loader
 game.html                   Race game page source and script loader
+junction.html               Destruction mode page source and script loader
 css/style.css               layout and theme
 css/site.css                the website's look (home, physics and sources pages)
-css/game.css                the Race game's HUD and menus
+css/game.css                the Race game's HUD and menus (the Destruction mode's base too)
+css/destruction.css         the Destruction mode's score, popups, medal targets and callouts
 js/
   vehicles.js     vehicle specs: lattice grid, zones, interior lines; the side-impact trolley
-  physics.js      XPBD lattice, barriers (rigid, brick wall, offset + honeycomb, pole), several
+  physics.js      XPBD lattice, barriers (rigid, brick wall, offset + honeycomb, pole, and the game
+                  modes' world of boxes and posts, which can move and have roofs), several
                   vehicles, contacts, destruction, recording, crash pulse, intrusion measurement,
                   the cabin around the driver for the dummy (cabinInput)
   gpu-lattice.js  the optional WebGPU solver for the lattice (WGSL compute)
@@ -2253,14 +2407,23 @@ js/
     crash.js      the crash solver in a Web Worker, streaming frames to the crash camera
     render.js     the city, instanced cars, the player's deformable car, cameras
     game.js       the race: grid, laps, positions, boost, takedowns, crash camera, HUD, results
+  destruction/
+    junction.js   the junction: streets and markings, the hill and the ramp, buildings, props, lanes,
+                  signals, the traffic schedule, pickups, values and medal targets
+    traffic.js    the schedule driven on its lanes (Intelligent Driver Model, red lights, late braking);
+                  the bus, box truck and gas tanker
+    wrecks.js     the pile-up: rigid wrecks with sphere hulls, damage, fire and explosions, the cash ledger
+    look.js       dusk, the heavy vehicles' meshes, dents, explosions and fires, lights, bloom, shake
+    game.js       an attempt: select, countdown, the crash and its hand-over to the pile-up, score, HUD, results
 models/           generated car models (Draco GLB as base64) and physics data
-media/            the home page's trailers (crash tests and Race), background loop, posters and pictures
+media/            the home page's trailers (crash tests and Race), background loop, posters and pictures (destruction.jpg: the Destruction card)
 media/race/       the Race game's textures and sky (generated by fetch-race-assets.py)
 tools/
   headless-check.js     physics and lab checks in Node
   race-check.js         the Race game's level, cars, near misses, walls, slams, takedown rules and a full AI race, in Node
+  destruction-check.js  the Destruction mode's junction, traffic, pile-up, wrecks and score, in Node
   gpu-check.js          the GPU solver against the CPU solver, in headless Chrome
-  build-standalone.js   builds the three single-file pages
+  build-standalone.js   builds the four single-file pages
   build-site.js         builds physics.html and sources.html from this README
   fetch-race-assets.py  downloads and packs the Race game's textures (Blender)
   record-video.js       records the home page's media in headless Chrome

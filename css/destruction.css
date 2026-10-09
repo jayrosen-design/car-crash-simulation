@@ -1,0 +1,63 @@
+/* The Destruction mode's own HUD, on top of css/game.css (the Race game's base, panels, car select,
+ * touch buttons). Animated with transform and opacity only (by script), so nothing is laid out again
+ * while it plays. */
+:root { --bronze: #d08a4c; --silver: #cfd6df; --gold: #ffc53a; --cash: #7dffa8; }
+body.destruction { font-family: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+/* the running total */
+.d-score { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); text-align: center; text-shadow: 0 3px 14px rgba(0, 0, 0, 0.75); }
+.d-total { display: flex; align-items: baseline; gap: 10px; justify-content: center; font-size: 46px; font-weight: 900; font-style: italic; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; color: #fff; }
+.d-mult { font-size: 26px; font-style: italic; padding: 0 10px; border-radius: 6px; background: linear-gradient(90deg, #6a3cff, #c24cff); color: #fff; }
+.d-counts { color: #d6dbe2; font-size: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+
+/* the medal targets */
+.d-medals { position: absolute; top: 16px; right: 16px; width: 250px; padding: 10px 12px; }
+.d-bar { position: relative; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.12); border: 1px solid var(--line); }
+.d-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 6px; background: linear-gradient(90deg, #3fbf6a, #ffd36b); }
+.d-bar .tick { position: absolute; top: -4px; bottom: -4px; width: 3px; border-radius: 2px; }
+.tick.bronze, .g.bronze { background: var(--bronze); }
+.tick.silver, .g.silver { background: var(--silver); }
+.tick.gold, .g.gold { background: var(--gold); }
+.d-goals { display: flex; justify-content: space-between; margin-top: 8px; gap: 6px; }
+.d-goals .g { flex: 1; text-align: center; color: #15110a; font-weight: 800; font-size: 12px; border-radius: 5px; padding: 2px 4px; opacity: 0.55; }
+.d-goals .g.got { opacity: 1; box-shadow: 0 0 10px currentColor; }
+.d-best { margin-top: 6px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; text-align: right; }
+.d-best b { color: #fff; font-size: 14px; letter-spacing: 0; }
+
+/* $ popups over what was damaged (placed by script with transform) */
+.popups { position: absolute; inset: 0; overflow: hidden; }
+.pop { position: absolute; left: 0; top: 0; white-space: nowrap; font-weight: 900; font-style: italic; font-size: 20px; color: var(--cash); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9), 0 0 2px #000; will-change: transform, opacity; }
+.pop small { display: block; font-size: 11px; font-style: normal; letter-spacing: 0.1em; color: #e9eef4; text-align: center; }
+.pop.big { font-size: 28px; color: #ffe066; }
+.pop.huge { font-size: 38px; color: #ff9b3d; }
+
+/* big callouts in the middle: CRASH!, BOOM!, medals */
+.callout { position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%); font-size: 64px; font-weight: 900; font-style: italic; letter-spacing: 0.02em; text-transform: uppercase; color: #fff; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.8), 0 0 18px rgba(255, 120, 40, 0.65); opacity: 0; white-space: nowrap; }
+.callout.bronze { color: var(--bronze); } .callout.silver { color: var(--silver); } .callout.gold { color: var(--gold); }
+.callout.cb { color: #ff8a3a; font-size: 44px; }
+
+.cb .boost-bar i { background: linear-gradient(90deg, #ff3b1f, #ffcf4a); }
+.cb.ready .boost-bar i { box-shadow: 0 0 14px #ff6a2b; }
+.cb.ready .k { color: #ffb36b; }
+
+/* the select screen's goals and the results */
+.goals dt { display: flex; align-items: center; gap: 8px; }
+.goals dt::before { content: ""; width: 12px; height: 12px; border-radius: 3px; background: var(--c, #888); }
+.d-results h2 { font-size: 52px; font-style: italic; margin: 4px 0; font-variant-numeric: tabular-nums; }
+.d-medal-line { font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 10px; }
+.d-medal-line.bronze { color: var(--bronze); } .d-medal-line.silver { color: var(--silver); } .d-medal-line.gold { color: var(--gold); }
+.d-medal-line.none { color: var(--muted); }
+
+@media (max-width: 900px), (max-height: 520px) {
+  .d-total { font-size: 30px; }
+  .d-mult { font-size: 18px; }
+  .d-counts { font-size: 11px; }
+  .d-medals { width: 170px; top: 8px; right: 8px; padding: 6px 8px; }
+  .d-goals .g { font-size: 10px; }
+  .callout { font-size: 40px; }
+  .callout.cb { font-size: 28px; }
+  .pop { font-size: 15px; } .pop.big { font-size: 20px; } .pop.huge { font-size: 26px; }
+  /* (touch: the pause and retry buttons sit at the top middle, so the total goes to the left) */
+  body.touch .d-score { top: 8px; left: 14px; transform: none; text-align: left; }
+  body.touch .d-total { justify-content: flex-start; }
+}

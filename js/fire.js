@@ -272,7 +272,8 @@ void main() {
     return [['After the crash', `${after.toFixed(1)} s`], fire ? ['Engine bay', lv.fire > 0.02 ? (lv.fire < 0.9 ? 'fire spreading' : 'on fire') : 'smoking', 'bad'] : ['Radiator', 'venting steam']];
   }
 
-  const api = { ENGINE_BACK, RADIATOR, T_SMOKE, T_FLAME, T_FULL, assess, describe, liveRows, Effects };
+  // (sprites and puffTexture: also used by the Destruction mode's explosions and burning wrecks)
+  const api = { ENGINE_BACK, RADIATOR, T_SMOKE, T_FLAME, T_FULL, assess, describe, liveRows, Effects, sprites, puffTexture };
   if (typeof module === 'object' && module.exports) module.exports = api;
   return api;
 })();

@@ -65,6 +65,7 @@ const RaceProps = (() => {
       const I = [3 / (T.m * (T.hy * T.hy + T.hz * T.hz)), 3 / (T.m * (T.hx * T.hx + T.hz * T.hz)), 3 / (T.m * (T.hx * T.hx + T.hy * T.hy))];
       const pr = { id: list.length, type: o.type, T, Iinv: I, p: [o.x, base + o.y + T.hy, o.z], q: [0, Math.sin(a), 0, Math.cos(a)], v: [0, 0, 0], w: [0, 0, 0],
         awake: false, still: 0, awakeT: 0, moved: false, dirty: true, hit: 0, cell: undefined };
+      pr.p0 = pr.p.slice(); pr.q0 = pr.q.slice();
       list.push(pr);
       file(pr);
     }
@@ -290,13 +291,23 @@ const RaceProps = (() => {
           if (b.frozen) continue;
           const c = b.car;
           if (Math.abs(c.vx) + Math.abs(c.vz) < 0.3) continue;
-          for (const pr of near(c.x, c.z, 4, CANDS)) vsCar(b, pr, hits);
+          for (const pr of near(c.x, c.z, b.reach > 3 ? b.reach + 1 : 4, CANDS)) vsCar(b, pr, hits);   // a bus reaches further
         }
         for (const pr of list) if (pr.awake) { integrate(pr, DT); between(pr); }
       }
       return hits;
     }
-    return { list, step, TYPES, get awake() { return list.filter(p => p.awake).length; } };
+    // every prop back where it started (the Destruction mode's retry)
+    function reset() {
+      acc = 0;
+      for (const pr of list) {
+        for (let i = 0; i < 3; i++) { pr.p[i] = pr.p0[i]; pr.v[i] = 0; pr.w[i] = 0; }
+        for (let i = 0; i < 4; i++) pr.q[i] = pr.q0[i];
+        Object.assign(pr, { awake: false, still: 0, awakeT: 0, moved: true, dirty: true, hit: 0 });
+        file(pr);
+      }
+    }
+    return { list, step, reset, TYPES, get awake() { return list.filter(p => p.awake).length; } };
   }
 
   return { create, TYPES };

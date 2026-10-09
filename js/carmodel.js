@@ -830,6 +830,9 @@ gl_Position = projectionMatrix * mvPosition;`);
         for (const m of crack.meshes) m.visible = active.length > 0;
         if (active.length && keyStr !== crack.drawn) { drawCracks(crack.ctx, 1024, active); crack.tex.needsUpdate = true; crack.drawn = keyStr; }
       },
+      // what has come off so far: the debris groups (beside the car) and the wheels that came off
+      // (still the car's children). The Destruction mode moves them itself once the solver is done.
+      pieces() { return { debris: D ? D.debris.map(e => e.g) : [], wheels: wheels.filter(w => w.off) }; },
       clearDestruction() {
         if (!D) return;
         for (const { g } of D.debris) { g.parent && g.parent.remove(g); g.traverse(o => { if (o.isMesh) o.geometry.dispose(); }); }

@@ -7,3 +7,5 @@
 # the Race game's developer page and its textures (Race.html has them embedded)
 /game.html
 /media/race
+# the Destruction mode's developer page (Destruction.html is the built one)
+/junction.html

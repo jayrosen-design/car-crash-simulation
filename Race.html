@@ -1943,25 +1943,41 @@ function buildOffset(off) {
 
 /* World obstacles (the Race game): w = { boxes: [{ x, z, hx, hz, angle, height }], cyls: [{ x, z, r,
  * height }] } in world coordinates. A box's half-lengths hx and hz lie along its own axes, turned by
- * angle from +x toward +z (as a vehicle's heading). Upright shapes: horizontal normals, ground at y = 0. */
+ * angle from +x toward +z (as a vehicle's heading). Upright shapes: horizontal normals, ground at y = 0.
+ * Options for a box (the Destruction mode's buses and tankers): vx, vz (m/s) move it at a steady
+ * speed from where it is at the start; top: true gives it a roof to land on. */
 function buildWorld(w) {
   const shapes = [];
+  let moving = false;
   for (const b of (w && w.boxes) || []) {
     const c = Math.cos(b.angle || 0), s = Math.sin(b.angle || 0);
     const ex = Math.abs(c) * b.hx + Math.abs(s) * b.hz, ez = Math.abs(s) * b.hx + Math.abs(c) * b.hz;
-    shapes.push({ box: true, x: b.x, z: b.z, hx: b.hx, hz: b.hz, c, s, height: b.height || 3, x0: b.x - ex, x1: b.x + ex, z0: b.z - ez, z1: b.z + ez });
+    const sh = { box: true, x: b.x, z: b.z, hx: b.hx, hz: b.hz, c, s, height: b.height || 3, x0: b.x - ex, x1: b.x + ex, z0: b.z - ez, z1: b.z + ez };
+    if (b.vx || b.vz) { Object.assign(sh, { vx: b.vx || 0, vz: b.vz || 0, bx: b.x, bz: b.z, ex, ez }); moving = true; }
+    if (b.top) sh.top = true;
+    shapes.push(sh);
   }
   for (const q of (w && w.cyls) || []) shapes.push({ box: false, x: q.x, z: q.z, r: q.r, height: q.height || 3, x0: q.x - q.r, x1: q.x + q.r, z0: q.z - q.r, z1: q.z + q.r });
-  return { shapes, active: shapes.slice() };
+  shapes.forEach((s, i) => { s.i = i; });
+  return { shapes, active: shapes.slice(), moving };
 }
-// Signed distance to the nearest shape of `list` (negative inside), its outward normal in G3.
+// the moving boxes where they are at time t
+function placeWorld(world, t) {
+  for (const s of world.shapes) if (s.vx !== undefined) {
+    s.x = s.bx + s.vx * t; s.z = s.bz + s.vz * t;
+    s.x0 = s.x - s.ex; s.x1 = s.x + s.ex; s.z0 = s.z - s.ez; s.z1 = s.z + s.ez;
+  }
+}
+// Signed distance to the nearest shape of `list` (negative inside), its outward normal in G3. The
+// nearest shape is left in worldHit (for a moving box's friction).
+let worldHit = null;
 function worldSDF(x, y, z, G3, list) {
   let best = Infinity;
   G3[0] = -1; G3[1] = 0; G3[2] = 0;
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
-    if (y > s.height) continue;
-    let d, nx, nz;
+    if (y > s.height && !(s.top && y < s.height + 0.5)) continue;
+    let d, nx, nz, ny = 0;
     if (s.box) {
       const dx = x - s.x, dz = z - s.z, u = dx * s.c + dz * s.s, w = -dx * s.s + dz * s.c;
       const qu = Math.abs(u) - s.hx, qw = Math.abs(w) - s.hz, su = u < 0 ? -1 : 1, sw = w < 0 ? -1 : 1;
@@ -1970,11 +1986,18 @@ function worldSDF(x, y, z, G3, list) {
       else if (qu > qw) { d = qu; nu = su; nw = 0; }
       else { d = qw; nu = 0; nw = sw; }
       nx = nu * s.c - nw * s.s; nz = nu * s.s + nw * s.c;
+      if (s.top) {
+        // the roof: above it, the distance to the box (its top face, or its top edge); inside,
+        // pushed up when the top is the nearest face
+        const up = y - s.height;
+        if (up > 0) { if (d > 0) { const l = Math.hypot(d, up); nx *= d / l; nz *= d / l; ny = up / l; d = l; } else { d = up; nx = 0; nz = 0; ny = 1; } }
+        else if (d < 0 && -up < -d) { d = up; nx = 0; nz = 0; ny = 1; }
+      }
     } else {
       const dx = x - s.x, dz = z - s.z, l = Math.hypot(dx, dz) || 1e-9;
       d = l - s.r; nx = dx / l; nz = dz / l;
     }
-    if (d < best) { best = d; G3[0] = nx; G3[2] = nz; }
+    if (d < best) { best = d; G3[0] = nx; G3[2] = nz; if (s.top) G3[1] = ny; else if (G3[1]) G3[1] = 0; worldHit = s; }
   }
   return best;
 }
@@ -2002,7 +2025,9 @@ function measurePoints(spec) {
  *        pose: { x, z, heading }, speed (m/s), yawRate (rad/s) }
  * Several vehicles (the multi-vehicle and side-impact labs): cfg.vehicles = [{ vehicle, massKg,
  *   stiffness, damage, pose, speed, yawRate, velocity: [vx, vz] (instead of speed along the
- *   heading), structure: { steel } (side structure, see buildCar) }]; they collide with each other.
+ *   heading), structure: { steel } (side structure, see buildCar), lift, vy, pitch, roll (a car
+ *   that starts in the air: height of its ground point, vertical speed, nose-up and roll angles) }];
+ *   they collide with each other.
  * offset: see buildOffset; pole: { x, z }; world: see buildWorld (the Race game's street furniture
  *   and buildings, CPU only); sled: true puts the cars on a low-friction carrier
  *   (they slide sideways into the pole); measure: true records intrusion at fixed points;
@@ -2027,6 +2052,23 @@ function createImpactSim(cfg) {
   for (const U of units) {
     const c = U.cfg, uch = Math.cos(c.pose.heading), ush = Math.sin(c.pose.heading), yaw = c.yawRate || 0;
     const vx0 = c.velocity ? c.velocity[0] : c.speed * uch, vz0 = c.velocity ? c.velocity[1] : c.speed * ush;
+    if (c.lift || c.vy || c.pitch || c.roll) {
+      // in the air (the Destruction mode's jumps): raised by lift, pitched nose-up by pitch and
+      // rolled by roll (as the game draws it: pitch about the car's side, then roll about its
+      // length, then the heading), falling or climbing at vy
+      const cp = Math.cos(c.pitch || 0), sp = Math.sin(c.pitch || 0), cr = Math.cos(c.roll || 0), sr = Math.sin(c.roll || 0);
+      for (let q = 0; q < U.n; q++) {
+        const a = U.off + q;
+        const lx = U.car.rest[3 * q], ly = U.car.rest[3 * q + 1], lz = U.car.rest[3 * q + 2];
+        const px = lx * cp - ly * sp, py = lx * sp + ly * cp;
+        const ry = py * cr - lz * sr, rz = py * sr + lz * cr;
+        const wx = uch * px - ush * rz, wz = ush * px + uch * rz;
+        X[3 * a] = c.pose.x + wx; X[3 * a + 1] = (c.lift || 0) + ry; X[3 * a + 2] = c.pose.z + wz;
+        V[3 * a] = vx0 - yaw * wz; V[3 * a + 1] = c.vy || 0; V[3 * a + 2] = vz0 + yaw * wx;
+        W[a] = 1 / mass[a]; y0[a] = X[3 * a + 1];   // height energy counted from where it starts
+      }
+      continue;
+    }
     for (let q = 0; q < U.n; q++) {
       const a = U.off + q;
       const lx = U.car.rest[3 * q], ly = U.car.rest[3 * q + 1], lz = U.car.rest[3 * q + 2];
@@ -2383,6 +2425,7 @@ function createImpactSim(cfg) {
   // --- state, energy books, telemetry
   let t = 0, T0 = -1, done = false, cancelled = false, nextRecordT = 0;
   let Wp = 0, Wfrac = 0, Qf = 0, damageTick = 0;
+  let Wmove = 0;   // work done on the cars by moving boxes
   const debris = [];   // { name, kind: 'part' | 'wheel', body, t, X (lattice at that moment) }
   let barrierForce = 0, impAcc = 0, impX = 0, impY = 0, impZ = 0, anyBreak = false;
   const pendingBreaks = [];
@@ -2692,7 +2735,7 @@ function createImpactSim(cfg) {
     const keB = kinetic(dt);
     const ebB = wall ? brickStageEnergy() : 0;
     XS.set(X);
-    frictionPass();
+    frictionPass(dt);
     const keC = kinetic(dt);
     const ebC = wall ? brickStageEnergy() : 0;
     Qf += keB - keC - nodeStageDelta() - (ebC - ebB);
@@ -2727,6 +2770,7 @@ function createImpactSim(cfg) {
 
   // World obstacles: keep the shapes near the vehicles and the awake debris for this step's contacts
   function nearWorld() {
+    if (world.moving) placeWorld(world, t);
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let a = 0; a < n; a++) {
       if (ghost[a]) continue;
@@ -2750,12 +2794,18 @@ function createImpactSim(cfg) {
     const d = obstacleSDF(X[a3], X[a3 + 1], X[a3 + 2], G3);
     if (d >= r) return;
     // cancel this step's approach fully, but never push the node out faster than MAX_SEPARATION
-    const appr = -((X[a3] - P[a3]) * G3[0] + (X[a3 + 2] - P[a3 + 2]) * G3[2]);
+    let appr = -((X[a3] - P[a3]) * G3[0] + (X[a3 + 2] - P[a3 + 2]) * G3[2]);
+    // a roof (its normal points up) and a moving box (the approach is relative to it)
+    const ny = G3[1], mv = world && world.moving && worldHit.vx !== undefined ? worldHit : null;
+    if (ny) appr -= (X[a3 + 1] - P[a3 + 1]) * ny;
+    if (mv) appr += (mv.vx * G3[0] + mv.vz * G3[2]) * dt;
     const pen = Math.min(r - d, Math.max(0, appr + MAX_SEPARATION * dt));
     if (pen <= 0) return;
     X[a3] += pen * G3[0]; X[a3 + 2] += pen * G3[2];
-    addContact(KIND_NODE_SURF, a, -1, G3[0], 0, G3[2], pen);
+    if (ny) X[a3 + 1] += pen * ny;
+    addContact(KIND_NODE_SURF, a, mv ? mv.i : -1, G3[0], ny, G3[2], pen);
     const f = mass[a] * pen / dt2;
+    if (mv) Wmove += f * (mv.vx * G3[0] + mv.vz * G3[2]) * dt;
     barrierForce += (pole || world) ? f : f * Math.max(0, -G3[0]);
     impAcc += f * dt; impX += f * dt * X[a3]; impY += f * dt * X[a3 + 1]; impZ += f * dt * X[a3 + 2];
     if (T0 < 0) T0 = t;
@@ -2937,7 +2987,7 @@ function createImpactSim(cfg) {
   }
 
   const muLat = cfg.sled ? MU_SLED : MU_TIRE, rollDir = new Float64Array(2 * NU);
-  function frictionPass() {
+  function frictionPass(dt) {
     const fh = Math.hypot(frame.f[0], frame.f[2]) || 1;
     let fx = frame.f[0] / fh, fz = frame.f[2] / fh, lx = -fz, lz = fx;
     if (multi) units.forEach((U, u) => { const h = Math.hypot(U.frame.f[0], U.frame.f[2]) || 1; rollDir[2 * u] = U.frame.f[0] / h; rollDir[2 * u + 1] = U.frame.f[2] / h; });
@@ -2963,9 +3013,11 @@ function createImpactSim(cfg) {
         const s = len <= lim ? 1 : lim / len;
         X[i3 + 1] -= s * dy; X[i3 + 2] -= s * dz;
       } else if (kind === KIND_NODE_SURF) {
-        const i3 = 3 * i, nx = cN[k3], nz = cN[k3 + 2];
+        const i3 = 3 * i, nx = cN[k3], nz = cN[k3 + 2], ny = cN[k3 + 1];
         let tx = X[i3] - P[i3], ty = X[i3 + 1] - P[i3 + 1], tz = X[i3 + 2] - P[i3 + 2];
-        const dn = tx * nx + tz * nz; tx -= dn * nx; tz -= dn * nz;
+        if (cJ[k] >= 0) { const sh = world.shapes[cJ[k]]; tx -= sh.vx * dt; tz -= sh.vz * dt; }   // sliding relative to a moving box
+        if (ny) { const dn = tx * nx + ty * ny + tz * nz; tx -= dn * nx; ty -= dn * ny; tz -= dn * nz; }
+        else { const dn = tx * nx + tz * nz; tx -= dn * nx; tz -= dn * nz; }
         const len = Math.hypot(tx, ty, tz), lim = MU_WALL * lam;
         const s = len <= lim ? 1 : lim / len;
         X[i3] -= s * tx; X[i3 + 1] -= s * ty; X[i3 + 2] -= s * tz;
@@ -3383,7 +3435,16 @@ function createImpactSim(cfg) {
     }
     if (staticObs) {
       const d = obstacleSDF(wx, wy, wz, G3);
-      if (d < 0) {
+      if (d < 0 && G3[1]) {
+        // on a box's roof (a bus or tanker in the Destruction mode)
+        pointDisp(b, rx, ry, rz, S7);
+        const nx = G3[0], ny = G3[1], nz = G3[2], pen = Math.min(-d, Math.max(0, MAX_SEPARATION * dt - (S7[0] * nx + S7[1] * ny + S7[2] * nz)));
+        if (pen > 0) {
+          const dl = pen / genInvMass(b, rx, ry, rz, nx, ny, nz);
+          applyCorr(b, rx, ry, rz, dl * nx, dl * ny, dl * nz);
+          addContact(KIND_BODY_SURF, b, -1, nx, ny, nz, dl, rx, ry, rz);
+        }
+      } else if (d < 0) {
         pointDisp(b, rx, ry, rz, S7);
         const pen = Math.min(-d, Math.max(0, MAX_SEPARATION * dt - (S7[0] * G3[0] + S7[2] * G3[2])));
         if (pen > 0) {
@@ -3497,11 +3558,14 @@ function createImpactSim(cfg) {
     st = ring.length ? st / ring.length / 255 * 0.5 : 0;
     for (let q = 0; q < m; q++) { embeddedPos(F.pos[f], emb.idx, 8 * q, emb.t, 3 * q, P3); W[3 * q] = P3[0]; W[3 * q + 1] = P3[1]; W[3 * q + 2] = P3[2]; }
     let hit = -1;
+    const mvW = world && world.moving;   // moving boxes: where they were at that frame
+    if (mvW) placeWorld(world, F.t[f]);
     for (let q = 0; q < m && hit < 0; q++) {
       if (rigid) { if (W[3 * q] > -0.005 && W[3 * q + 1] < RIGID_BARRIER.height) hit = q; }
       else if (staticObs) { if (obstacleSDF(W[3 * q], W[3 * q + 1], W[3 * q + 2], G3, true) < 0.005) hit = q; }
       else if (wall && F.bricks.length && nearBrickFrame(F.bricks[f], W[3 * q], W[3 * q + 1], W[3 * q + 2])) hit = q;
     }
+    if (mvW) placeWorld(world, t);
     if (!(st > pn.limit || hit >= 0)) return null;
     // crack / shatter origin: the contact point, else the pane point nearest the most strained node
     if (hit >= 0) return { cause: 'contact', origin: pts[hit] };
@@ -3699,8 +3763,9 @@ function createImpactSim(cfg) {
     const tracked = e.ekCar + e.eEl + e.peCar + e.ekB + e.peB + e.eBond + Wp + Wfrac + Qf + Whc;
     const entry = {
       carKinetic: e.ekCar, debrisKinetic: e.ekB, elastic: e.eEl + e.eBond, plastic: Wp, fracture: Wfrac,
-      friction: Qf, potential: e.peCar + e.peB, contactSolver: energy0.value - tracked,
+      friction: Qf, potential: e.peCar + e.peB, contactSolver: (world && world.moving ? energy0.value + Wmove : energy0.value) - tracked,
     };
+    if (world && world.moving) entry.pushed = Wmove;
     if (hc) entry.barrier = Whc;
     if (multi) {
       const um = unitMotion();
@@ -4749,8 +4814,14 @@ const RaceWorld = (() => {
     const hist = [];          // ring of snapshots
     let tick = 0;
 
+    // opts.height: how tall it is (a bus or tanker in the Destruction mode; cars: 1.2 m for
+    // telling one flying over another)
     function add(car, opts = {}) {
       const b = { car, kind: opts.kind || 'racer', kinematic: !!opts.kinematic, id: bodies.length, ghost: 0, wrecked: false, user: opts.user || null };
+      // how far its box reaches from its centre of gravity (for the broad phase)
+      const s = car.spec;
+      b.reach = Math.abs(s.xMin + s.length / 2 - car.cgX) + Math.hypot(s.length / 2, s.width / 2);
+      if (opts.height) b.top = opts.height;
       bodies.push(b);
       return b;
     }
@@ -4939,7 +5010,7 @@ const RaceWorld = (() => {
           }
         }
       }
-      // cars against each other: broad phase by distance
+      // cars against each other: broad phase by distance (7 m, or more for a bus or truck)
       for (let i = 0; i < bodies.length; i++) {
         const a = bodies[i];
         if (a.frozen) continue;
@@ -4947,9 +5018,10 @@ const RaceWorld = (() => {
           const b = bodies[j];
           if (b.frozen || (a.kinematic && b.kinematic)) continue;
           if (a.ghost || b.ghost) continue;
-          const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z;
-          if (dx * dx + dz * dz > 49) continue;
-          if (Math.abs(a.car.y - b.car.y) > 1.2) continue;   // one flying over the other
+          const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z, r = a.reach + b.reach;
+          if (dx * dx + dz * dz > (r * r > 49 ? r * r : 49)) continue;
+          const dy = a.car.y - b.car.y;
+          if (dy > (b.top || 1.2) || -dy > (a.top || 1.2)) continue;   // one flying over the other
           const A = box(a, BA), B = box(b, BB), hit = vsCar(A, B);
           if (!hit) continue;
           // a hit traffic car becomes a free body
@@ -5412,6 +5484,7 @@ const RaceProps = (() => {
       const I = [3 / (T.m * (T.hy * T.hy + T.hz * T.hz)), 3 / (T.m * (T.hx * T.hx + T.hz * T.hz)), 3 / (T.m * (T.hx * T.hx + T.hy * T.hy))];
       const pr = { id: list.length, type: o.type, T, Iinv: I, p: [o.x, base + o.y + T.hy, o.z], q: [0, Math.sin(a), 0, Math.cos(a)], v: [0, 0, 0], w: [0, 0, 0],
         awake: false, still: 0, awakeT: 0, moved: false, dirty: true, hit: 0, cell: undefined };
+      pr.p0 = pr.p.slice(); pr.q0 = pr.q.slice();
       list.push(pr);
       file(pr);
     }
@@ -5637,13 +5710,23 @@ const RaceProps = (() => {
           if (b.frozen) continue;
           const c = b.car;
           if (Math.abs(c.vx) + Math.abs(c.vz) < 0.3) continue;
-          for (const pr of near(c.x, c.z, 4, CANDS)) vsCar(b, pr, hits);
+          for (const pr of near(c.x, c.z, b.reach > 3 ? b.reach + 1 : 4, CANDS)) vsCar(b, pr, hits);   // a bus reaches further
         }
         for (const pr of list) if (pr.awake) { integrate(pr, DT); between(pr); }
       }
       return hits;
     }
-    return { list, step, TYPES, get awake() { return list.filter(p => p.awake).length; } };
+    // every prop back where it started (the Destruction mode's retry)
+    function reset() {
+      acc = 0;
+      for (const pr of list) {
+        for (let i = 0; i < 3; i++) { pr.p[i] = pr.p0[i]; pr.v[i] = 0; pr.w[i] = 0; }
+        for (let i = 0; i < 4; i++) pr.q[i] = pr.q0[i];
+        Object.assign(pr, { awake: false, still: 0, awakeT: 0, moved: true, dirty: true, hit: 0 });
+        file(pr);
+      }
+    }
+    return { list, step, reset, TYPES, get awake() { return list.filter(p => p.awake).length; } };
   }
 
   return { create, TYPES };
@@ -5862,11 +5945,11 @@ const FX = (() => {
   // playback speed of the replay (1 = real time): slow motion lowers the pitch, down to 0.4
   function setTimeScale(speed) { rate = Math.max(0.4, Math.min(1, Math.pow(speed, 0.25))); }
   const stretch = (dur) => dur / Math.sqrt(rate);
-  function take(dur) {
+  function take(dur, force) {   // force: play even over the voice limit (an explosion)
     if (!ctx || (!enabled && !cap)) return false;
     const t = now();
     voiceEnds = voiceEnds.filter(e => e > t);
-    if (voiceEnds.length >= MAX_VOICES) return false;
+    if (voiceEnds.length >= MAX_VOICES && !force) return false;
     voiceEnds.push(t + stretch(dur) + 0.06);
     return true;
   }
@@ -6013,6 +6096,51 @@ const FX = (() => {
     if (mass >= 30) thud(mass, pos); else scatter(count, pos);
   }
 
+  // The Destruction mode's sounds. An explosion (size: about 0.4 a car, 0.6 a fuel pump, 1 a gas
+  // tanker): a sharp crack, a long distorted roar falling in pitch, a deep thump under it, and debris
+  // raining down after. It plays even when the voices are all taken.
+  function explosion(size, pos) {
+    if (!take(2.5, true)) return;
+    const k = Math.max(0.25, Math.min(1.2, size));
+    noise({ dur: 0.12, gain: 0.9 * k, type: 'highpass', f0: 600, f1: 300, pos, attack: 0.001, drive: 4 });
+    noise({ dur: 1.4 + 1.4 * k, gain: 1.1 * k, type: 'lowpass', f0: 2600, f1: 50, Q: 0.9, pos, attack: 0.004, drive: 5 });
+    tone({ dur: 1.0 + 0.6 * k, gain: 1.0 * k, f0: 72, f1: 22, pos });
+    tone({ dur: 0.5, gain: 0.6 * k, f0: 140, f1: 45, pos, type: 'triangle' });
+    for (let i = 0; i < 3 + Math.round(4 * k); i++) later((350 + i * (90 + Math.random() * 160)) / rate, () => {
+      if (!take(0.1)) return;
+      noise({ dur: 0.05 + Math.random() * 0.08, gain: 0.18, type: 'bandpass', f0: 1500 + Math.random() * 3500, f1: 800, Q: 3, pos });
+    });
+  }
+  // the score ticking up: a short bright two-note chime (bigger amounts, higher)
+  function cash(big) {
+    if (!take(0.2)) return;
+    const f = big ? 1568 : 1319;
+    tone({ dur: 0.07, gain: 0.12, f0: f, f1: f, type: 'square' });
+    later(55, () => tone({ dur: 0.16, gain: 0.1, f0: f * 1.5, f1: f * 1.5, type: 'square' }));
+  }
+  // a medal: a rising arpeggio, longer for a better medal (1 bronze, 2 silver, 3 gold)
+  function medal(level) {
+    if (!ctx || (!enabled && !cap)) return;
+    const notes = [523, 659, 784, 1047, 1319].slice(0, 2 + level);
+    notes.forEach((f, i) => later(i * 110, () => { if (take(0.4, true)) { tone({ dur: 0.35, gain: 0.16, f0: f, f1: f, type: 'square' }); tone({ dur: 0.35, gain: 0.1, f0: f * 2, f1: f * 2, type: 'triangle' }); } }));
+  }
+  // the city around a junction at dusk (level 0..1, set every frame): the hum of distant traffic
+  let city = null;
+  function ambience(level) {
+    if (!ctx) return;
+    if (!city) {
+      if (level <= 0 || (!enabled && !cap)) return;
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260; lp.Q.value = 0.5;
+      const g = ctx.createGain(); g.gain.value = 0;
+      src.connect(lp).connect(g).connect(master); src.start(now());
+      city = { src, g };
+    }
+    const t = now();
+    city.g.gain.setTargetAtTime(0.16 * level, t, 0.3);
+    if (level <= 0) { const c = city; city = null; c.src.stop(t + 1.5); }
+  }
+
   // The sound of the structure giving way, set every frame from the power the crash is
   // dissipating (W): about 0.5 at 1 MW, 0.85 at 5 MW, 1.2 at 25 MW. More power: louder, a higher
   // and more resonant band, more distortion, and a deeper rumble under it.
@@ -6055,6 +6183,7 @@ const FX = (() => {
     const t = now();
     if (bed) { bed.src.stop(t); bed.rum.stop(t); bed = null; }
     if (burn) { burn.roar.src.stop(t); burn.hiss.src.stop(t); burn = null; }
+    if (city) { city.src.stop(t); city = null; }
   }
   function beginCapture(seconds) {
     initAudio();
@@ -6157,6 +6286,9 @@ const FX = (() => {
     spark: { color: [1.0, 0.78, 0.35], size: [0.03, 0.05], grow: 0, life: [0.12, 0.3], speed: [3, 8], up: 0.8, gravity: 1, drag: 0.5, alpha: 1, glow: 1.5 },
     glass: { color: [0.75, 0.88, 0.95], size: [0.02, 0.04], grow: 0, life: [0.6, 1.2], speed: [1, 3], up: 0.5, gravity: 1, drag: 0.2, alpha: 0.9, glow: 0 },
     water: { color: [0.72, 0.84, 0.95], size: [0.06, 0.12], grow: 0.8, life: [0.7, 1.3], speed: [6, 9], up: 1, gravity: 1, drag: 0.35, alpha: 0.6, glow: 0 },   // a burst hydrant (the Race game)
+    // an explosion's flying embers and blackened bits (the Destruction mode)
+    ember: { color: [1.0, 0.55, 0.18], size: [0.05, 0.1], grow: 0, life: [0.8, 1.8], speed: [6, 16], up: 1.6, gravity: 0.6, drag: 0.6, alpha: 1, glow: 2.0 },
+    debris: { color: [0.16, 0.15, 0.14], size: [0.08, 0.16], grow: 0, life: [1.4, 2.6], speed: [5, 14], up: 1.8, gravity: 1, drag: 0.15, alpha: 1, glow: 0 },
   };
 
   class Particles {
@@ -6236,7 +6368,8 @@ const FX = (() => {
     clear() { this.n = 0; this.geo.setDrawRange(0, 0); }
   }
 
-  return { initAudio, setEnabled, setTimeScale, listen, beginCapture, captureClock, endCapture, get sampleRate() { return ctx ? ctx.sampleRate : 48000; }, crunch, scatter, thud, pop, blowout, hit, beep, breakSound, clank, tear, glass, crack, structureUpdate, engineStart, engineUpdate, engineStop, fireUpdate, Particles, get enabled() { return enabled; } };
+  return { initAudio, setEnabled, setTimeScale, listen, beginCapture, captureClock, endCapture, get sampleRate() { return ctx ? ctx.sampleRate : 48000; }, crunch, scatter, thud, pop, blowout, hit, beep, breakSound, clank, tear, glass, crack, structureUpdate, engineStart, engineUpdate, engineStop, fireUpdate, Particles, get enabled() { return enabled; },
+    explosion, cash, medal, ambience };
 })();
 
 </script>
@@ -7194,6 +7327,9 @@ gl_Position = projectionMatrix * mvPosition;`);
         for (const m of crack.meshes) m.visible = active.length > 0;
         if (active.length && keyStr !== crack.drawn) { drawCracks(crack.ctx, 1024, active); crack.tex.needsUpdate = true; crack.drawn = keyStr; }
       },
+      // what has come off so far: the debris groups (beside the car) and the wheels that came off
+      // (still the car's children). The Destruction mode moves them itself once the solver is done.
+      pieces() { return { debris: D ? D.debris.map(e => e.g) : [], wheels: wheels.filter(w => w.off) }; },
       clearDestruction() {
         if (!D) return;
         for (const { g } of D.debris) { g.parent && g.parent.remove(g); g.traverse(o => { if (o.isMesh) o.geometry.dispose(); }); }
@@ -7537,36 +7673,45 @@ const RaceCrash = (() => {
  * can show the crash solver's damage without swapping models. Rivals and traffic share one merged
  * copy of each model, drawn as instances (one draw call per material), each with its own paint.
  *
+ * opts.look (the Destruction mode's dusk; Race uses the defaults): sky and fog colours, the sun's
+ * direction, colour and strength, the sky light, exposure, the sky dome's and the reflections'
+ * fragment shaders, whether to use the street HDRI, and how many windows are lit and how brightly.
+ * A level without a circuit (no poseAt) gives its streets as `surfaces` and its hills as a
+ * `groundGrid` instead.
+ *
  * Uses window.THREE (and the addons the page puts on window).
  */
 const RaceRender = (() => {
   'use strict';
   const T = THREE;
   const UP = new T.Vector3(0, 1, 0), ZAXIS = new T.Vector3(0, 0, 1);
+  const LOOK = { sky: 0xc8b9a6, fog: 0xbfb4a6, fogNear: 220, fogFar: 1700, hemiSky: 0xdfe7f2, hemiGround: 0x5a524a, hemi: 1.05, sun: 0xffe3c2, sunI: 2.6,
+    sunDir: [-0.55, 0.52, -0.65], exposure: 1.0, hdr: true, domeFrag: null, envFrag: null, windowGlow: '0.05', windowLit: '0.78' };
 
   function create(opts) {
     const { level, container } = opts;
+    const look = Object.assign({}, LOOK, opts.look);
     const renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, opts.pixelRatio || 1.5));
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.toneMapping = T.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = look.exposure;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = T.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
 
     const scene = new T.Scene();
-    const SKY = 0xc8b9a6, FOG = 0xbfb4a6;
+    const SKY = look.sky, FOG = look.fog;
     scene.background = new T.Color(SKY);
-    scene.fog = new T.Fog(FOG, 220, 1700);
+    scene.fog = new T.Fog(FOG, look.fogNear, look.fogFar);
     const camera = new T.PerspectiveCamera(62, container.clientWidth / container.clientHeight, 0.1, 3000);
     camera.layers.enable(1);   // the CarModels meshes
     camera.layers.enable(2);   // sparks, dust and glass (FX.Particles)
 
     // light: a low late-afternoon sun and a warm-cool sky
-    const hemi = new T.HemisphereLight(0xdfe7f2, 0x5a524a, 1.05);
-    const sun = new T.DirectionalLight(0xffe3c2, 2.6);
-    const SUN_DIR = new T.Vector3(-0.55, 0.52, -0.65).normalize();
+    const hemi = new T.HemisphereLight(look.hemiSky, look.hemiGround, look.hemi);
+    const sun = new T.DirectionalLight(look.sun, look.sunI);
+    const SUN_DIR = new T.Vector3(...look.sunDir).normalize();
     sun.castShadow = true;
     sun.shadow.mapSize.set(opts.shadowSize || 2048, opts.shadowSize || 2048);
     Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 420 });
@@ -7576,12 +7721,12 @@ const RaceRender = (() => {
 
     // environment for reflections and ambient light: a photographed street (Poly Haven HDRI) when
     // media/race/assets.js is there, else a small sky-coloured scene with a bright sun patch
-    const env = streetHDR(renderer) || (() => {
+    const env = (look.hdr && streetHDR(renderer)) || (() => {
       const pm = new T.PMREMGenerator(renderer), room = new T.Scene();
       const sky = new T.Mesh(new T.SphereGeometry(50, 32, 16), new T.ShaderMaterial({ side: T.BackSide, depthWrite: false,
         uniforms: { sunDir: { value: SUN_DIR } },
         vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.42,0.39,0.36), vec3(0.78,0.74,0.69), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.45,0.58,0.78), smoothstep(0.02, 0.6, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(1.0,0.85,0.6) * (pow(s, 600.0) * 40.0 + pow(s, 8.0) * 0.4); gl_FragColor = vec4(c, 1.0); }' }));
+        fragmentShader: look.envFrag || 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.42,0.39,0.36), vec3(0.78,0.74,0.69), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.45,0.58,0.78), smoothstep(0.02, 0.6, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(1.0,0.85,0.6) * (pow(s, 600.0) * 40.0 + pow(s, 8.0) * 0.4); gl_FragColor = vec4(c, 1.0); }' }));
       room.add(sky);
       const t = pm.fromScene(room, 0).texture;
       pm.dispose();
@@ -7594,7 +7739,7 @@ const RaceRender = (() => {
       const dome = new T.Mesh(new T.SphereGeometry(2600, 32, 16), new T.ShaderMaterial({ side: T.BackSide, depthWrite: false, fog: false,
         uniforms: { sunDir: { value: SUN_DIR } },
         vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); vec4 p = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * p; }',
-        fragmentShader: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 hor = vec3(0.80,0.74,0.66), zen = vec3(0.36,0.52,0.74); vec3 c = mix(hor, zen, pow(h, 0.55)); float s = max(dot(vD, sunDir), 0.0); c += vec3(1.0,0.82,0.55) * (pow(s, 900.0) * 6.0 + pow(s, 12.0) * 0.35); gl_FragColor = vec4(c, 1.0); }' }));
+        fragmentShader: look.domeFrag || 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 hor = vec3(0.80,0.74,0.66), zen = vec3(0.36,0.52,0.74); vec3 c = mix(hor, zen, pow(h, 0.55)); float s = max(dot(vD, sunDir), 0.0); c += vec3(1.0,0.82,0.55) * (pow(s, 900.0) * 6.0 + pow(s, 12.0) * 0.35); gl_FragColor = vec4(c, 1.0); }' }));
       dome.renderOrder = -1;
       scene.add(dome);
       scene.userData.dome = dome;
@@ -7603,10 +7748,12 @@ const RaceRender = (() => {
     const city = new T.Group();
     scene.add(city);
     buildGround(city, level);
-    buildStreet(city, level);
-    buildBuildings(city, level);
+    if (level.groundGrid) buildGroundGrid(city, level);
+    if (level.poseAt) buildStreet(city, level);
+    if (level.surfaces) buildSurfaces(city, level);
+    buildBuildings(city, level, look);
     buildFurniture(city, level);
-    buildStart(city, level);
+    if (level.start) buildStart(city, level);
     buildRamps(city, level);
     // the deformable car models (player, wrecks) and what breaks off them: raised to the ground's
     // height for a crash on a hill (the crash solver works at height 0), else at 0
@@ -7630,7 +7777,8 @@ const RaceRender = (() => {
     function drawCar(key, i, st) {
       const set = carMeshes[key];
       if (!set) return;
-      carMatrix(M, st.x, st.z, st.h, st.pitch, st.roll, st.lift);
+      if (st.matrix) M.copy(st.matrix);   // a wreck tumbling in 3D (the Destruction mode)
+      else carMatrix(M, st.x, st.z, st.h, st.pitch, st.roll, st.lift);
       for (const im of set.body) im.setMatrixAt(i, M);
       if (st.paint !== undefined && set.paint) set.paint.setColorAt(i, C.setHex(st.paint));
       set.wheels.forEach((w, j) => {
@@ -7776,7 +7924,7 @@ const RaceRender = (() => {
       const byType = {};
       for (const pr of props.list) (byType[pr.type] = byType[pr.type] || []).push(pr);
       for (const [type, list] of Object.entries(byType)) {
-        const meshes = propParts(type).map(([g, mat]) => {
+        const meshes = ((opts.propParts && opts.propParts(type)) || propParts(type)).map(([g, mat]) => {
           const im = new T.InstancedMesh(g, mat, list.length);
           im.castShadow = mat !== PROP_MATS.lamp; im.receiveShadow = true; im.frustumCulled = false;
           im.instanceMatrix.setUsage(T.DynamicDrawUsage);
@@ -7804,7 +7952,8 @@ const RaceRender = (() => {
       }
     }
 
-    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift };
+    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift,
+      carMeshes, hemi, crashRoot, sunDir: SUN_DIR };
   }
 
   const MIRROR = new T.Matrix4().makeScale(1, 1, -1);
@@ -8009,6 +8158,57 @@ const RaceRender = (() => {
     return window.mergeGeometries([top, face]);
   }
 
+  // ---------------------------------------------------------------- streets without a circuit
+  // (the Destruction mode's junction): level.surfaces = { roads, walks, kerbs, lines }, each a list
+  // of rectangles { x, z (centre), h (direction of its length), len, wid }; lines also have
+  // color ('white' | 'yellow') and optionally dash: [paint, gap] (m). All follow the ground.
+  function rect(level, r, y, vScale) {
+    const c = Math.cos(r.h), s = Math.sin(r.h), N = Math.max(1, Math.ceil(r.len / 2)), A = Math.max(1, Math.ceil(r.wid / 2.5));
+    const pos = [], nrm = [], uv = [], idx = [];
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= A; j++) {
+      const u = -r.len / 2 + r.len * i / N, l = -r.wid / 2 + r.wid * j / A, x = r.x + c * u - s * l, z = r.z + s * u + c * l;
+      pos.push(x, groundY(level, x, z) + y, z); nrm.push(...groundN(level, x, z)); uv.push(x / vScale, z / vScale);
+      if (i < N && j < A) { const k = i * (A + 1) + j, n = k + A + 1; idx.push(k, k + 1, n, k + 1, n + 1, n); }   // facing up
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
+    g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    return g;
+  }
+  function buildSurfaces(group, level) {
+    const S = level.surfaces, merged = (list, y, vScale) => list.length ? window.mergeGeometries(list.map(r => rect(level, r, y, vScale))) : null;
+    const add = (g, mat) => { if (g) group.add(shadowed(new T.Mesh(g, mat))); };
+    add(merged(S.roads || [], 0, 8), new T.MeshStandardMaterial({ ...(surface('asphalt', 8) || { map: asphalt() }), color: 0xffffff, roughness: 0.92 }));
+    add(merged(S.walks || [], 0.02, 4), new T.MeshStandardMaterial({ ...(surface('pavers', 4) || { map: pavers() }), color: 0xffffff, roughness: 0.9 }));
+    add(merged(S.kerbs || [], 0.06, 1), new T.MeshStandardMaterial({ ...(surface('concrete', 1) || { map: concrete() }), color: 0xc9c5bd, roughness: 0.85 }));
+    // paint: dashed lines cut into their dashes
+    const paint = (color) => new T.MeshStandardMaterial({ color, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    for (const [name, color] of [['white', 0xe9e9e6], ['yellow', 0xd9b23a]]) {
+      const parts = [];
+      for (const ln of (S.lines || []).filter(q => q.color === name)) {
+        if (!ln.dash) { parts.push(ln); continue; }
+        const c = Math.cos(ln.h), s = Math.sin(ln.h), [on, off] = ln.dash;
+        for (let u = -ln.len / 2; u + on <= ln.len / 2 + 1e-6; u += on + off) parts.push({ x: ln.x + c * (u + on / 2), z: ln.z + s * (u + on / 2), h: ln.h, len: on, wid: ln.wid });
+      }
+      add(merged(parts, 0.025, 1), paint(color));
+    }
+  }
+  // the ground over a hilly area (level.groundGrid: { x0, x1, z0, z1 }), lowered a little under the
+  // streets (level.underStreet(x, z)) so a coarse cell never shows through them
+  function buildGroundGrid(group, level) {
+    const { x0, x1, z0, z1 } = level.groundGrid, STEP = 4, nx = Math.ceil((x1 - x0) / STEP), nz = Math.ceil((z1 - z0) / STEP);
+    const tg = new T.PlaneGeometry(nx * STEP, nz * STEP, nx, nz);
+    tg.rotateX(-Math.PI / 2); tg.translate(x0 + nx * STEP / 2, 0, z0 + nz * STEP / 2);
+    const p = tg.attributes.position, uv = tg.attributes.uv;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); p.setY(i, groundY(level, x, z) - (level.underStreet(x, z) ? 0.3 : 0.03)); uv.setXY(i, x / 10, z / 10); }
+    tg.computeVertexNormals();
+    let hm = surface('concrete', 10);
+    if (!hm) { const tex = concrete().clone(); tex.needsUpdate = true; hm = { map: tex }; }
+    group.add(shadowed(new T.Mesh(tg, new T.MeshStandardMaterial({ ...hm, color: 0x9a958c, roughness: 0.95 }))));
+  }
+
   // ---------------------------------------------------------------- buildings
   // Facades by shader: uvM (metres along the wall, height), a per-building seed; floors 3.4 m, bays
   // 2.7 m; a taller shop front on the ground floor; some windows lit.
@@ -8019,7 +8219,7 @@ const RaceRender = (() => {
     { wall: 0x5f6b77, photo: 'concrete', tint: 0x8a96a2, frame: 0x22282e, glass: 0x1f3448, bay: 1.6, floor: 3.8, win: [0.05, 0.95, 0.12, 0.94] },   // glass tower
     { wall: 0xb9b2a5, photo: 'plaster', tint: 0xf2ece2, frame: 0x55524c, glass: 0x2c3540, bay: 3.2, floor: 3.3, win: [0.2, 0.8, 0.32, 0.82] },     // plaster
   ];
-  function facadeMaterial(style) {
+  function facadeMaterial(style, look) {
     const st = STYLES[style], maps = surface(st.photo, 6);
     const m = new T.MeshStandardMaterial({ color: maps ? st.tint : st.wall, roughness: 0.85, metalness: 0.0, ...(maps || { map: concrete() }) });
     m.onBeforeCompile = (sh) => {
@@ -8044,7 +8244,7 @@ float winMask; float frameMask; float litMask;`)
   winMask = max(w, shop);
   float fr = upper * (1.0 - w) * step(uWin.x - 0.05, f.x) * step(f.x, uWin.y + 0.05) * step(uWin.z - 0.05, f.y) * step(f.y, uWin.w + 0.05);
   frameMask = fr + (1.0 - upper) * step(3.7, vUvM.y) * step(vUvM.y, 4.1);
-  litMask = step(0.78, hash2(id)) * w + shop * step(0.5, hash2(vec2(floor(vUvM.x / 6.0), 7.0)));
+  litMask = step(${look.windowLit}, hash2(id)) * w + shop * step(0.5, hash2(vec2(floor(vUvM.x / 6.0), 7.0)));
   float shade = 0.85 + 0.3 * hash2(vec2(vSeed, 3.0));
   diffuseColor.rgb *= shade;
   diffuseColor.rgb = mix(diffuseColor.rgb, uFrame, clamp(frameMask, 0.0, 1.0));
@@ -8053,12 +8253,13 @@ float winMask; float frameMask; float litMask;`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.06, winMask);')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, clamp(winMask + frameMask, 0.0, 1.0)));')
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.85, winMask);')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += litMask * vec3(1.0, 0.8, 0.55) * 0.05;');
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += litMask * vec3(1.0, 0.8, 0.55) * ${look.windowGlow};`);
     };
-    m.customProgramCacheKey = () => 'facade' + style;
+    const lit = look.windowGlow === LOOK.windowGlow && look.windowLit === LOOK.windowLit ? '' : ':' + look.windowGlow + ':' + look.windowLit;
+    m.customProgramCacheKey = () => 'facade' + style + lit;
     return m;
   }
-  function buildBuildings(group, level) {
+  function buildBuildings(group, level, look) {
     const byStyle = STYLES.map(() => ({ pos: [], nrm: [], uv: [], uvM: [], seed: [], idx: [] })), roof = { pos: [], nrm: [], idx: [] };
     const all = level.buildings.map(b => [b, true]).concat(level.skyline.map(b => [b, false]));
     let n = 0;
@@ -8092,7 +8293,7 @@ float winMask; float frameMask; float litMask;`)
       g.setAttribute('uvM', new T.Float32BufferAttribute(A.uvM, 2));
       g.setAttribute('seed', new T.Float32BufferAttribute(A.seed, 1));
       g.setIndex(A.idx);
-      const mesh = new T.Mesh(g, facadeMaterial(i));
+      const mesh = new T.Mesh(g, facadeMaterial(i, look));
       mesh.material.side = T.DoubleSide;
       mesh.castShadow = true; mesh.receiveShadow = true;
       group.add(mesh);
@@ -8223,13 +8424,15 @@ float lnoise(vec3 p) {
     const RH = level.roadHalf;
     for (const r of level.ramps) {
       const ch = Math.cos(r.h), sh = Math.sin(r.h), N = Math.ceil(r.len / 0.5);
+      // across the street (or lanes l0..l1 of it), a row of chevrons per lane
+      const L0 = r.l0 !== undefined ? r.l0 : -RH, L1 = r.l1 !== undefined ? r.l1 : RH, rows = Math.max(1, Math.round((L1 - L0) / 3.75));
       const at = (u, l) => [r.x + ch * u - sh * l, r.z + sh * u + ch * l];
       const tp = [], tuv = [], tidx = [], sp = [], suv = [], sidx = [];
       for (let i = 0; i <= N; i++) {
         const u = Math.min(r.len, i * 0.5), hh = level.rampProfile(r, Math.min(u, r.len - 1e-6))[0];
-        for (const l of [-RH, RH]) {
+        for (const l of [L0, L1]) {
           const [x, z] = at(u, l), g = groundY(level, x, z);
-          tp.push(x, g + hh + 0.01, z); tuv.push(u / r.len, (l + RH) / (2 * RH) * 4);   // four rows of chevrons across
+          tp.push(x, g + hh + 0.01, z); tuv.push(u / r.len, (l - L0) / (L1 - L0) * rows);
           sp.push(x, g, z, x, g + hh + 0.01, z); suv.push(u / 4, 0, u / 4, Math.max(0.05, hh) / 1.6);
         }
         if (i < N) {

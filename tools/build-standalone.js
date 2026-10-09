@@ -2,12 +2,14 @@
  * files (preview panes, or a file copied on its own):
  *   Simulator.html             index.html with the stylesheet and every local script embedded
  *   Race.html                  game.html (the Race game) the same way, with its photo textures
- *                              (three.js still comes from the CDN for both, so they need an internet
+ *   Destruction.html           junction.html (the Destruction mode) the same way
+ *                              (three.js still comes from the CDN for these, so they need an internet
  *                              connection)
  *   Car Crash Simulation.html  home.html with its stylesheet, pictures and videos (css/, media/)
  *                              embedded (physics.html and sources.html are built by build-site.js)
- *   node tools/build-standalone.js
- * Edit the sources (index.html, game.html, home.html, css/, js/, models/, media/) and rebuild; don't
+ *   node tools/build-standalone.js           all of them
+ *   node tools/build-standalone.js Race      only the ones whose file name contains "Race"
+ * Edit the sources (index.html, game.html, junction.html, home.html, css/, js/, models/, media/) and rebuild; don't
  * edit the output. */
 'use strict';
 const fs = require('fs');
@@ -43,8 +45,12 @@ function buildPage(source, output) {
   fs.writeFileSync(out, html);
   console.log(`wrote ${path.relative(root, out)}: ${n} files embedded, ${(html.length / 1024).toFixed(0)} KB`);
 }
-buildPage('index.html', 'Simulator.html');
-buildPage('game.html', 'Race.html');
+const only = process.argv[2];
+const wanted = (output) => !only || output.includes(only);
+if (wanted('Simulator.html')) buildPage('index.html', 'Simulator.html');
+if (wanted('Race.html')) buildPage('game.html', 'Race.html');
+if (wanted('Destruction.html')) buildPage('junction.html', 'Destruction.html');
+if (!wanted('Car Crash Simulation.html')) process.exit(0);
 
 // ---------------------------------------------------------------- the home page
 // The local stylesheet goes inline; pictures become data URIs; each video goes in a base64 script

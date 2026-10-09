@@ -388,6 +388,36 @@ if (Veh.specs.lexus && (!filter || 'world'.includes(filter))) {
   const g2 = live(two), r2 = g2.sim.finalize(), p2 = residualOk(r2);
   check('world-glass', g1.same && g2.same, `glass found during the run = at the end: Dramatic 100 km/h wall ${g1.n} panes ${g1.same ? 'same' : 'DIFFERENT'}; two cars ${g2.n} panes ${g2.same ? 'same' : 'DIFFERENT'}`);
   check('world-fast', !p2.length, `Lexus and Mustang head-on at 2 x 160 km/h beside a building and a lamp post: peak ${r2.units.map(u => u.metrics.peakDecelG.toFixed(0)).join(' / ')} g, ${r2.debris.length} parts off, back-off ${(r2.world.backOff * 1000).toFixed(1)} mm${p2.length ? '; ' + p2.join('; ') : ''}`);
+  // the Destruction mode's options: a box that moves (a bus or tanker), a box with a roof, a car
+  // that starts in the air. A tanker-sized box driven into a stopped car's side carries it off at
+  // its own speed; a car into the side of one moving across is dragged along; a car started 2 m up,
+  // nose-up, lands; one dropped onto a roof stays on it
+  const unit = (o) => Object.assign({ vehicle: V, massKg: V.massKg, stiffness: 'standard', damage: 'realistic', yawRate: 0 }, o);
+  const com = (F, k) => { const p = F.pos[k], nn = p.length / 3; let x = 0, y = 0, z = 0; for (let i = 0; i < nn; i++) { x += p[3 * i]; y += p[3 * i + 1]; z += p[3 * i + 2]; } return [x / nn, y / nn, z / nn]; };
+  const kAt = (F, tt) => { let k = 0; while (k < F.t.length - 1 && F.t[k] < tt) k++; return k; };
+  const velAt = (F, k) => { const a = com(F, k - 5), b = com(F, k), dt = F.t[k] - F.t[k - 5]; return [(b[0] - a[0]) / dt, (b[1] - a[1]) / dt, (b[2] - a[2]) / dt]; };
+  const push = run({ barrier: 'world', duration: 0.6, minDuration: 0.6, world: { boxes: [{ x: 0, z: -4.5, hx: 6, hz: 1.25, angle: 0, height: 3.2, vx: 0, vz: 15, top: true }] },
+    vehicles: [unit({ pose: { x: -V.xMin - V.length / 2, z: 0, heading: 0 }, velocity: [0, 0] })] });
+  const drag = run({ barrier: 'world', duration: 0.8, world: { boxes: [{ x: 3.4, z: 0, hx: 1.25, hz: 6, angle: 0, height: 3.2, vx: 0, vz: 15, top: true }] },
+    vehicles: [unit({ pose: { x: 3.4 - 1.25 - 0.45 - V.xMin - V.length, z: 0, heading: 0 }, velocity: [25, 0] })] });
+  const air = run({ barrier: 'world', duration: 0.6, minDuration: 1.5, world: { boxes: [{ x: 30, z: 0, hx: 1, hz: 10, angle: 0, height: 3 }] },
+    vehicles: [unit({ pose: { x: 0, z: 0, heading: 0 }, velocity: [20, 0], lift: 2, vy: -1, pitch: 0.25 })] });
+  const roof = run({ barrier: 'world', duration: 0.3, minDuration: 1.5, world: { boxes: [{ x: 0, z: 0, hx: 6, hz: 1.4, angle: 0, height: 1.6, top: true }] },
+    vehicles: [unit({ pose: { x: -V.xMin - V.length / 2, z: 0, heading: 0 }, velocity: [0, 0], lift: 2.5 })] });
+  const vPush = velAt(push.frames, push.frames.t.length - 1)[2], vDrag = velAt(drag.frames, kAt(drag.frames, drag.T0 + 0.3))[2];
+  const yAir0 = com(air.frames, 0)[1], yAir = com(air.frames, air.frames.t.length - 1)[1], yRoof = com(roof.frames, roof.frames.t.length - 1)[1];
+  // energy: a car starting still has no kinetic energy to compare with, so the scale is the work the
+  // box does on it or the height energy it starts with
+  const pm = [];
+  for (const [r, nm] of [[push, 'pushed'], [drag, 'dragged'], [air, 'jump'], [roof, 'roof']]) {
+    const E = r.frames.energy, last = E[E.length - 1], scale = Math.max(r.metrics.energyInitial, last.pushed || 0, V.massKg * 9.81 * 2.5);
+    const minR = Math.min(...E.map(e => e.contactSolver));
+    if (minR < -0.03 * scale) pm.push(`${nm}: energy gain ${(-minR / 1000).toFixed(1)} kJ`);
+    if (!r.contact) pm.push(`${nm}: no contact`);
+    if (hasNaN(r.frames.pos[r.frames.pos.length - 1])) pm.push(`${nm}: NaN`);
+  }
+  check('world-moving', !pm.length && Math.abs(vPush / 15 - 1) < 0.2 && vDrag > 0.3 * 15 && yAir0 > 2.5 && yAir < 1.3 && yRoof > 1.6 + 0.6 && yRoof < 1.6 + 1.1,
+    `a box at 15 m/s into a car's side: the car leaves at ${vPush.toFixed(1)} m/s (within 20%); into the side of one crossing at 15 m/s: dragged to ${vDrag.toFixed(1)} m/s after 0.3 s (over 4.5); started 2 m up: centre ${yAir0.toFixed(2)} m, landed at ${yAir.toFixed(2)} m; dropped on a 1.6 m roof: rests at ${yRoof.toFixed(2)} m${pm.length ? '; ' + pm.join('; ') : ''}`);
 }
 
 // after the crash (js/fire.js): steam once the radiator is crushed; fire only when the engine is

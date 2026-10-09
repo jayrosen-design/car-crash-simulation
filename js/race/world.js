@@ -54,8 +54,14 @@ const RaceWorld = (() => {
     const hist = [];          // ring of snapshots
     let tick = 0;
 
+    // opts.height: how tall it is (a bus or tanker in the Destruction mode; cars: 1.2 m for
+    // telling one flying over another)
     function add(car, opts = {}) {
       const b = { car, kind: opts.kind || 'racer', kinematic: !!opts.kinematic, id: bodies.length, ghost: 0, wrecked: false, user: opts.user || null };
+      // how far its box reaches from its centre of gravity (for the broad phase)
+      const s = car.spec;
+      b.reach = Math.abs(s.xMin + s.length / 2 - car.cgX) + Math.hypot(s.length / 2, s.width / 2);
+      if (opts.height) b.top = opts.height;
       bodies.push(b);
       return b;
     }
@@ -244,7 +250,7 @@ const RaceWorld = (() => {
           }
         }
       }
-      // cars against each other: broad phase by distance
+      // cars against each other: broad phase by distance (7 m, or more for a bus or truck)
       for (let i = 0; i < bodies.length; i++) {
         const a = bodies[i];
         if (a.frozen) continue;
@@ -252,9 +258,10 @@ const RaceWorld = (() => {
           const b = bodies[j];
           if (b.frozen || (a.kinematic && b.kinematic)) continue;
           if (a.ghost || b.ghost) continue;
-          const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z;
-          if (dx * dx + dz * dz > 49) continue;
-          if (Math.abs(a.car.y - b.car.y) > 1.2) continue;   // one flying over the other
+          const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z, r = a.reach + b.reach;
+          if (dx * dx + dz * dz > (r * r > 49 ? r * r : 49)) continue;
+          const dy = a.car.y - b.car.y;
+          if (dy > (b.top || 1.2) || -dy > (a.top || 1.2)) continue;   // one flying over the other
           const A = box(a, BA), B = box(b, BB), hit = vsCar(A, B);
           if (!hit) continue;
           // a hit traffic car becomes a free body

@@ -51,11 +51,11 @@ const FX = (() => {
   // playback speed of the replay (1 = real time): slow motion lowers the pitch, down to 0.4
   function setTimeScale(speed) { rate = Math.max(0.4, Math.min(1, Math.pow(speed, 0.25))); }
   const stretch = (dur) => dur / Math.sqrt(rate);
-  function take(dur) {
+  function take(dur, force) {   // force: play even over the voice limit (an explosion)
     if (!ctx || (!enabled && !cap)) return false;
     const t = now();
     voiceEnds = voiceEnds.filter(e => e > t);
-    if (voiceEnds.length >= MAX_VOICES) return false;
+    if (voiceEnds.length >= MAX_VOICES && !force) return false;
     voiceEnds.push(t + stretch(dur) + 0.06);
     return true;
   }
@@ -202,6 +202,51 @@ const FX = (() => {
     if (mass >= 30) thud(mass, pos); else scatter(count, pos);
   }
 
+  // The Destruction mode's sounds. An explosion (size: about 0.4 a car, 0.6 a fuel pump, 1 a gas
+  // tanker): a sharp crack, a long distorted roar falling in pitch, a deep thump under it, and debris
+  // raining down after. It plays even when the voices are all taken.
+  function explosion(size, pos) {
+    if (!take(2.5, true)) return;
+    const k = Math.max(0.25, Math.min(1.2, size));
+    noise({ dur: 0.12, gain: 0.9 * k, type: 'highpass', f0: 600, f1: 300, pos, attack: 0.001, drive: 4 });
+    noise({ dur: 1.4 + 1.4 * k, gain: 1.1 * k, type: 'lowpass', f0: 2600, f1: 50, Q: 0.9, pos, attack: 0.004, drive: 5 });
+    tone({ dur: 1.0 + 0.6 * k, gain: 1.0 * k, f0: 72, f1: 22, pos });
+    tone({ dur: 0.5, gain: 0.6 * k, f0: 140, f1: 45, pos, type: 'triangle' });
+    for (let i = 0; i < 3 + Math.round(4 * k); i++) later((350 + i * (90 + Math.random() * 160)) / rate, () => {
+      if (!take(0.1)) return;
+      noise({ dur: 0.05 + Math.random() * 0.08, gain: 0.18, type: 'bandpass', f0: 1500 + Math.random() * 3500, f1: 800, Q: 3, pos });
+    });
+  }
+  // the score ticking up: a short bright two-note chime (bigger amounts, higher)
+  function cash(big) {
+    if (!take(0.2)) return;
+    const f = big ? 1568 : 1319;
+    tone({ dur: 0.07, gain: 0.12, f0: f, f1: f, type: 'square' });
+    later(55, () => tone({ dur: 0.16, gain: 0.1, f0: f * 1.5, f1: f * 1.5, type: 'square' }));
+  }
+  // a medal: a rising arpeggio, longer for a better medal (1 bronze, 2 silver, 3 gold)
+  function medal(level) {
+    if (!ctx || (!enabled && !cap)) return;
+    const notes = [523, 659, 784, 1047, 1319].slice(0, 2 + level);
+    notes.forEach((f, i) => later(i * 110, () => { if (take(0.4, true)) { tone({ dur: 0.35, gain: 0.16, f0: f, f1: f, type: 'square' }); tone({ dur: 0.35, gain: 0.1, f0: f * 2, f1: f * 2, type: 'triangle' }); } }));
+  }
+  // the city around a junction at dusk (level 0..1, set every frame): the hum of distant traffic
+  let city = null;
+  function ambience(level) {
+    if (!ctx) return;
+    if (!city) {
+      if (level <= 0 || (!enabled && !cap)) return;
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260; lp.Q.value = 0.5;
+      const g = ctx.createGain(); g.gain.value = 0;
+      src.connect(lp).connect(g).connect(master); src.start(now());
+      city = { src, g };
+    }
+    const t = now();
+    city.g.gain.setTargetAtTime(0.16 * level, t, 0.3);
+    if (level <= 0) { const c = city; city = null; c.src.stop(t + 1.5); }
+  }
+
   // The sound of the structure giving way, set every frame from the power the crash is
   // dissipating (W): about 0.5 at 1 MW, 0.85 at 5 MW, 1.2 at 25 MW. More power: louder, a higher
   // and more resonant band, more distortion, and a deeper rumble under it.
@@ -244,6 +289,7 @@ const FX = (() => {
     const t = now();
     if (bed) { bed.src.stop(t); bed.rum.stop(t); bed = null; }
     if (burn) { burn.roar.src.stop(t); burn.hiss.src.stop(t); burn = null; }
+    if (city) { city.src.stop(t); city = null; }
   }
   function beginCapture(seconds) {
     initAudio();
@@ -346,6 +392,9 @@ const FX = (() => {
     spark: { color: [1.0, 0.78, 0.35], size: [0.03, 0.05], grow: 0, life: [0.12, 0.3], speed: [3, 8], up: 0.8, gravity: 1, drag: 0.5, alpha: 1, glow: 1.5 },
     glass: { color: [0.75, 0.88, 0.95], size: [0.02, 0.04], grow: 0, life: [0.6, 1.2], speed: [1, 3], up: 0.5, gravity: 1, drag: 0.2, alpha: 0.9, glow: 0 },
     water: { color: [0.72, 0.84, 0.95], size: [0.06, 0.12], grow: 0.8, life: [0.7, 1.3], speed: [6, 9], up: 1, gravity: 1, drag: 0.35, alpha: 0.6, glow: 0 },   // a burst hydrant (the Race game)
+    // an explosion's flying embers and blackened bits (the Destruction mode)
+    ember: { color: [1.0, 0.55, 0.18], size: [0.05, 0.1], grow: 0, life: [0.8, 1.8], speed: [6, 16], up: 1.6, gravity: 0.6, drag: 0.6, alpha: 1, glow: 2.0 },
+    debris: { color: [0.16, 0.15, 0.14], size: [0.08, 0.16], grow: 0, life: [1.4, 2.6], speed: [5, 14], up: 1.8, gravity: 1, drag: 0.15, alpha: 1, glow: 0 },
   };
 
   class Particles {
@@ -425,5 +474,6 @@ const FX = (() => {
     clear() { this.n = 0; this.geo.setDrawRange(0, 0); }
   }
 
-  return { initAudio, setEnabled, setTimeScale, listen, beginCapture, captureClock, endCapture, get sampleRate() { return ctx ? ctx.sampleRate : 48000; }, crunch, scatter, thud, pop, blowout, hit, beep, breakSound, clank, tear, glass, crack, structureUpdate, engineStart, engineUpdate, engineStop, fireUpdate, Particles, get enabled() { return enabled; } };
+  return { initAudio, setEnabled, setTimeScale, listen, beginCapture, captureClock, endCapture, get sampleRate() { return ctx ? ctx.sampleRate : 48000; }, crunch, scatter, thud, pop, blowout, hit, beep, breakSound, clank, tear, glass, crack, structureUpdate, engineStart, engineUpdate, engineStop, fireUpdate, Particles, get enabled() { return enabled; },
+    explosion, cash, medal, ambience };
 })();

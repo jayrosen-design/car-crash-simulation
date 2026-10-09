@@ -11,36 +11,45 @@
  * can show the crash solver's damage without swapping models. Rivals and traffic share one merged
  * copy of each model, drawn as instances (one draw call per material), each with its own paint.
  *
+ * opts.look (the Destruction mode's dusk; Race uses the defaults): sky and fog colours, the sun's
+ * direction, colour and strength, the sky light, exposure, the sky dome's and the reflections'
+ * fragment shaders, whether to use the street HDRI, and how many windows are lit and how brightly.
+ * A level without a circuit (no poseAt) gives its streets as `surfaces` and its hills as a
+ * `groundGrid` instead.
+ *
  * Uses window.THREE (and the addons the page puts on window).
  */
 const RaceRender = (() => {
   'use strict';
   const T = THREE;
   const UP = new T.Vector3(0, 1, 0), ZAXIS = new T.Vector3(0, 0, 1);
+  const LOOK = { sky: 0xc8b9a6, fog: 0xbfb4a6, fogNear: 220, fogFar: 1700, hemiSky: 0xdfe7f2, hemiGround: 0x5a524a, hemi: 1.05, sun: 0xffe3c2, sunI: 2.6,
+    sunDir: [-0.55, 0.52, -0.65], exposure: 1.0, hdr: true, domeFrag: null, envFrag: null, windowGlow: '0.05', windowLit: '0.78' };
 
   function create(opts) {
     const { level, container } = opts;
+    const look = Object.assign({}, LOOK, opts.look);
     const renderer = new T.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, opts.pixelRatio || 1.5));
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.toneMapping = T.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = look.exposure;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = T.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
 
     const scene = new T.Scene();
-    const SKY = 0xc8b9a6, FOG = 0xbfb4a6;
+    const SKY = look.sky, FOG = look.fog;
     scene.background = new T.Color(SKY);
-    scene.fog = new T.Fog(FOG, 220, 1700);
+    scene.fog = new T.Fog(FOG, look.fogNear, look.fogFar);
     const camera = new T.PerspectiveCamera(62, container.clientWidth / container.clientHeight, 0.1, 3000);
     camera.layers.enable(1);   // the CarModels meshes
     camera.layers.enable(2);   // sparks, dust and glass (FX.Particles)
 
     // light: a low late-afternoon sun and a warm-cool sky
-    const hemi = new T.HemisphereLight(0xdfe7f2, 0x5a524a, 1.05);
-    const sun = new T.DirectionalLight(0xffe3c2, 2.6);
-    const SUN_DIR = new T.Vector3(-0.55, 0.52, -0.65).normalize();
+    const hemi = new T.HemisphereLight(look.hemiSky, look.hemiGround, look.hemi);
+    const sun = new T.DirectionalLight(look.sun, look.sunI);
+    const SUN_DIR = new T.Vector3(...look.sunDir).normalize();
     sun.castShadow = true;
     sun.shadow.mapSize.set(opts.shadowSize || 2048, opts.shadowSize || 2048);
     Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 420 });
@@ -50,12 +59,12 @@ const RaceRender = (() => {
 
     // environment for reflections and ambient light: a photographed street (Poly Haven HDRI) when
     // media/race/assets.js is there, else a small sky-coloured scene with a bright sun patch
-    const env = streetHDR(renderer) || (() => {
+    const env = (look.hdr && streetHDR(renderer)) || (() => {
       const pm = new T.PMREMGenerator(renderer), room = new T.Scene();
       const sky = new T.Mesh(new T.SphereGeometry(50, 32, 16), new T.ShaderMaterial({ side: T.BackSide, depthWrite: false,
         uniforms: { sunDir: { value: SUN_DIR } },
         vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.42,0.39,0.36), vec3(0.78,0.74,0.69), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.45,0.58,0.78), smoothstep(0.02, 0.6, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(1.0,0.85,0.6) * (pow(s, 600.0) * 40.0 + pow(s, 8.0) * 0.4); gl_FragColor = vec4(c, 1.0); }' }));
+        fragmentShader: look.envFrag || 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.42,0.39,0.36), vec3(0.78,0.74,0.69), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.45,0.58,0.78), smoothstep(0.02, 0.6, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(1.0,0.85,0.6) * (pow(s, 600.0) * 40.0 + pow(s, 8.0) * 0.4); gl_FragColor = vec4(c, 1.0); }' }));
       room.add(sky);
       const t = pm.fromScene(room, 0).texture;
       pm.dispose();
@@ -68,7 +77,7 @@ const RaceRender = (() => {
       const dome = new T.Mesh(new T.SphereGeometry(2600, 32, 16), new T.ShaderMaterial({ side: T.BackSide, depthWrite: false, fog: false,
         uniforms: { sunDir: { value: SUN_DIR } },
         vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); vec4 p = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * p; }',
-        fragmentShader: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 hor = vec3(0.80,0.74,0.66), zen = vec3(0.36,0.52,0.74); vec3 c = mix(hor, zen, pow(h, 0.55)); float s = max(dot(vD, sunDir), 0.0); c += vec3(1.0,0.82,0.55) * (pow(s, 900.0) * 6.0 + pow(s, 12.0) * 0.35); gl_FragColor = vec4(c, 1.0); }' }));
+        fragmentShader: look.domeFrag || 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 hor = vec3(0.80,0.74,0.66), zen = vec3(0.36,0.52,0.74); vec3 c = mix(hor, zen, pow(h, 0.55)); float s = max(dot(vD, sunDir), 0.0); c += vec3(1.0,0.82,0.55) * (pow(s, 900.0) * 6.0 + pow(s, 12.0) * 0.35); gl_FragColor = vec4(c, 1.0); }' }));
       dome.renderOrder = -1;
       scene.add(dome);
       scene.userData.dome = dome;
@@ -77,10 +86,12 @@ const RaceRender = (() => {
     const city = new T.Group();
     scene.add(city);
     buildGround(city, level);
-    buildStreet(city, level);
-    buildBuildings(city, level);
+    if (level.groundGrid) buildGroundGrid(city, level);
+    if (level.poseAt) buildStreet(city, level);
+    if (level.surfaces) buildSurfaces(city, level);
+    buildBuildings(city, level, look);
     buildFurniture(city, level);
-    buildStart(city, level);
+    if (level.start) buildStart(city, level);
     buildRamps(city, level);
     // the deformable car models (player, wrecks) and what breaks off them: raised to the ground's
     // height for a crash on a hill (the crash solver works at height 0), else at 0
@@ -104,7 +115,8 @@ const RaceRender = (() => {
     function drawCar(key, i, st) {
       const set = carMeshes[key];
       if (!set) return;
-      carMatrix(M, st.x, st.z, st.h, st.pitch, st.roll, st.lift);
+      if (st.matrix) M.copy(st.matrix);   // a wreck tumbling in 3D (the Destruction mode)
+      else carMatrix(M, st.x, st.z, st.h, st.pitch, st.roll, st.lift);
       for (const im of set.body) im.setMatrixAt(i, M);
       if (st.paint !== undefined && set.paint) set.paint.setColorAt(i, C.setHex(st.paint));
       set.wheels.forEach((w, j) => {
@@ -250,7 +262,7 @@ const RaceRender = (() => {
       const byType = {};
       for (const pr of props.list) (byType[pr.type] = byType[pr.type] || []).push(pr);
       for (const [type, list] of Object.entries(byType)) {
-        const meshes = propParts(type).map(([g, mat]) => {
+        const meshes = ((opts.propParts && opts.propParts(type)) || propParts(type)).map(([g, mat]) => {
           const im = new T.InstancedMesh(g, mat, list.length);
           im.castShadow = mat !== PROP_MATS.lamp; im.receiveShadow = true; im.frustumCulled = false;
           im.instanceMatrix.setUsage(T.DynamicDrawUsage);
@@ -278,7 +290,8 @@ const RaceRender = (() => {
       }
     }
 
-    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift };
+    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift,
+      carMeshes, hemi, crashRoot, sunDir: SUN_DIR };
   }
 
   const MIRROR = new T.Matrix4().makeScale(1, 1, -1);
@@ -483,6 +496,57 @@ const RaceRender = (() => {
     return window.mergeGeometries([top, face]);
   }
 
+  // ---------------------------------------------------------------- streets without a circuit
+  // (the Destruction mode's junction): level.surfaces = { roads, walks, kerbs, lines }, each a list
+  // of rectangles { x, z (centre), h (direction of its length), len, wid }; lines also have
+  // color ('white' | 'yellow') and optionally dash: [paint, gap] (m). All follow the ground.
+  function rect(level, r, y, vScale) {
+    const c = Math.cos(r.h), s = Math.sin(r.h), N = Math.max(1, Math.ceil(r.len / 2)), A = Math.max(1, Math.ceil(r.wid / 2.5));
+    const pos = [], nrm = [], uv = [], idx = [];
+    for (let i = 0; i <= N; i++) for (let j = 0; j <= A; j++) {
+      const u = -r.len / 2 + r.len * i / N, l = -r.wid / 2 + r.wid * j / A, x = r.x + c * u - s * l, z = r.z + s * u + c * l;
+      pos.push(x, groundY(level, x, z) + y, z); nrm.push(...groundN(level, x, z)); uv.push(x / vScale, z / vScale);
+      if (i < N && j < A) { const k = i * (A + 1) + j, n = k + A + 1; idx.push(k, k + 1, n, k + 1, n + 1, n); }   // facing up
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
+    g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    return g;
+  }
+  function buildSurfaces(group, level) {
+    const S = level.surfaces, merged = (list, y, vScale) => list.length ? window.mergeGeometries(list.map(r => rect(level, r, y, vScale))) : null;
+    const add = (g, mat) => { if (g) group.add(shadowed(new T.Mesh(g, mat))); };
+    add(merged(S.roads || [], 0, 8), new T.MeshStandardMaterial({ ...(surface('asphalt', 8) || { map: asphalt() }), color: 0xffffff, roughness: 0.92 }));
+    add(merged(S.walks || [], 0.02, 4), new T.MeshStandardMaterial({ ...(surface('pavers', 4) || { map: pavers() }), color: 0xffffff, roughness: 0.9 }));
+    add(merged(S.kerbs || [], 0.06, 1), new T.MeshStandardMaterial({ ...(surface('concrete', 1) || { map: concrete() }), color: 0xc9c5bd, roughness: 0.85 }));
+    // paint: dashed lines cut into their dashes
+    const paint = (color) => new T.MeshStandardMaterial({ color, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    for (const [name, color] of [['white', 0xe9e9e6], ['yellow', 0xd9b23a]]) {
+      const parts = [];
+      for (const ln of (S.lines || []).filter(q => q.color === name)) {
+        if (!ln.dash) { parts.push(ln); continue; }
+        const c = Math.cos(ln.h), s = Math.sin(ln.h), [on, off] = ln.dash;
+        for (let u = -ln.len / 2; u + on <= ln.len / 2 + 1e-6; u += on + off) parts.push({ x: ln.x + c * (u + on / 2), z: ln.z + s * (u + on / 2), h: ln.h, len: on, wid: ln.wid });
+      }
+      add(merged(parts, 0.025, 1), paint(color));
+    }
+  }
+  // the ground over a hilly area (level.groundGrid: { x0, x1, z0, z1 }), lowered a little under the
+  // streets (level.underStreet(x, z)) so a coarse cell never shows through them
+  function buildGroundGrid(group, level) {
+    const { x0, x1, z0, z1 } = level.groundGrid, STEP = 4, nx = Math.ceil((x1 - x0) / STEP), nz = Math.ceil((z1 - z0) / STEP);
+    const tg = new T.PlaneGeometry(nx * STEP, nz * STEP, nx, nz);
+    tg.rotateX(-Math.PI / 2); tg.translate(x0 + nx * STEP / 2, 0, z0 + nz * STEP / 2);
+    const p = tg.attributes.position, uv = tg.attributes.uv;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); p.setY(i, groundY(level, x, z) - (level.underStreet(x, z) ? 0.3 : 0.03)); uv.setXY(i, x / 10, z / 10); }
+    tg.computeVertexNormals();
+    let hm = surface('concrete', 10);
+    if (!hm) { const tex = concrete().clone(); tex.needsUpdate = true; hm = { map: tex }; }
+    group.add(shadowed(new T.Mesh(tg, new T.MeshStandardMaterial({ ...hm, color: 0x9a958c, roughness: 0.95 }))));
+  }
+
   // ---------------------------------------------------------------- buildings
   // Facades by shader: uvM (metres along the wall, height), a per-building seed; floors 3.4 m, bays
   // 2.7 m; a taller shop front on the ground floor; some windows lit.
@@ -493,7 +557,7 @@ const RaceRender = (() => {
     { wall: 0x5f6b77, photo: 'concrete', tint: 0x8a96a2, frame: 0x22282e, glass: 0x1f3448, bay: 1.6, floor: 3.8, win: [0.05, 0.95, 0.12, 0.94] },   // glass tower
     { wall: 0xb9b2a5, photo: 'plaster', tint: 0xf2ece2, frame: 0x55524c, glass: 0x2c3540, bay: 3.2, floor: 3.3, win: [0.2, 0.8, 0.32, 0.82] },     // plaster
   ];
-  function facadeMaterial(style) {
+  function facadeMaterial(style, look) {
     const st = STYLES[style], maps = surface(st.photo, 6);
     const m = new T.MeshStandardMaterial({ color: maps ? st.tint : st.wall, roughness: 0.85, metalness: 0.0, ...(maps || { map: concrete() }) });
     m.onBeforeCompile = (sh) => {
@@ -518,7 +582,7 @@ float winMask; float frameMask; float litMask;`)
   winMask = max(w, shop);
   float fr = upper * (1.0 - w) * step(uWin.x - 0.05, f.x) * step(f.x, uWin.y + 0.05) * step(uWin.z - 0.05, f.y) * step(f.y, uWin.w + 0.05);
   frameMask = fr + (1.0 - upper) * step(3.7, vUvM.y) * step(vUvM.y, 4.1);
-  litMask = step(0.78, hash2(id)) * w + shop * step(0.5, hash2(vec2(floor(vUvM.x / 6.0), 7.0)));
+  litMask = step(${look.windowLit}, hash2(id)) * w + shop * step(0.5, hash2(vec2(floor(vUvM.x / 6.0), 7.0)));
   float shade = 0.85 + 0.3 * hash2(vec2(vSeed, 3.0));
   diffuseColor.rgb *= shade;
   diffuseColor.rgb = mix(diffuseColor.rgb, uFrame, clamp(frameMask, 0.0, 1.0));
@@ -527,12 +591,13 @@ float winMask; float frameMask; float litMask;`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.06, winMask);')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, clamp(winMask + frameMask, 0.0, 1.0)));')
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.85, winMask);')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += litMask * vec3(1.0, 0.8, 0.55) * 0.05;');
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += litMask * vec3(1.0, 0.8, 0.55) * ${look.windowGlow};`);
     };
-    m.customProgramCacheKey = () => 'facade' + style;
+    const lit = look.windowGlow === LOOK.windowGlow && look.windowLit === LOOK.windowLit ? '' : ':' + look.windowGlow + ':' + look.windowLit;
+    m.customProgramCacheKey = () => 'facade' + style + lit;
     return m;
   }
-  function buildBuildings(group, level) {
+  function buildBuildings(group, level, look) {
     const byStyle = STYLES.map(() => ({ pos: [], nrm: [], uv: [], uvM: [], seed: [], idx: [] })), roof = { pos: [], nrm: [], idx: [] };
     const all = level.buildings.map(b => [b, true]).concat(level.skyline.map(b => [b, false]));
     let n = 0;
@@ -566,7 +631,7 @@ float winMask; float frameMask; float litMask;`)
       g.setAttribute('uvM', new T.Float32BufferAttribute(A.uvM, 2));
       g.setAttribute('seed', new T.Float32BufferAttribute(A.seed, 1));
       g.setIndex(A.idx);
-      const mesh = new T.Mesh(g, facadeMaterial(i));
+      const mesh = new T.Mesh(g, facadeMaterial(i, look));
       mesh.material.side = T.DoubleSide;
       mesh.castShadow = true; mesh.receiveShadow = true;
       group.add(mesh);
@@ -697,13 +762,15 @@ float lnoise(vec3 p) {
     const RH = level.roadHalf;
     for (const r of level.ramps) {
       const ch = Math.cos(r.h), sh = Math.sin(r.h), N = Math.ceil(r.len / 0.5);
+      // across the street (or lanes l0..l1 of it), a row of chevrons per lane
+      const L0 = r.l0 !== undefined ? r.l0 : -RH, L1 = r.l1 !== undefined ? r.l1 : RH, rows = Math.max(1, Math.round((L1 - L0) / 3.75));
       const at = (u, l) => [r.x + ch * u - sh * l, r.z + sh * u + ch * l];
       const tp = [], tuv = [], tidx = [], sp = [], suv = [], sidx = [];
       for (let i = 0; i <= N; i++) {
         const u = Math.min(r.len, i * 0.5), hh = level.rampProfile(r, Math.min(u, r.len - 1e-6))[0];
-        for (const l of [-RH, RH]) {
+        for (const l of [L0, L1]) {
           const [x, z] = at(u, l), g = groundY(level, x, z);
-          tp.push(x, g + hh + 0.01, z); tuv.push(u / r.len, (l + RH) / (2 * RH) * 4);   // four rows of chevrons across
+          tp.push(x, g + hh + 0.01, z); tuv.push(u / r.len, (l - L0) / (L1 - L0) * rows);
           sp.push(x, g, z, x, g + hh + 0.01, z); suv.push(u / 4, 0, u / 4, Math.max(0.05, hh) / 1.6);
         }
         if (i < N) {

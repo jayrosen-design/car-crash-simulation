@@ -390,25 +390,41 @@ function buildOffset(off) {
 
 /* World obstacles (the Race game): w = { boxes: [{ x, z, hx, hz, angle, height }], cyls: [{ x, z, r,
  * height }] } in world coordinates. A box's half-lengths hx and hz lie along its own axes, turned by
- * angle from +x toward +z (as a vehicle's heading). Upright shapes: horizontal normals, ground at y = 0. */
+ * angle from +x toward +z (as a vehicle's heading). Upright shapes: horizontal normals, ground at y = 0.
+ * Options for a box (the Destruction mode's buses and tankers): vx, vz (m/s) move it at a steady
+ * speed from where it is at the start; top: true gives it a roof to land on. */
 function buildWorld(w) {
   const shapes = [];
+  let moving = false;
   for (const b of (w && w.boxes) || []) {
     const c = Math.cos(b.angle || 0), s = Math.sin(b.angle || 0);
     const ex = Math.abs(c) * b.hx + Math.abs(s) * b.hz, ez = Math.abs(s) * b.hx + Math.abs(c) * b.hz;
-    shapes.push({ box: true, x: b.x, z: b.z, hx: b.hx, hz: b.hz, c, s, height: b.height || 3, x0: b.x - ex, x1: b.x + ex, z0: b.z - ez, z1: b.z + ez });
+    const sh = { box: true, x: b.x, z: b.z, hx: b.hx, hz: b.hz, c, s, height: b.height || 3, x0: b.x - ex, x1: b.x + ex, z0: b.z - ez, z1: b.z + ez };
+    if (b.vx || b.vz) { Object.assign(sh, { vx: b.vx || 0, vz: b.vz || 0, bx: b.x, bz: b.z, ex, ez }); moving = true; }
+    if (b.top) sh.top = true;
+    shapes.push(sh);
   }
   for (const q of (w && w.cyls) || []) shapes.push({ box: false, x: q.x, z: q.z, r: q.r, height: q.height || 3, x0: q.x - q.r, x1: q.x + q.r, z0: q.z - q.r, z1: q.z + q.r });
-  return { shapes, active: shapes.slice() };
+  shapes.forEach((s, i) => { s.i = i; });
+  return { shapes, active: shapes.slice(), moving };
 }
-// Signed distance to the nearest shape of `list` (negative inside), its outward normal in G3.
+// the moving boxes where they are at time t
+function placeWorld(world, t) {
+  for (const s of world.shapes) if (s.vx !== undefined) {
+    s.x = s.bx + s.vx * t; s.z = s.bz + s.vz * t;
+    s.x0 = s.x - s.ex; s.x1 = s.x + s.ex; s.z0 = s.z - s.ez; s.z1 = s.z + s.ez;
+  }
+}
+// Signed distance to the nearest shape of `list` (negative inside), its outward normal in G3. The
+// nearest shape is left in worldHit (for a moving box's friction).
+let worldHit = null;
 function worldSDF(x, y, z, G3, list) {
   let best = Infinity;
   G3[0] = -1; G3[1] = 0; G3[2] = 0;
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
-    if (y > s.height) continue;
-    let d, nx, nz;
+    if (y > s.height && !(s.top && y < s.height + 0.5)) continue;
+    let d, nx, nz, ny = 0;
     if (s.box) {
       const dx = x - s.x, dz = z - s.z, u = dx * s.c + dz * s.s, w = -dx * s.s + dz * s.c;
       const qu = Math.abs(u) - s.hx, qw = Math.abs(w) - s.hz, su = u < 0 ? -1 : 1, sw = w < 0 ? -1 : 1;
@@ -417,11 +433,18 @@ function worldSDF(x, y, z, G3, list) {
       else if (qu > qw) { d = qu; nu = su; nw = 0; }
       else { d = qw; nu = 0; nw = sw; }
       nx = nu * s.c - nw * s.s; nz = nu * s.s + nw * s.c;
+      if (s.top) {
+        // the roof: above it, the distance to the box (its top face, or its top edge); inside,
+        // pushed up when the top is the nearest face
+        const up = y - s.height;
+        if (up > 0) { if (d > 0) { const l = Math.hypot(d, up); nx *= d / l; nz *= d / l; ny = up / l; d = l; } else { d = up; nx = 0; nz = 0; ny = 1; } }
+        else if (d < 0 && -up < -d) { d = up; nx = 0; nz = 0; ny = 1; }
+      }
     } else {
       const dx = x - s.x, dz = z - s.z, l = Math.hypot(dx, dz) || 1e-9;
       d = l - s.r; nx = dx / l; nz = dz / l;
     }
-    if (d < best) { best = d; G3[0] = nx; G3[2] = nz; }
+    if (d < best) { best = d; G3[0] = nx; G3[2] = nz; if (s.top) G3[1] = ny; else if (G3[1]) G3[1] = 0; worldHit = s; }
   }
   return best;
 }
@@ -449,7 +472,9 @@ function measurePoints(spec) {
  *        pose: { x, z, heading }, speed (m/s), yawRate (rad/s) }
  * Several vehicles (the multi-vehicle and side-impact labs): cfg.vehicles = [{ vehicle, massKg,
  *   stiffness, damage, pose, speed, yawRate, velocity: [vx, vz] (instead of speed along the
- *   heading), structure: { steel } (side structure, see buildCar) }]; they collide with each other.
+ *   heading), structure: { steel } (side structure, see buildCar), lift, vy, pitch, roll (a car
+ *   that starts in the air: height of its ground point, vertical speed, nose-up and roll angles) }];
+ *   they collide with each other.
  * offset: see buildOffset; pole: { x, z }; world: see buildWorld (the Race game's street furniture
  *   and buildings, CPU only); sled: true puts the cars on a low-friction carrier
  *   (they slide sideways into the pole); measure: true records intrusion at fixed points;
@@ -474,6 +499,23 @@ function createImpactSim(cfg) {
   for (const U of units) {
     const c = U.cfg, uch = Math.cos(c.pose.heading), ush = Math.sin(c.pose.heading), yaw = c.yawRate || 0;
     const vx0 = c.velocity ? c.velocity[0] : c.speed * uch, vz0 = c.velocity ? c.velocity[1] : c.speed * ush;
+    if (c.lift || c.vy || c.pitch || c.roll) {
+      // in the air (the Destruction mode's jumps): raised by lift, pitched nose-up by pitch and
+      // rolled by roll (as the game draws it: pitch about the car's side, then roll about its
+      // length, then the heading), falling or climbing at vy
+      const cp = Math.cos(c.pitch || 0), sp = Math.sin(c.pitch || 0), cr = Math.cos(c.roll || 0), sr = Math.sin(c.roll || 0);
+      for (let q = 0; q < U.n; q++) {
+        const a = U.off + q;
+        const lx = U.car.rest[3 * q], ly = U.car.rest[3 * q + 1], lz = U.car.rest[3 * q + 2];
+        const px = lx * cp - ly * sp, py = lx * sp + ly * cp;
+        const ry = py * cr - lz * sr, rz = py * sr + lz * cr;
+        const wx = uch * px - ush * rz, wz = ush * px + uch * rz;
+        X[3 * a] = c.pose.x + wx; X[3 * a + 1] = (c.lift || 0) + ry; X[3 * a + 2] = c.pose.z + wz;
+        V[3 * a] = vx0 - yaw * wz; V[3 * a + 1] = c.vy || 0; V[3 * a + 2] = vz0 + yaw * wx;
+        W[a] = 1 / mass[a]; y0[a] = X[3 * a + 1];   // height energy counted from where it starts
+      }
+      continue;
+    }
     for (let q = 0; q < U.n; q++) {
       const a = U.off + q;
       const lx = U.car.rest[3 * q], ly = U.car.rest[3 * q + 1], lz = U.car.rest[3 * q + 2];
@@ -830,6 +872,7 @@ function createImpactSim(cfg) {
   // --- state, energy books, telemetry
   let t = 0, T0 = -1, done = false, cancelled = false, nextRecordT = 0;
   let Wp = 0, Wfrac = 0, Qf = 0, damageTick = 0;
+  let Wmove = 0;   // work done on the cars by moving boxes
   const debris = [];   // { name, kind: 'part' | 'wheel', body, t, X (lattice at that moment) }
   let barrierForce = 0, impAcc = 0, impX = 0, impY = 0, impZ = 0, anyBreak = false;
   const pendingBreaks = [];
@@ -1139,7 +1182,7 @@ function createImpactSim(cfg) {
     const keB = kinetic(dt);
     const ebB = wall ? brickStageEnergy() : 0;
     XS.set(X);
-    frictionPass();
+    frictionPass(dt);
     const keC = kinetic(dt);
     const ebC = wall ? brickStageEnergy() : 0;
     Qf += keB - keC - nodeStageDelta() - (ebC - ebB);
@@ -1174,6 +1217,7 @@ function createImpactSim(cfg) {
 
   // World obstacles: keep the shapes near the vehicles and the awake debris for this step's contacts
   function nearWorld() {
+    if (world.moving) placeWorld(world, t);
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let a = 0; a < n; a++) {
       if (ghost[a]) continue;
@@ -1197,12 +1241,18 @@ function createImpactSim(cfg) {
     const d = obstacleSDF(X[a3], X[a3 + 1], X[a3 + 2], G3);
     if (d >= r) return;
     // cancel this step's approach fully, but never push the node out faster than MAX_SEPARATION
-    const appr = -((X[a3] - P[a3]) * G3[0] + (X[a3 + 2] - P[a3 + 2]) * G3[2]);
+    let appr = -((X[a3] - P[a3]) * G3[0] + (X[a3 + 2] - P[a3 + 2]) * G3[2]);
+    // a roof (its normal points up) and a moving box (the approach is relative to it)
+    const ny = G3[1], mv = world && world.moving && worldHit.vx !== undefined ? worldHit : null;
+    if (ny) appr -= (X[a3 + 1] - P[a3 + 1]) * ny;
+    if (mv) appr += (mv.vx * G3[0] + mv.vz * G3[2]) * dt;
     const pen = Math.min(r - d, Math.max(0, appr + MAX_SEPARATION * dt));
     if (pen <= 0) return;
     X[a3] += pen * G3[0]; X[a3 + 2] += pen * G3[2];
-    addContact(KIND_NODE_SURF, a, -1, G3[0], 0, G3[2], pen);
+    if (ny) X[a3 + 1] += pen * ny;
+    addContact(KIND_NODE_SURF, a, mv ? mv.i : -1, G3[0], ny, G3[2], pen);
     const f = mass[a] * pen / dt2;
+    if (mv) Wmove += f * (mv.vx * G3[0] + mv.vz * G3[2]) * dt;
     barrierForce += (pole || world) ? f : f * Math.max(0, -G3[0]);
     impAcc += f * dt; impX += f * dt * X[a3]; impY += f * dt * X[a3 + 1]; impZ += f * dt * X[a3 + 2];
     if (T0 < 0) T0 = t;
@@ -1384,7 +1434,7 @@ function createImpactSim(cfg) {
   }
 
   const muLat = cfg.sled ? MU_SLED : MU_TIRE, rollDir = new Float64Array(2 * NU);
-  function frictionPass() {
+  function frictionPass(dt) {
     const fh = Math.hypot(frame.f[0], frame.f[2]) || 1;
     let fx = frame.f[0] / fh, fz = frame.f[2] / fh, lx = -fz, lz = fx;
     if (multi) units.forEach((U, u) => { const h = Math.hypot(U.frame.f[0], U.frame.f[2]) || 1; rollDir[2 * u] = U.frame.f[0] / h; rollDir[2 * u + 1] = U.frame.f[2] / h; });
@@ -1410,9 +1460,11 @@ function createImpactSim(cfg) {
         const s = len <= lim ? 1 : lim / len;
         X[i3 + 1] -= s * dy; X[i3 + 2] -= s * dz;
       } else if (kind === KIND_NODE_SURF) {
-        const i3 = 3 * i, nx = cN[k3], nz = cN[k3 + 2];
+        const i3 = 3 * i, nx = cN[k3], nz = cN[k3 + 2], ny = cN[k3 + 1];
         let tx = X[i3] - P[i3], ty = X[i3 + 1] - P[i3 + 1], tz = X[i3 + 2] - P[i3 + 2];
-        const dn = tx * nx + tz * nz; tx -= dn * nx; tz -= dn * nz;
+        if (cJ[k] >= 0) { const sh = world.shapes[cJ[k]]; tx -= sh.vx * dt; tz -= sh.vz * dt; }   // sliding relative to a moving box
+        if (ny) { const dn = tx * nx + ty * ny + tz * nz; tx -= dn * nx; ty -= dn * ny; tz -= dn * nz; }
+        else { const dn = tx * nx + tz * nz; tx -= dn * nx; tz -= dn * nz; }
         const len = Math.hypot(tx, ty, tz), lim = MU_WALL * lam;
         const s = len <= lim ? 1 : lim / len;
         X[i3] -= s * tx; X[i3 + 1] -= s * ty; X[i3 + 2] -= s * tz;
@@ -1830,7 +1882,16 @@ function createImpactSim(cfg) {
     }
     if (staticObs) {
       const d = obstacleSDF(wx, wy, wz, G3);
-      if (d < 0) {
+      if (d < 0 && G3[1]) {
+        // on a box's roof (a bus or tanker in the Destruction mode)
+        pointDisp(b, rx, ry, rz, S7);
+        const nx = G3[0], ny = G3[1], nz = G3[2], pen = Math.min(-d, Math.max(0, MAX_SEPARATION * dt - (S7[0] * nx + S7[1] * ny + S7[2] * nz)));
+        if (pen > 0) {
+          const dl = pen / genInvMass(b, rx, ry, rz, nx, ny, nz);
+          applyCorr(b, rx, ry, rz, dl * nx, dl * ny, dl * nz);
+          addContact(KIND_BODY_SURF, b, -1, nx, ny, nz, dl, rx, ry, rz);
+        }
+      } else if (d < 0) {
         pointDisp(b, rx, ry, rz, S7);
         const pen = Math.min(-d, Math.max(0, MAX_SEPARATION * dt - (S7[0] * G3[0] + S7[2] * G3[2])));
         if (pen > 0) {
@@ -1944,11 +2005,14 @@ function createImpactSim(cfg) {
     st = ring.length ? st / ring.length / 255 * 0.5 : 0;
     for (let q = 0; q < m; q++) { embeddedPos(F.pos[f], emb.idx, 8 * q, emb.t, 3 * q, P3); W[3 * q] = P3[0]; W[3 * q + 1] = P3[1]; W[3 * q + 2] = P3[2]; }
     let hit = -1;
+    const mvW = world && world.moving;   // moving boxes: where they were at that frame
+    if (mvW) placeWorld(world, F.t[f]);
     for (let q = 0; q < m && hit < 0; q++) {
       if (rigid) { if (W[3 * q] > -0.005 && W[3 * q + 1] < RIGID_BARRIER.height) hit = q; }
       else if (staticObs) { if (obstacleSDF(W[3 * q], W[3 * q + 1], W[3 * q + 2], G3, true) < 0.005) hit = q; }
       else if (wall && F.bricks.length && nearBrickFrame(F.bricks[f], W[3 * q], W[3 * q + 1], W[3 * q + 2])) hit = q;
     }
+    if (mvW) placeWorld(world, t);
     if (!(st > pn.limit || hit >= 0)) return null;
     // crack / shatter origin: the contact point, else the pane point nearest the most strained node
     if (hit >= 0) return { cause: 'contact', origin: pts[hit] };
@@ -2146,8 +2210,9 @@ function createImpactSim(cfg) {
     const tracked = e.ekCar + e.eEl + e.peCar + e.ekB + e.peB + e.eBond + Wp + Wfrac + Qf + Whc;
     const entry = {
       carKinetic: e.ekCar, debrisKinetic: e.ekB, elastic: e.eEl + e.eBond, plastic: Wp, fracture: Wfrac,
-      friction: Qf, potential: e.peCar + e.peB, contactSolver: energy0.value - tracked,
+      friction: Qf, potential: e.peCar + e.peB, contactSolver: (world && world.moving ? energy0.value + Wmove : energy0.value) - tracked,
     };
+    if (world && world.moving) entry.pushed = Wmove;
     if (hc) entry.barrier = Whc;
     if (multi) {
       const um = unitMotion();
