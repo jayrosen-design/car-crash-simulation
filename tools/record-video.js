@@ -1,9 +1,11 @@
 /* Records the home page's media from the simulator, in headless Chrome:
  *   media/crash-reel.mp4   the trailer: a minute of the simulations cut to an original rock
  *                          soundtrack (the shots are in tools/trailer.js, the music in
- *                          tools/trailer-music.js)
- *   media/poster.jpg       the video's poster frame
+ *                          tools/trailer-music.js), and crash-reel-mobile.mp4 (9:16)
+ *   media/poster.jpg       the video's poster frame (and poster-mobile.jpg)
  *   media/hero-loop.mp4    the home page's background: the trailer's chorus without titles or sound
+ *                          (and hero-loop-mobile.mp4); recorded with the trailer (video) since
+ *                          the trailer is filmed square and composited like the game trailers
  *   media/race-trailer.mp4 the Race game's trailer (tools/race-trailer.js, recorded from Race.html),
  *   media/race-trailer-mobile.mp4  the same cut in 9:16, and their posters (media/race-poster.jpg,
  *                          media/race-poster-mobile.jpg)
@@ -17,7 +19,7 @@
  * page with Web Audio. Blender encodes the frames and the sound (tools/encode-video.py), so no
  * separate ffmpeg install is needed.
  *   node tools/record-video.js [shots|video|loop|race|destruction|labs] [--chrome <chrome.exe>] [--blender <blender.exe>]
- * The game trailers (race, destruction; tools/trailer-kit.js) also take --work <dir> (keep the takes
+ * The trailers (video, race, destruction; tools/trailer-kit.js) also take --work <dir> (keep the takes
  * there, with events.json), --takes a,b (record only these takes, keeping the others), --edit-only
  * (composite and encode from the takes already in --work), --takes-only, --format desktop|mobile
  * and --no-encode.
@@ -141,17 +143,7 @@ async function renderSoundtrack(b, song) {
   console.log(`soundtrack: ${st.seconds.toFixed(1)} s, ${st.rmsDb.toFixed(1)} dBFS RMS`);
   return Buffer.concat(parts);
 }
-// a poster: one frame, at the video's size
-async function savePoster(b, jpg, out) {
-  const data = fs.readFileSync(jpg).toString('base64');
-  await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
-  await b.send('Page.navigate', { url: 'about:blank' });
-  await sleep(300);
-  await b.ev(`new Promise((r) => { document.body.style.margin = 0; const i = new Image(); i.style.cssText = 'display:block;width:100vw;height:100vh'; i.onload = r; i.src = 'data:image/jpeg;base64,${data}'; document.body.appendChild(i); })`);
-  fs.writeFileSync(out, await b.shot(88));
-}
-
-// a game trailer's poster: the middle of a square take frame, at w x h
+// a trailer's poster: the middle of a square take frame, at w x h
 async function savePosterCrop(b, jpg, out, w, h) {
   const data = fs.readFileSync(jpg).toString('base64');
   await b.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1.5, mobile: false });
@@ -202,6 +194,59 @@ async function gameTrailer(b, key) {
     console.log(`wrote media/${path.basename(out)} (${(fs.statSync(out).size / 1048576).toFixed(1)} MB)`);
   }
   console.log(`${key}: done in ${((Date.now() - t0) / 1000).toFixed(0)} s (work: ${work})`);
+  if (!arg('--work', null)) fs.rmSync(work, { recursive: true, force: true });
+}
+
+// ---------------------------------------------------------------- the simulations' trailer
+// The shots filmed square from the simulator (tools/trailer.js, square: true), then composited with
+// the kit in 16:9 and 9:16; the chorus again with the grade alone is the home page's background.
+async function simTrailer(b) {
+  const t0 = Date.now();
+  const work = arg('--work', null) ? path.resolve(arg('--work')) : fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-sim-'));
+  const takesDir = path.join(work, 'takes'), evFile = path.join(work, 'events.json'), main = path.join(takesDir, 'sim', 'main');
+  let events;
+  if (process.argv.includes('--edit-only')) events = JSON.parse(fs.readFileSync(evFile, 'utf8'));
+  else {
+    fs.rmSync(main, { recursive: true, force: true }); fs.mkdirSync(main, { recursive: true });
+    await b.send('Emulation.setDeviceMetricsOverride', { width: Kit.SQ, height: Kit.SQ, deviceScaleFactor: 1.5, mobile: false });
+    const { status } = await Trailer.record(b, { open: (q) => openSimulator(b, q), framesDir: main, log: console.log, square: true });
+    const captured = fs.readdirSync(main).filter((f) => f.endsWith('.jpg')).map((f) => parseInt(f, 10)).sort((x, y) => x - y);
+    events = { sim: { list: [], frames: Trailer.TOTAL, captured: { main: captured }, status } };
+    fs.writeFileSync(evFile, JSON.stringify(events));
+    console.log(`simulations: ${captured.length} frames filmed in ${((Date.now() - t0) / 1000).toFixed(0)} s -> ${main}`);
+  }
+  if (process.argv.includes('--takes-only')) return;
+  const edit = Trailer.edit();
+  Kit.check(edit, events);
+  const enc = (dir, out, quality, w, h, wav) => execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', dir, out, String(FPS), quality].concat(wav ? ['audio=' + wav] : []).concat(['size=' + w + 'x' + h]), { stdio: 'inherit' });
+  const formats = [['desktop', W, H, ''], ['mobile', H, W, '-mobile']].filter((x) => !arg('--format', null) || arg('--format') === x[0]);
+  const posterJpg = path.join(main, String(Trailer.POSTER).padStart(5, '0') + '.jpg');
+  if (ONLY !== 'loop') {
+    const wav = path.join(work, 'soundtrack.wav');
+    fs.writeFileSync(wav, await renderSoundtrack(b, { bars: Kit.BARS, hits: Kit.musicHits(edit) }));
+    for (const [fmt, w, h, suffix] of formats) {
+      const framesDir = path.join(work, 'frames-' + fmt);
+      fs.rmSync(framesDir, { recursive: true, force: true });
+      await Kit.composite(b, edit, { takesDir, events, outDir: framesDir, workDir: work, log: console.log, w, h, extra: Trailer.extra });
+      await savePosterCrop(b, posterJpg, path.join(MEDIA, 'poster' + suffix + '.jpg'), w, h);
+      if (process.argv.includes('--no-encode')) continue;
+      const out = path.join(MEDIA, 'crash-reel' + suffix + '.mp4');
+      // LOW keeps it small enough to embed in the home page; the titles stay sharp
+      enc(framesDir, out, 'LOW', w, h, wav);
+      console.log(`wrote media/${path.basename(out)} (${(fs.statSync(out).size / 1048576).toFixed(1)} MB)`);
+    }
+  }
+  // the background loop: the chorus, with the grade alone (no titles, readouts or flashes, no sound)
+  for (const [fmt, w, h, suffix] of formats) {
+    const loopDir = path.join(work, 'loop-' + fmt);
+    fs.rmSync(loopDir, { recursive: true, force: true });
+    await Kit.composite(b, edit, { takesDir, events, outDir: loopDir, workDir: work, log: console.log, w, h, extra: Trailer.clean, range: Trailer.LOOP });
+    if (process.argv.includes('--no-encode')) continue;
+    const out = path.join(MEDIA, 'hero-loop' + suffix + '.mp4');
+    enc(loopDir, out, 'LOW', w, h, null);
+    console.log(`wrote media/${path.basename(out)} (${(fs.statSync(out).size / 1048576).toFixed(1)} MB)`);
+  }
+  console.log(`simulations: done in ${((Date.now() - t0) / 1000).toFixed(0)} s (work: ${work})`);
   if (!arg('--work', null)) fs.rmSync(work, { recursive: true, force: true });
 }
 
@@ -262,32 +307,7 @@ async function recordLabShot(b, id, query, tSince, cameraJs) {
       await recordShot(b, '?preset=rigid', 75, `__rec.orbit(-112, 8.2, 3.1, 0.7)`, path.join(MEDIA, 'shot-rigid.jpg'));
       await recordShot(b, '?preset=brick', 170, `__rec.orbit(-52, 6.4, 2.1, 1.4)`, path.join(MEDIA, 'shot-brick.jpg'));
     }
-    if (!ONLY || ONLY === 'video') {
-      const t0 = Date.now();
-      const framesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-frames-'));
-      // drawn at 1920 x 1080 (the same layout at 1.5x) and scaled down when encoded
-      await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1.5, mobile: false });
-      const { frames } = await Trailer.record(b, { open: (q) => openSimulator(b, q), framesDir, log: console.log });
-      console.log(`captured ${frames} frames (${(frames / FPS).toFixed(1)} s of video) in ${((Date.now() - t0) / 1000).toFixed(0)} s -> ${framesDir}`);
-      const wav = path.join(framesDir, 'soundtrack.wav');
-      fs.writeFileSync(wav, await renderSoundtrack(b, { bars: Trailer.BARS, hits: Trailer.musicHits() }));
-      await savePoster(b, path.join(framesDir, 'f' + String(Trailer.POSTER).padStart(5, '0') + '.jpg'), path.join(MEDIA, 'poster.jpg'));
-      // LOW keeps it small enough to embed in the home page; the titles stay sharp
-      execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', framesDir, path.join(MEDIA, 'crash-reel.mp4'), String(FPS), 'LOW', 'audio=' + wav, 'size=' + W + 'x' + H], { stdio: 'inherit' });
-      const mb = fs.statSync(path.join(MEDIA, 'crash-reel.mp4')).size / 1048576;
-      console.log(`wrote media/crash-reel.mp4 (${mb.toFixed(1)} MB)`);
-      fs.rmSync(framesDir, { recursive: true, force: true });
-    }
-    if (!ONLY || ONLY === 'video' || ONLY === 'loop') {
-      // the background loop: the trailer's chorus again, with the colour grade but no titles
-      const loopDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccs-loop-'));
-      await b.send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1.5, mobile: false });
-      const [a, z] = Trailer.LOOP;
-      await Trailer.record(b, { open: (q) => openSimulator(b, q), framesDir: loopDir, log: console.log, only: (s) => s.f >= a && s.f + s.n <= z, clean: true });
-      execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', loopDir, path.join(MEDIA, 'hero-loop.mp4'), String(FPS), 'LOW', 'size=' + W + 'x' + H], { stdio: 'inherit' });
-      console.log(`wrote media/hero-loop.mp4 (${(fs.statSync(path.join(MEDIA, 'hero-loop.mp4')).size / 1048576).toFixed(1)} MB, ${((z - a) / FPS).toFixed(1)} s)`);
-      fs.rmSync(loopDir, { recursive: true, force: true });
-    }
+    if (!ONLY || ONLY === 'video' || ONLY === 'loop') await simTrailer(b);
     for (const key of ['race', 'destruction']) if (!ONLY || ONLY === key) await gameTrailer(b, key);
     if (b.errors.length) { console.log('page errors:\n' + b.errors.join('\n')); process.exitCode = 1; }
   } finally {

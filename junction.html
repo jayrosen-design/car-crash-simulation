@@ -41,7 +41,7 @@
   <div id="select" class="overlay select" hidden>
     <header class="sel-head">
       <p class="eyebrow">Car Crash Simulation · Destruction</p>
-      <h2>Crossroads at dusk</h2>
+      <h2 id="sel-title">Crossroads at dusk</h2>
       <p class="muted">Drive into the busiest junction in town and wreck all you can. Cars, buses and gas tankers pay out; tankers and pumps explode. Boost starts full: spend it on speed or save it for a bigger Crashbreaker. The ramp in the right lane flies you over the traffic.</p>
     </header>
 
@@ -54,7 +54,11 @@
         <h3>Paint · <span id="sel-paint-name"></span></h3>
         <div id="sel-swatches" class="swatches" role="radiogroup" aria-label="Paint"></div>
       </div>
-      <p class="sel-hint">← → change · ↑ ↓ car or paint · or click</p>
+      <div class="sel-row" data-row="2">
+        <h3>Junction</h3>
+        <div id="sel-levels" class="sel-cars sel-levels" role="radiogroup" aria-label="Junction"></div>
+      </div>
+      <p class="sel-hint">← → change · ↑ ↓ car, paint or junction · or click</p>
     </section>
 
     <section class="panel sel-stats" aria-label="Goals">

@@ -35,6 +35,18 @@ const RaceRender = (() => {
     envFrag: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.20,0.15,0.16), vec3(0.85,0.50,0.38), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.22,0.22,0.42), smoothstep(0.05, 0.6, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(1.0,0.6,0.3) * (pow(s, 400.0) * 30.0 + pow(s, 8.0) * 0.5); gl_FragColor = vec4(c, 1.0); }',
   };
 
+  // night (the harbour, the docklands): a moonlit sky with stars and the city's glow on the horizon,
+  // half the windows lit, the street lights doing the work
+  const NIGHT = {
+    sky: 0x070b18, fog: 0x161b2b, fogNear: 60, fogFar: 950, hemiSky: 0x3d4a78, hemiGround: 0x17161d, hemi: 0.62,
+    sun: 0x9db2ff, sunI: 0.75, sunDir: [0.35, 0.55, -0.75], exposure: 1.12, hdr: false, windowGlow: '0.42', windowLit: '0.6',
+    domeFrag: 'uniform vec3 sunDir; varying vec3 vD; float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); } void main(){ float h = max(vD.y, 0.0); vec3 c = mix(vec3(0.10,0.12,0.22), vec3(0.01,0.015,0.05), smoothstep(0.0, 0.6, h)); c += vec3(0.30,0.18,0.10) * (1.0 - smoothstep(0.0, 0.14, h)) * 0.55; vec3 q = floor(vD * 420.0); c += vec3(0.9,0.92,1.0) * step(0.9975, hash(q)) * smoothstep(0.05, 0.3, h) * (0.4 + 0.6 * hash(q + 3.0)); float s = max(dot(vD, sunDir), 0.0); c += vec3(0.85,0.9,1.0) * (smoothstep(0.9993, 0.9996, s) * 1.6 + pow(s, 30.0) * 0.12); c = mix(c, vec3(0.05,0.05,0.08), smoothstep(0.0, -0.05, vD.y)); gl_FragColor = vec4(c, 1.0); }',
+    envFrag: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.05,0.05,0.07), vec3(0.34,0.24,0.18), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.04,0.06,0.14), smoothstep(0.05, 0.5, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(0.7,0.8,1.0) * pow(s, 200.0) * 4.0; gl_FragColor = vec4(c, 1.0); }',
+  };
+  // the look for a level's time of day (both games): dusk, night or day (the street HDRI)
+  const lookFor = (time) => time === 'night' ? Object.assign({}, NIGHT, { lampPools: true, carLights: 4 })
+    : time === 'day' ? { carLights: 1 } : Object.assign({}, DUSK, { lampPools: true, carLights: 3 });
+
   function create(opts) {
     const { level, container } = opts;
     const look = Object.assign({}, LOOK, opts.look);
@@ -104,6 +116,9 @@ const RaceRender = (() => {
     buildRamps(city, level);
     if (level.rails) buildRails(city, level);
     if (look.lampPools) buildLampPools(city, level);
+    if (level.water) buildWater(city, level);
+    if (level.containers && level.containers.length) buildContainers(city, level);
+    if (level.cranes && level.cranes.length) buildCranes(city, level);
     // the deformable car models (player, wrecks) and what breaks off them: raised to the ground's
     // height for a crash on a hill (the crash solver works at height 0), else at 0
     const crashRoot = new T.Group();
@@ -477,6 +492,21 @@ const RaceRender = (() => {
     return TEX.pavers || (TEX.pavers = canvasTex(256, 256, (c, w, h) => { noise(c, w, h, '#a29d95', 18, 10); c.strokeStyle = 'rgba(60,55,50,0.45)'; c.lineWidth = 2; for (let i = 0; i <= 4; i++) { c.beginPath(); c.moveTo(0, i * 64); c.lineTo(w, i * 64); c.stroke(); c.beginPath(); c.moveTo(i * 64, 0); c.lineTo(i * 64, h); c.stroke(); } }));
   }
   function concrete() { return TEX.concrete || (TEX.concrete = canvasTex(256, 256, (c, w, h) => noise(c, w, h, '#8f8c86', 20, 20))); }
+  // a level's open ground (level.ground): 'grass' (the hillside), else concrete
+  function grass() {
+    return TEX.grass || (TEX.grass = canvasTex(256, 256, (c, w, h) => {
+      noise(c, w, h, '#5f7a3c', 26, 30);
+      let s = 4242; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 2600; i++) { const g = 90 + rnd() * 70; c.fillStyle = `rgba(${g * 0.55 | 0},${g},${g * 0.35 | 0},0.5)`; c.fillRect(rnd() * w, rnd() * h, 1, 2 + rnd() * 3); }
+    }));
+  }
+  // uvMetres: how many metres the mesh's UVs span (surface()), rep: the canvas texture's repeat
+  const groundMaps = (level, uvMetres, rep) => {
+    if (level.ground === 'grass') { const t = grass().clone(); t.needsUpdate = true; t.repeat.set(rep, rep); return { map: t, color: 0xffffff }; }
+    let maps = surface('concrete', uvMetres);
+    if (!maps) { const tex = concrete().clone(); tex.needsUpdate = true; tex.repeat.set(rep, rep); maps = { map: tex }; }
+    return Object.assign({ color: 0x9a958c }, maps);
+  };
 
   // ---------------------------------------------------------------- ground
   // the height of the hills (level.terrain), and the ground's up direction there
@@ -489,9 +519,7 @@ const RaceRender = (() => {
   function buildGround(group, level) {
     const g = new T.PlaneGeometry(6000, 6000);
     g.rotateX(-Math.PI / 2);
-    let maps = surface('concrete', 6000);
-    if (!maps) { const tex = concrete().clone(); tex.needsUpdate = true; tex.repeat.set(600, 600); maps = { map: tex }; }
-    const m = new T.Mesh(g, new T.MeshStandardMaterial({ ...maps, color: 0x9a958c, roughness: 0.95 }));
+    const m = new T.Mesh(g, new T.MeshStandardMaterial({ ...groundMaps(level, 6000, 600), roughness: 0.95 }));
     m.position.y = -0.15; m.receiveShadow = true;
     group.add(m);
     // over the hills, a grid that follows the ground (the flat plane lies just below it elsewhere)
@@ -509,9 +537,7 @@ const RaceRender = (() => {
       p.setY(i, groundY(level, x, z) - (under ? 0.3 : 0.03)); uv.setXY(i, x / 10, z / 10);
     }
     tg.computeVertexNormals();
-    let hm = surface('concrete', 10);
-    if (!hm) { const tex = concrete().clone(); tex.needsUpdate = true; hm = { map: tex }; }
-    const hills = new T.Mesh(tg, new T.MeshStandardMaterial({ ...hm, color: 0x9a958c, roughness: 0.95 }));
+    const hills = new T.Mesh(tg, new T.MeshStandardMaterial({ ...groundMaps(level, 10, 1), roughness: 0.95 }));
     hills.receiveShadow = true;
     group.add(hills);
   }
@@ -787,6 +813,63 @@ float winMask; float frameMask; float litMask;`)
     im.castShadow = shadow; im.receiveShadow = true;
     return im;
   }
+  // ---------------------------------------------------------------- the harbour (level.water, containers, cranes)
+  // the water beyond the quay: dark, with a soft sheen and a ripple normal map (a glossier one
+  // spreads the moon's highlight over the whole bay at grazing angles)
+  function buildWater(group, level) {
+    const ripple = canvasTex(256, 256, (c, w, h) => {
+      const id = c.createImageData(w, h), d = id.data;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const a = Math.sin(x * 0.19 + Math.sin(y * 0.07) * 2) * 0.5 + Math.sin(y * 0.23 + x * 0.05) * 0.5, b = Math.cos(x * 0.11 - y * 0.17) * 0.5, p = 4 * (y * w + x);
+        d[p] = 128 + a * 50; d[p + 1] = 128 + b * 50; d[p + 2] = 255; d[p + 3] = 255;
+      }
+      c.putImageData(id, 0, 0);
+    }, [400, 300]);
+    ripple.colorSpace = T.NoColorSpace;
+    const g = new T.PlaneGeometry(4000, 3000); g.rotateX(-Math.PI / 2); g.translate(200, 0, level.water.z + (level.water.north ? 1500 : -1500));
+    const water = new T.Mesh(g, new T.MeshStandardMaterial({ color: 0x06121e, roughness: 0.62, metalness: 0, normalMap: ripple, normalScale: new T.Vector2(0.5, 0.5), envMapIntensity: 0.6 }));
+    water.position.y = -0.05; water.receiveShadow = true;
+    group.add(water);
+    // the quay's edge: a concrete lip with yellow bollards
+    const edge = new T.Mesh(new T.BoxGeometry(4000, 0.5, 1.2), new T.MeshStandardMaterial({ color: 0x8c8880, roughness: 0.9 }));
+    edge.position.set(200, 0.1, level.water.z + (level.water.north ? -0.6 : 0.6)); edge.receiveShadow = true; group.add(edge);
+  }
+  // shipping containers, stacked: corrugated sides, one instanced set, coloured per container
+  function buildContainers(group, level) {
+    const tex = canvasTex(256, 64, (c, w, h) => {
+      for (let x = 0; x < w; x += 8) { const gr = c.createLinearGradient(x, 0, x + 8, 0); gr.addColorStop(0, '#b8b8b8'); gr.addColorStop(0.5, '#ffffff'); gr.addColorStop(1, '#9c9c9c'); c.fillStyle = gr; c.fillRect(x, 0, 8, h); }
+      c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(0, 0, w, 3); c.fillRect(0, h - 3, w, 3); c.fillRect(0, 0, 3, h); c.fillRect(w - 3, 0, 3, h);
+      c.fillStyle = 'rgba(255,255,255,0.7)'; c.font = 'bold 14px sans-serif'; c.fillText('CCSU 418290', 18, 24);
+    });
+    const geo = new T.BoxGeometry(12.2, 2.6, 2.44); geo.translate(0, 1.3, 0);
+    const im = instanced(geo, new T.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.35 }), level.containers,
+      (o, m) => m.makeRotationY(-o.angle).setPosition(o.x, groundY(level, o.x, o.z) + o.y, o.z));
+    const PAL = [0xa23b2a, 0x1f5f9e, 0x2f7a46, 0xd47a1c, 0xd9d6cf, 0x6b6f75];
+    level.containers.forEach((o, i) => im.setColorAt(i, new T.Color(PAL[o.color % PAL.length])));
+    im.userData.occluder = true;
+    group.add(im);
+  }
+  // ship-to-shore gantry cranes on the quay's edge: legs, a cross-beam, the boom out over the
+  // water and back over the quay, a red light at the top (glow layer)
+  function buildCranes(group, level) {
+    const steel = new T.MeshStandardMaterial({ color: 0x2c5f8f, roughness: 0.55, metalness: 0.5 });
+    const white = new T.MeshStandardMaterial({ color: 0xdcdcd6, roughness: 0.6, metalness: 0.3 });
+    const red = new T.MeshStandardMaterial({ color: 0xff2a1a, emissive: 0xff2a1a, emissiveIntensity: 3 });
+    for (const c of level.cranes) {
+      const g = new T.Group(), part = (w, h, d, x, y, z, m) => { const b = new T.Mesh(new T.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; b.userData.occluder = true; g.add(b); };
+      for (const lx of [-9, 9]) for (const lz of [-7, 7]) part(1.2, 40, 1.2, lx, 20, lz, steel);
+      for (const lz of [-7, 7]) part(19.2, 1.4, 1.4, 0, 40, lz, steel);
+      for (const lx of [-9, 9]) part(1.4, 1.4, 15.2, lx, 30, 0, steel);
+      part(4, 2.6, 110, 0, 44, -22, white);        // the boom: 70 m out over the water, 40 m back
+      part(6, 8, 8, 0, 49, 4, steel);               // the machinery house
+      part(2, 12, 2, 0, 56, -4, steel);              // the A-frame top
+      for (const z of [-75, 32]) { const l = new T.Mesh(new T.SphereGeometry(0.6, 8, 6), red); l.position.set(0, 46, z); l.layers.enable(3); g.add(l); }
+      const top = new T.Mesh(new T.SphereGeometry(0.7, 8, 6), red); top.position.set(0, 62.5, -4); top.layers.enable(3); g.add(top);
+      g.position.set(c.x, groundY(level, c.x, c.z), c.z); g.rotation.y = -c.angle;
+      group.add(g);
+    }
+  }
+
   function buildFurniture(group, level) {
     // on the ground at (x, z) facing h (street lights and signal posts are props: see prepareProps)
     const at = (x, z, h) => new T.Matrix4().makeRotationY(-h).setPosition(x, groundY(level, x, z), z);
@@ -794,11 +877,14 @@ float winMask; float frameMask; float litMask;`)
     const bark = new T.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.95 });
     const leaf = leafMaterial();
     const trunk = new T.CylinderGeometry(0.12, 0.2, 3.2, 7); trunk.translate(0, 1.6, 0);
-    const crown = treeCrown();
     group.add(instanced(trunk, bark, level.trees, (o, m) => m.copy(at(o.x, o.z, o.seed)).scale(new T.Vector3(o.size, o.size, o.size))));
-    const crowns = instanced(crown, leaf, level.trees, (o, m) => m.copy(at(o.x, o.z, o.seed)).scale(new T.Vector3(o.size, o.size, o.size)));
-    level.trees.forEach((o, i) => crowns.setColorAt(i, new T.Color().setHSL(0.26 + 0.03 * Math.sin(o.seed * 7.1), 0.5, 0.26 + 0.04 * Math.cos(o.seed * 3.3))));
-    group.add(crowns);
+    // the street's trees in full; the parks' (away from the road, hundreds of them) coarser
+    for (const [list, detail] of [[level.trees.filter((o) => !o.park), 2], [level.trees.filter((o) => o.park), 1]]) {
+      if (!list.length) continue;
+      const crowns = instanced(treeCrown(detail), leaf, list, (o, m) => m.copy(at(o.x, o.z, o.seed)).scale(new T.Vector3(o.size, o.size, o.size)));
+      list.forEach((o, i) => crowns.setColorAt(i, new T.Color().setHSL(0.26 + 0.03 * Math.sin(o.seed * 7.1), 0.5, 0.26 + 0.04 * Math.cos(o.seed * 3.3))));
+      group.add(crowns);
+    }
     // barriers across the side streets: red and white concrete blocks
     const block = new T.BoxGeometry(1.9, 1.0, 0.6); block.translate(0, 0.5, 0);
     const blocks = [];
@@ -831,7 +917,7 @@ float lnoise(vec3 p) {
 
   // a tree's crown: a cluster of lumpy blobs (the lumps a function of position, so the faces stay
   // joined), smooth normals, darker underneath and inside
-  function treeCrown() {
+  function treeCrown(detail = 2) {
     let s = 9;
     const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
     const lump = (x, y, z) => 1 + 0.12 * Math.sin(x * 3.1 + y * 1.7) * Math.cos(z * 2.9 - y * 2.3) + 0.06 * Math.sin(x * 7.3 - z * 6.1 + y * 5.2);
@@ -839,7 +925,7 @@ float lnoise(vec3 p) {
     for (let b = 0; b < 7; b++) {
       const rad = b === 0 ? 1.55 : 0.85 + r() * 0.55, a = r() * 6.283, d = b === 0 ? 0 : 0.75 + r() * 0.55;
       const cx = Math.cos(a) * d, cy = 4.1 + (b === 0 ? 0.3 : (r() - 0.35) * 1.3), cz = Math.sin(a) * d;
-      const g = new T.IcosahedronGeometry(rad, 2), p = g.attributes.position, n = new Float32Array(p.count * 3), c = new Float32Array(p.count * 3);
+      const g = new T.IcosahedronGeometry(rad, detail), p = g.attributes.position, n = new Float32Array(p.count * 3), c = new Float32Array(p.count * 3);
       for (let i = 0; i < p.count; i++) {
         const x = p.getX(i), y = p.getY(i), z = p.getZ(i), k = lump(x + cx, y + cy, z + cz), len = Math.hypot(x, y, z);
         p.setXYZ(i, cx + x * k, cy + y * k * 0.85, cz + z * k);
@@ -1001,5 +1087,5 @@ float lnoise(vec3 p) {
     return { body: bodyMeshes, wheelMeshes, wheels, paint: bodyMeshes.find(m => m.instanceColor), used: 0 };
   }
 
-  return { create, DUSK };
+  return { create, DUSK, NIGHT, lookFor };
 })();

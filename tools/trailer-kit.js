@@ -121,7 +121,7 @@ function overlayAt(edit, f, events, extra) {
   if (f >= TOTAL - 18) o.black = Math.max(o.black || 0, (f - (TOTAL - 18)) / 17);
   return o;
 }
-// what the music needs: impacts, whooshes, explosions, the title hits
+// what the music needs: impacts (with glass or not), whooshes, explosions, ticks, the title hits
 function musicHits(edit) {
   const hits = [];
   for (const s of edit.E) {
@@ -129,9 +129,10 @@ function musicHits(edit) {
     if (s.hit === 'crash') hits.push({ t: t + (s.hitAt || 0) / FPS, kind: 'impact', glass: true, v: s.hitV || 1 });
     if (s.hit === 'go') hits.push({ t, kind: 'impact', v: (s.hitV || 1) * 0.7 });
     if (s.hit === 'boom') hits.push({ t: t + (s.hitAt || 0) / FPS, kind: 'boom', v: s.hitV || 1 });
+    if (s.hit === 'glass' || s.hit === 'impact') hits.push({ t: t + (s.hitAt || 0) / FPS, kind: 'impact', glass: s.hit === 'glass', v: s.hitV || 1 });
     if (s.sfx === 'card') hits.push({ t, kind: 'card' });
     if (s.sfx === 'whoosh' || s.wipe) hits.push({ t, kind: 'whoosh', dur: 0.35 });
-    if (s.sfx === 'cash') hits.push({ t, kind: 'tick', v: 0.8 });
+    if (s.sfx === 'cash' || s.sfx === 'tick') hits.push({ t, kind: 'tick', v: 0.8 });
   }
   for (const [f, , sfx] of edit.TITLES) hits.push({ t: f / FPS, kind: sfx });
   return hits;
@@ -197,7 +198,7 @@ const COMPOSITOR = `<!doctype html><html><head><meta charset="utf-8">
   #card { inset: 0; display: none; place-items: center; text-align: center; }
   #card .in { padding: 0 6vmin; }
   #card small { display: inline-block; font: italic 800 3.3vmin/1 "Barlow Condensed", sans-serif; letter-spacing: 0.28em; text-transform: uppercase; color: var(--ink); background: var(--hz); padding: 0.8vmin 2.2vmin 0.6vmin 2.6vmin; margin-bottom: 2.6vmin; clip-path: polygon(1.2vmin 0, 100% 0, calc(100% - 1.2vmin) 100%, 0 100%); }
-  #card h1 { margin: 0; font: italic 900 17vmin/0.9 "Barlow Condensed", sans-serif; text-transform: uppercase; text-shadow: 0 0.8vmin 3.4vmin rgba(0,0,0,0.75); }
+  #card h1 { margin: 0; font: italic 900 17vmin/0.9 "Barlow Condensed", sans-serif; text-transform: uppercase; text-shadow: 0 0.8vmin 3.4vmin rgba(0,0,0,0.75); white-space: nowrap; display: inline-block; }
   #card h1 em { font-style: italic; color: var(--hz); }
   #card.over .in { margin-top: 38vmin; } #card.over h1 { font-size: 12.5vmin; }
   @media (orientation: portrait) { #card.over .in { margin-top: 70vh; } #card h1 { font-size: 19vmin; } }
@@ -244,7 +245,7 @@ const COMPOSITOR = `<!doctype html><html><head><meta charset="utf-8">
     const wp = $('#wipe'); wp.style.display = s.wipe !== undefined ? 'block' : 'none';
     if (s.wipe !== undefined) { const x = -40 + 180 * s.wipe; wp.children[0].style.left = x + '%'; wp.children[1].style.left = (x + 24) + '%'; }
     const im = $('#impact'); im.style.display = s.impact ? 'block' : 'none';
-    if (s.impact) { im.querySelector('b').innerHTML = '<i></i>IMPACT ' + s.impact.kmh + ' KM/H'; im.querySelector('span').textContent = s.impact.label || 'FULL CRASH SOLVER'; }
+    if (s.impact) { im.querySelector('b').innerHTML = '<i></i>' + esc(s.impact.text || ('IMPACT ' + s.impact.kmh + ' KM/H')); im.querySelector('span').textContent = s.impact.label || 'FULL CRASH SOLVER'; }
     const sp = $('#speed'); sp.style.display = s.speed !== undefined && !s.card ? 'block' : 'none';
     if (s.speed !== undefined) sp.querySelector('b').textContent = s.speed;
     const sc = $('#score'); sc.style.display = s.score && !(s.card && !s.card.over) ? 'block' : 'none';
@@ -269,6 +270,10 @@ const COMPOSITOR = `<!doctype html><html><head><meta charset="utf-8">
           : (c.tag ? '<small>' + esc(c.tag) + '</small><br>' : '') + '<h1>' + c.title + '</h1>';
       }
       const inn = cd.querySelector('.in');
+      // a title too wide for the frame (a long word in 9:16) is scaled down to fit, with room for
+      // the end titles' slow push in (up to 13%)
+      const h1 = inn.querySelector('h1');
+      if (h1 && !h1.dataset.fit) { h1.dataset.fit = 1; h1.style.fontSize = ''; const max = innerWidth * 0.8, wd = h1.scrollWidth; if (wd > max) h1.style.fontSize = (parseFloat(getComputedStyle(h1).fontSize) * max / wd).toFixed(1) + 'px'; }
       slam(inn, c.kind === 'title' ? c.titleAge : c.age, c.kind === 'title' ? 0.0008 : 0.0016);
       if (c.kind === 'title') for (const el of inn.querySelectorAll('p, .cta, .url')) slam(el, c.age, 0);
     } else cardKey = null;
@@ -281,8 +286,9 @@ const COMPOSITOR = `<!doctype html><html><head><meta charset="utf-8">
   });
 </script></body></html>`;
 
-// global frames -> composited JPEGs in outDir, at w x h CSS px (x1.5); extra: the game's overlay parts
-async function composite(b, edit, { takesDir, events, outDir, workDir, log, w, h, extra }) {
+// global frames -> composited JPEGs in outDir, at w x h CSS px (x1.5); extra: the game's overlay parts;
+// range: [from, to) only those frames, numbered from 0 (the home page's background loop)
+async function composite(b, edit, { takesDir, events, outDir, workDir, log, w, h, extra, range }) {
   const page = path.join(workDir, 'compositor.html');
   fs.writeFileSync(page, COMPOSITOR);
   const url = (p) => 'file:///' + p.split(path.sep).join('/');
@@ -291,11 +297,12 @@ async function composite(b, edit, { takesDir, events, outDir, workDir, log, w, h
   await sleep(1500);
   await b.ev('document.fonts.ready.then(() => true)');
   fs.mkdirSync(outDir, { recursive: true });
-  for (let f = 0; f < TOTAL; f++) {
+  const [f0, f1] = range || [0, TOTAL];
+  for (let f = f0; f < f1; f++) {
     const s = sourceOf(edit, f, events), o = overlayAt(edit, f, events, extra);
     const file = s ? url(path.join(takesDir, s.take, s.cam, String(s.n).padStart(5, '0') + '.jpg')) : null;
     await b.ev(`show(${JSON.stringify(file)}, ${JSON.stringify(o)})`);
-    fs.writeFileSync(path.join(outDir, 'f' + String(f).padStart(5, '0') + '.jpg'), await b.shot(92));
+    fs.writeFileSync(path.join(outDir, 'f' + String(f - f0).padStart(5, '0') + '.jpg'), await b.shot(92));
     if (f % 300 === 299) log(`composited ${f + 1} / ${TOTAL} (${w}x${h})`);
   }
 }

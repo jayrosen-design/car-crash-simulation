@@ -11,10 +11,15 @@
  * the camera, and lays the titles, the colour grade and the flashes over the page before each
  * capture. Approach shots are taken while the cars drive in: every approach frame is drawn once
  * per approach camera, and the frames that end at contact are kept.
+ *
+ * square: true (record-video.js) films raw frames instead, square (1920 x 1920) with each camera's
+ * field of view widened (tools/trailer-kit.js squareFov), with the replay's clock and speed per
+ * frame; the kit's compositor then lays the website's look over them in 16:9 and in 9:16 (edit()).
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const Kit = require('./trailer-kit.js');
 
 const FPS = 30, BEAT = 12, BAR = 48, BARS = 37.5, TOTAL = BARS * BAR;
 const F = (bar, beat = 0) => Math.round(bar * BAR + beat * BEAT);
@@ -350,12 +355,19 @@ function speedAt(sh, i) {
 // where frame f goes as f<00000>.jpg, log: progress output, only: record just the shots it
 // accepts, clean: the colour grade alone, without titles, readouts or flashes (the home page's
 // background loop).
-async function record(b, { open, framesDir, log, only, clean }) {
-  const overlay = clean ? (f) => S.find((x) => f >= x.f && f < x.f + x.n).kind === 'card' ? { black: 1 } : { grade: true } : overlayAt;
+async function record(b, { open, framesDir, log, only, clean, square }) {
+  const overlay = square ? () => ({}) : clean ? (f) => S.find((x) => f >= x.f && f < x.f + x.n).kind === 'card' ? { black: 1 } : { grade: true } : overlayAt;
   const DT = 1000 / FPS;
-  const file = (f) => path.join(framesDir, 'f' + String(f).padStart(5, '0') + '.jpg');
-  const capture = async (f) => { await b.ev(`__tr.frame(${JSON.stringify(overlay(f))})`); fs.writeFileSync(file(f), await b.shot(93)); };
-  const camJs = (c, k) => `__tr.cam = ${JSON.stringify(c)}; __tr.k = ${k.toFixed(4)};`;
+  const file = (f) => path.join(framesDir, (square ? '' : 'f') + String(f).padStart(5, '0') + '.jpg');
+  // square: the replay's time after contact and speed per frame (the compositor's readout)
+  const status = [];
+  const capture = async (f) => {
+    await b.ev(`__tr.frame(${JSON.stringify(overlay(f))})`);
+    fs.writeFileSync(file(f), await b.shot(93));
+    if (square) status[f] = await b.ev(`__tr.play ? { ms: +((__tr.play.t - __tr.play.t0) * 1000).toFixed(1) } : {}`);
+  };
+  const sq = (c) => (square && c && c.fov !== undefined ? Object.assign({}, c, { fov: Array.isArray(c.fov) ? c.fov.map(Kit.squareFov) : Kit.squareFov(c.fov) }) : c);
+  const camJs = (c, k) => `__tr.cam = ${JSON.stringify(sq(c))}; __tr.k = ${k.toFixed(4)};`;
   for (const s of S) if (s.f + s.n > TOTAL || s.f < 0) throw new Error('shot outside the trailer at frame ' + s.f);
   const owner = new Int32Array(TOTAL).fill(-1);
   S.forEach((s, i) => { for (let f = s.f; f < s.f + s.n; f++) { if (owner[f] >= 0) throw new Error('shots overlap at frame ' + f); owner[f] = i; } });
@@ -372,6 +384,8 @@ async function record(b, { open, framesDir, log, only, clean }) {
     const t0 = Date.now();
     await open(query);
     await b.ev(OVERLAY);
+    // raw frames: no letterbox and no grade in the page (the compositor adds its own)
+    if (square) await b.ev(`(() => { const c = document.createElement('style'); c.textContent = 'body.trailer #view canvas { filter: none !important; } #tr-bars { display: none !important; }'; document.head.appendChild(c); })()`);
     // the approach, drawn once per approach camera; the frames are numbered back from contact
     const approach = shots.filter((s) => s.kind === 'approach');
     const tmp = fs.mkdtempSync(path.join(framesDir, 'ap-'));
@@ -382,7 +396,7 @@ async function record(b, { open, framesDir, log, only, clean }) {
       if (st === 'approach') {
         for (let c = 0; c < approach.length; c++) {
           await b.ev(camJs(approach[c].cam, 0) + (c === 0 ? `__rec.step(${DT})` : 'Scene3D.render(0, false, 0)'));
-          await b.ev(`__tr.frame(${JSON.stringify({ grade: true })})`);
+          await b.ev(`__tr.frame(${JSON.stringify(square ? {} : { grade: true })})`);
           fs.writeFileSync(path.join(tmp, `${c}-${n}.jpg`), await b.shot(93));
         }
         if (!approach.length) await b.ev(`__rec.step(${DT})`);
@@ -407,7 +421,7 @@ async function record(b, { open, framesDir, log, only, clean }) {
     const replays = shots.filter((s) => s.kind === 'replay').concat(shots.filter((s) => s.kind === 'after').sort((x, y) => x.after - y.after));
     let afterAt = -1;
     for (const s of replays) {
-      await b.ev(`Scene3D.setStrainMode(${!!s.strain}); Scene3D.setXray(${!!s.xray}); __tr.anchor = null; __tr.cam = ${JSON.stringify(s.cam)}; __tr.k = 0;`);
+      await b.ev(`Scene3D.setStrainMode(${!!s.strain}); Scene3D.setXray(${!!s.xray}); __tr.anchor = null; __tr.cam = ${JSON.stringify(sq(s.cam))}; __tr.k = 0;`);
       if (s.kind === 'replay') {
         const from = info.t0 + s.from / 1000;
         if (s.from > 4) {   // run in from a little earlier, so sparks and glass already fly
@@ -418,27 +432,57 @@ async function record(b, { open, framesDir, log, only, clean }) {
         afterAt = -1;
       } else {
         if (afterAt < 0) { await b.ev(`__tr.seek(${info.tEnd}); __tr.play.after = 0`); afterAt = 0; }
-        while (afterAt < s.after - 1e-6) { await b.ev(`__tr.cam = ${JSON.stringify(s.cam)}; __rec.step(${DT})`); afterAt += 1 / FPS; }
+        while (afterAt < s.after - 1e-6) { await b.ev(`__tr.cam = ${JSON.stringify(sq(s.cam))}; __rec.step(${DT})`); afterAt += 1 / FPS; }
       }
       for (let j = 0; j < s.n; j++) {
         const pre = s.kind === 'replay' ? `__tr.speed(${speedAt(s, j)});` : '';
         await b.ev(`${pre} ${camJs(s.cam, s.n > 1 ? j / (s.n - 1) : 0)} __rec.step(${DT})`);
         if (s.kind === 'after') afterAt += 1 / FPS;
         await capture(s.f + j);
+        if (square && s.kind === 'replay') status[s.f + j].speed = speedAt(s, j);
       }
     }
     await b.ev(`Scene3D.setStrainMode(false); Scene3D.setXray(false)`);
     log(`${scene}: ${shots.length} shots (${shots.reduce((a, s) => a + s.n, 0)} frames, approach ${n} frames) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   }
-  // the title cards on black
-  for (const s of S.filter((x) => x.kind === 'card' && want(x))) for (let j = 0; j < s.n; j++) await capture(s.f + j);
-  if (!only) for (let f = 0; f < TOTAL; f++) if (!fs.existsSync(file(f))) throw new Error('frame ' + f + ' was not recorded');
-  return { frames: TOTAL, fps: FPS };
+  // the title cards on black (square: the compositor draws them)
+  if (!square) for (const s of S.filter((x) => x.kind === 'card' && want(x))) for (let j = 0; j < s.n; j++) await capture(s.f + j);
+  const isCard = (f) => S.find((x) => f >= x.f && f < x.f + x.n).kind === 'card';
+  if (!only) for (let f = 0; f < TOTAL; f++) if (!(square && isCard(f)) && !fs.existsSync(file(f))) throw new Error('frame ' + f + ' was not recorded');
+  return { frames: TOTAL, fps: FPS, status };
 }
+
+// ---------------------------------------------------------------- the edit for the kit's compositor
+// The same shots over the square frames (take 'sim', camera 'main', frame = the trailer's frame),
+// with the website's look: logo, lower thirds, slammed titles, the replay clock as a readout.
+function edit() {
+  const E = S.map((s) => {
+    const e = { f: s.f, n: s.n, sfx: s.sfx, hit: s.hit, hitV: s.hitV, dim: s.dim, lower: s.lower, hud: s.hud };
+    if (s.kind === 'card') { if (s.card) e.card = s.card; }
+    else { e.src = { take: 'sim', cam: 'main', ref: 'abs', off: s.f }; if (s.card) e.card = s.card; }
+    return e;
+  });
+  const KIT_TITLES = [
+    [F(34), { kind: 'title', title: 'Simulator', tag: 'Real physics · real crashes' }, 'title'],
+    [F(35), { kind: 'title', title: 'Simulator', tag: 'Eight crash tests · bullet-time · WebGPU' }, 'card'],
+    [F(36), { kind: 'title', title: 'Simulator', tag: 'Play free in your browser', cta: 'Play now', url: 'car-crash-simulation.vercel.app' }, 'title'],
+  ];
+  return { E, TITLES: KIT_TITLES };
+}
+// the readout: the time after contact and the replay speed, from the frame's status
+function extra(o, s, f, src) {
+  if (!src || !s.hud || s.card) return;
+  const st = src.status;
+  if (st.ms === undefined) return;
+  const sp = st.speed || 1;
+  o.impact = { text: 'T ' + (st.ms < 0 ? '−' : '+') + Math.abs(st.ms).toFixed(1).padStart(6, '0') + ' MS', label: sp >= 1 ? sp.toFixed(0) + '× SPEED' : '1/' + Math.round(1 / sp) + '× SPEED' };
+}
+// the background loop: the picture and the grade alone
+function clean(o) { for (const k of Object.keys(o)) if (k !== 'grade' && k !== 'black') delete o[k]; o.logo = false; }
 
 // the poster: the brick wall bursting, from the wide shot
 const POSTER = F(18) + 16;
 // the home page's background loop (media/hero-loop.mp4): the chorus, recorded clean
 const LOOP = [F(16), F(24)];
 
-module.exports = { record, musicHits, BARS, FPS, TOTAL, POSTER, LOOP, SCENES, S, overlayAt };
+module.exports = { record, musicHits, edit, extra, clean, BARS, FPS, TOTAL, POSTER, LOOP, SCENES, S, overlayAt };

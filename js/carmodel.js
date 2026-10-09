@@ -873,5 +873,7 @@ gl_Position = projectionMatrix * mvPosition;`);
 
   // crumple shading for another mesh (the procedural lab car): its geometry needs aRest (rest
   // position), aStrain (plastic strain, 1 = 50%) and aComp (cell compression); uniforms: uStrainMode, uCrumple
-  return { create, environment, crumpleMaterial: patchFrozen, CRUMPLE_DEPTH };
+  // a page with its own sky (the simulator's) hands its reflection map to the models made after
+  const useEnvironment = (tex) => { envTex = tex; };
+  return { create, environment, useEnvironment, crumpleMaterial: patchFrozen, CRUMPLE_DEPTH };
 })();

@@ -269,7 +269,11 @@ body.touch .overlay:not(.select) { padding-top: 56px; }
         <h3>Paint · <span id="sel-paint-name"></span></h3>
         <div id="sel-swatches" class="swatches" role="radiogroup" aria-label="Paint"></div>
       </div>
-      <p class="sel-hint">← → change · ↑ ↓ car or paint · or click</p>
+      <div class="sel-row" data-row="2">
+        <h3>Track</h3>
+        <div id="sel-levels" class="sel-cars sel-levels" role="radiogroup" aria-label="Track"></div>
+      </div>
+      <p class="sel-hint">← → change · ↑ ↓ car, paint or track · or click</p>
     </section>
 
     <section class="panel sel-stats" aria-label="Performance">
@@ -4817,6 +4821,10 @@ if (typeof window !== 'undefined') window.CrashGPU = CrashGPU;
  * (cos h, sin h); a lateral offset l is measured to the right of the circuit's direction, along
  * (-sin h, cos h). Curvature k = dh/ds, positive turning right.
  *
+ * Three levels (LEVELS): the downtown circuit at dusk, the harbour at night (flat, long straights,
+ * low warehouses) and the hillside at noon (sweeping bends over big hills, low houses, parks). Each
+ * sets the corners, hills, ramps, how the buildings grow and the time of day (look, for render.js).
+ *
  * DOM-free: global CrashLevel in the browser, module.exports in Node.
  */
 const CrashLevel = (() => {
@@ -4889,15 +4897,40 @@ const CrashLevel = (() => {
   }
   function norm(x, z) { const l = Math.hypot(x, z) || 1; return [x / l, z / l]; }
 
+  // ---------------------------------------------------------------- the levels
+  // corners: [x, z, radius] in race order (the start on the first straight); hills: [x, z, height,
+  // spread]; ramps: [s, up, top, down, height] on straights off the hills; heights: how tall the
+  // buildings grow (base + rand, up to tall more toward centre within radius, spike for a few);
+  // openLots: the share of back lots left open (parks: trees in them); skyline: the distant ring's
+  // radius and tallest; look: the time of day (render.js); ground: what the open ground is (render.js);
+  // quay: the harbour's water starts south of this z, with container stacks and cranes on the quay
+  const LEVELS = {
+    // a lap of about 1.47 km: three laps take about 3 minutes at race pace
+    downtown: { name: 'Downtown at dusk', seed: 20261007, look: 'dusk',
+      corners: [[0, 0, 34], [480, 0, 30], [480, 215, 58], [338, 364, 140], [158, 364, 46], [0, 205, 60]],
+      hills: [[480, 112, 6, 36], [416, 300, 4, 40], [0, 112, 5, 34]],
+      ramps: [[215, 12, 2, 8, 1.4], [998, 11, 2, 8, 1.3], [1215, 12, 2, 8, 1.5]],
+      heights: { base: 9, rand: 14, tall: [40, 95], spike: 30, centre: [440, 185], radius: 520 }, openLots: 0.12, skyline: [820, 160] },
+    // flat docks: two long straights joined by tight corners and a chicane; low sheds and warehouses
+    harbour: { name: 'Harbour at night', seed: 7311, look: 'night', quay: -64, ground: 'asphalt',
+      corners: [[0, 0, 36], [560, 0, 34], [560, 170, 30], [430, 250, 40], [300, 330, 70], [40, 330, 36], [-60, 190, 60]],
+      hills: [],
+      ramps: [[230, 12, 2, 8, 1.5], [820, 12, 2, 8, 1.4], [1100, 12, 2, 8, 1.4]],
+      heights: { base: 7, rand: 9, tall: [8, 22], spike: 14, centre: [280, 160], radius: 400 }, openLots: 0.3, skyline: [900, 70] },
+    // a fast loop round a hillside: big hills, sweeping bends, low houses and parks under a high sun
+    hillside: { name: 'Hillside at noon', seed: 4471, look: 'day', parks: true, ground: 'grass',
+      corners: [[0, 0, 60], [420, -40, 110], [640, 140, 90], [560, 400, 120], [240, 450, 80], [-40, 260, 90]],
+      hills: [[540, 30, 9, 55], [620, 290, 7, 60], [360, 470, 6, 50], [-60, 120, 8, 50]],
+      ramps: [[220, 12, 2, 8, 1.5], [1380, 12, 2, 8, 1.4]],
+      heights: { base: 6, rand: 7, tall: [6, 18], spike: 10, centre: [300, 200], radius: 300 }, openLots: 0.45, skyline: [900, 45] },
+  };
+
   // ---------------------------------------------------------------- the level
-  /* opts: { seed } -> the level (see the return value at the end) */
+  /* opts: { level (a LEVELS key, default downtown), seed } -> the level (see the return value at the end) */
   function build(opts = {}) {
-    const R = rng(opts.seed || 20261007);
-    // the street corners (m) and their radii, in race order; the start is on the first straight
-    // (a lap of about 1.47 km: three laps take about 3 minutes at race pace)
-    const corners = [
-      [0, 0, 34], [480, 0, 30], [480, 215, 58], [338, 364, 140], [158, 364, 46], [0, 205, 60],
-    ];
+    const levelKey = LEVELS[opts.level] ? opts.level : 'downtown', D = LEVELS[levelKey];
+    const R = rng(opts.seed || D.seed);
+    const corners = D.corners;
     const C = buildCircuit(corners);
     const L = C.length;
     // grid of circuit samples, for nearest-point queries
@@ -4946,11 +4979,11 @@ const CrashLevel = (() => {
     // Rolling hills: smooth bumps on the second and last straights and over the sweeping bend; the
     // first straight, its start and grid stay flat. Everything stands on this ground (street,
     // pavements, buildings, props); the height is never below 0. [x, z, height, spread] (m)
-    const HILLS = [[480, 112, 6, 36], [416, 300, 4, 40], [0, 112, 5, 34]];
+    const HILLS = D.hills;
     // Jump ramps across the street on three straights (the first, the bottom one and the long
     // diagonal; none on a hill): from s, up `up` m to `height`, a short top, down `down` m.
     const ramps = [];
-    for (const [s0, up, top, down, height] of [[215, 12, 2, 8, 1.4], [998, 11, 2, 8, 1.3], [1215, 12, 2, 8, 1.5]]) {
+    for (const [s0, up, top, down, height] of D.ramps) {
       const p = poseAt(s0, 0), len = up + top + down;
       ramps.push({ s: s0, up, top, down, height, len, x: p.x, z: p.z, h: p.h, cx: p.x + Math.cos(p.h) * len / 2, cz: p.z + Math.sin(p.h) * len / 2, rad: Math.hypot(len / 2, ROAD_HALF) + 1 });
     }
@@ -5006,13 +5039,13 @@ const CrashLevel = (() => {
     const nearSide = (s, side, margin) => sideStreets.some(q => q.side === side && Math.abs(wrapDiff(q.s, s)) < q.width / 2 + margin);
     function wrapDiff(a, b) { let d = a - b; if (d > L / 2) d -= L; if (d < -L / 2) d += L; return d; }
 
-    // district: how tall the buildings grow (downtown along the second and third streets)
-    const downtown = [440, 185];
+    // district: how tall the buildings grow (downtown: along the second and third streets)
+    const HT = D.heights;
     const heightAt = (x, z) => {
-      const d = Math.hypot(x - downtown[0], z - downtown[1]);
-      const tall = Math.max(0, 1 - d / 520);
+      const d = Math.hypot(x - HT.centre[0], z - HT.centre[1]);
+      const tall = Math.max(0, 1 - d / HT.radius);
       const r = R();
-      return 9 + r * 14 + tall * tall * (40 + R() * 95) + (r > 0.93 ? 30 : 0);
+      return HT.base + r * HT.rand + tall * tall * (HT.tall[0] + R() * HT.tall[1]) + (r > 0.93 ? HT.spike : 0);
     };
     // buildings as oriented boxes; reject overlaps with a coarse grid of their bounding circles
     const BCELL = 40, bgrid = new Map();
@@ -5027,6 +5060,7 @@ const CrashLevel = (() => {
     }
     function addBuilding(b) {
       if (overlaps(b)) return false;
+      if (D.quay !== undefined && b.z - Math.hypot(b.hx, b.hz) < -6) return false;   // the quay and the water
       // every corner and the middle of every side must stay off the street and pavement
       const c = Math.cos(b.angle), s = Math.sin(b.angle);
       for (const [u, w] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1], [0, 0]]) {
@@ -5062,9 +5096,9 @@ const CrashLevel = (() => {
     // blocks behind: a grid of lots inside and around the loop, some left open as plazas
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let i = 0; i < C.N; i++) { x0 = Math.min(x0, C.x[i]); x1 = Math.max(x1, C.x[i]); z0 = Math.min(z0, C.z[i]); z1 = Math.max(z1, C.z[i]); }
-    const M = 220;
+    const M = 220, parkLots = [];
     for (let gx = x0 - M; gx <= x1 + M; gx += 46) for (let gz = z0 - M; gz <= z1 + M; gz += 46) {
-      if (R() < 0.12) continue;
+      if (R() < D.openLots) { if (D.parks) parkLots.push([gx, gz]); continue; }
       const w = 18 + R() * 22, d = 18 + R() * 22, x = gx + (R() - 0.5) * 10, z = gz + (R() - 0.5) * 10;
       const f = nearest(x, z), p = poseAt(f.s, 0);
       if (Math.hypot(x - p.x, z - p.z) < 36) continue;
@@ -5073,8 +5107,8 @@ const CrashLevel = (() => {
     // distant skyline (no colliders): a ring of towers beyond the blocks
     const skyline = [];
     for (let a = 0; a < 2 * Math.PI; a += 0.06) {
-      const rr = 820 + R() * 380, cx = (x0 + x1) / 2 + Math.cos(a) * rr, cz = (z0 + z1) / 2 + Math.sin(a) * rr * 0.8;
-      skyline.push({ x: cx, z: cz, hx: 15 + R() * 25, hz: 15 + R() * 25, angle: R() * 0.4, height: 30 + R() * R() * 160, style: Math.floor(R() * 4) });
+      const rr = D.skyline[0] + R() * 380, cx = (x0 + x1) / 2 + Math.cos(a) * rr, cz = (z0 + z1) / 2 + Math.sin(a) * rr * 0.8;
+      skyline.push({ x: cx, z: cz, hx: 15 + R() * 25, hz: 15 + R() * 25, angle: R() * 0.4, height: 30 * D.skyline[1] / 160 + R() * R() * D.skyline[1], style: Math.floor(R() * 4) });
     }
 
     // street furniture along the pavements (colliders: tree trunks; the street lights are props that
@@ -5091,6 +5125,31 @@ const CrashLevel = (() => {
           cyls.push({ x: q.x, z: q.z, r: 0.22, height: 4 });
         }
       }
+    }
+    // parks (hillside): trees in the open lots, clear of the street and the buildings
+    for (const [gx, gz] of parkLots) for (let k = 0; k < 7; k++) {
+      const x = gx + (R() - 0.5) * 40, z = gz + (R() - 0.5) * 40, size = 0.9 + R() * 0.8, seed = Math.floor(R() * 1e6);
+      const f = nearest(x, z), p = poseAt(f.s, 0);
+      if (Math.hypot(x - p.x, z - p.z) < WALK_OUT + 4) continue;
+      if (buildings.some((b) => Math.abs(b.x - x) < b.hx + 3 + Math.abs(Math.sin(b.angle)) * b.hz && Math.abs(b.z - z) < b.hz + 3 + Math.abs(Math.sin(b.angle)) * b.hx)) continue;
+      trees.push({ x, z, size, seed, park: true });
+      cyls.push({ x, z, r: 0.22, height: 4 });
+    }
+    // the harbour: container stacks along the quay (colliders), gantry cranes at its edge, the water
+    const containers = [], cranes = [];
+    if (D.quay !== undefined) {
+      for (let x = -30; x < 600; x += 13.4) {
+        if (R() < 0.18) continue;
+        for (let row = 0; row < 3; row++) {
+          const z = -18 - row * 3.2, n = 1 + Math.floor(R() * 3);
+          if (R() < 0.15) continue;
+          const f = nearest(x, z), p = poseAt(f.s, 0);
+          if (Math.hypot(x - p.x, z - p.z) < WALK_OUT + 4) continue;
+          for (let k = 0; k < n; k++) containers.push({ x, z, y: k * 2.6, angle: 0, color: Math.floor(R() * 6) });
+          boxes.push({ x, z, hx: 6.1, hz: 1.22, angle: 0, height: n * 2.6 });
+        }
+      }
+      for (const x of [60, 200, 340, 480]) cranes.push({ x, z: D.quay + 4, angle: 0 });
     }
     // side streets: a stub of road, barriers across it, signals at the corners
     for (const q of sideStreets) {
@@ -5175,7 +5234,7 @@ const CrashLevel = (() => {
     }
 
     return {
-      seed: opts.seed || 20261007, circuit: C, length: L, laps: 3, lanes: LANES, laneWidth: LANE_W, roadHalf: ROAD_HALF, walkOut: WALK_OUT,
+      level: levelKey, name: D.name, look: D.look, ground: D.ground, containers, cranes, water: D.quay !== undefined ? { z: D.quay } : null, seed: opts.seed || D.seed, circuit: C, length: L, laps: 3, lanes: LANES, laneWidth: LANE_W, roadHalf: ROAD_HALF, walkOut: WALK_OUT,
       start: { s: START_S }, corners,
       buildings, skyline, sideStreets, lamps, trees, signals, barriers, rails, stops, props, ramps, hills: HILLS,
       colliders: { boxes, cyls }, collidersNear, nearest, poseAt, sampleAt, wrapDiff, terrain, groundAt, rampProfile,
@@ -5195,7 +5254,7 @@ const CrashLevel = (() => {
     return true;
   }
 
-  return { build, buildCircuit, rng, obbOverlap, LANES, LANE_W, ROAD_HALF, WALK_OUT };
+  return { build, buildCircuit, rng, obbOverlap, LEVELS, LANES, LANE_W, ROAD_HALF, WALK_OUT };
 })();
 if (typeof module === 'object' && module.exports) module.exports = CrashLevel;
 
@@ -8173,7 +8232,9 @@ gl_Position = projectionMatrix * mvPosition;`);
 
   // crumple shading for another mesh (the procedural lab car): its geometry needs aRest (rest
   // position), aStrain (plastic strain, 1 = 50%) and aComp (cell compression); uniforms: uStrainMode, uCrumple
-  return { create, environment, crumpleMaterial: patchFrozen, CRUMPLE_DEPTH };
+  // a page with its own sky (the simulator's) hands its reflection map to the models made after
+  const useEnvironment = (tex) => { envTex = tex; };
+  return { create, environment, useEnvironment, crumpleMaterial: patchFrozen, CRUMPLE_DEPTH };
 })();
 
 </script>
@@ -8545,6 +8606,18 @@ const RaceRender = (() => {
     envFrag: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.20,0.15,0.16), vec3(0.85,0.50,0.38), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.22,0.22,0.42), smoothstep(0.05, 0.6, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(1.0,0.6,0.3) * (pow(s, 400.0) * 30.0 + pow(s, 8.0) * 0.5); gl_FragColor = vec4(c, 1.0); }',
   };
 
+  // night (the harbour, the docklands): a moonlit sky with stars and the city's glow on the horizon,
+  // half the windows lit, the street lights doing the work
+  const NIGHT = {
+    sky: 0x070b18, fog: 0x161b2b, fogNear: 60, fogFar: 950, hemiSky: 0x3d4a78, hemiGround: 0x17161d, hemi: 0.62,
+    sun: 0x9db2ff, sunI: 0.75, sunDir: [0.35, 0.55, -0.75], exposure: 1.12, hdr: false, windowGlow: '0.42', windowLit: '0.6',
+    domeFrag: 'uniform vec3 sunDir; varying vec3 vD; float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); } void main(){ float h = max(vD.y, 0.0); vec3 c = mix(vec3(0.10,0.12,0.22), vec3(0.01,0.015,0.05), smoothstep(0.0, 0.6, h)); c += vec3(0.30,0.18,0.10) * (1.0 - smoothstep(0.0, 0.14, h)) * 0.55; vec3 q = floor(vD * 420.0); c += vec3(0.9,0.92,1.0) * step(0.9975, hash(q)) * smoothstep(0.05, 0.3, h) * (0.4 + 0.6 * hash(q + 3.0)); float s = max(dot(vD, sunDir), 0.0); c += vec3(0.85,0.9,1.0) * (smoothstep(0.9993, 0.9996, s) * 1.6 + pow(s, 30.0) * 0.12); c = mix(c, vec3(0.05,0.05,0.08), smoothstep(0.0, -0.05, vD.y)); gl_FragColor = vec4(c, 1.0); }',
+    envFrag: 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = vD.y; vec3 c = mix(vec3(0.05,0.05,0.07), vec3(0.34,0.24,0.18), smoothstep(-0.2, 0.02, h)); c = mix(c, vec3(0.04,0.06,0.14), smoothstep(0.05, 0.5, h)); float s = max(dot(normalize(vD), sunDir), 0.0); c += vec3(0.7,0.8,1.0) * pow(s, 200.0) * 4.0; gl_FragColor = vec4(c, 1.0); }',
+  };
+  // the look for a level's time of day (both games): dusk, night or day (the street HDRI)
+  const lookFor = (time) => time === 'night' ? Object.assign({}, NIGHT, { lampPools: true, carLights: 4 })
+    : time === 'day' ? { carLights: 1 } : Object.assign({}, DUSK, { lampPools: true, carLights: 3 });
+
   function create(opts) {
     const { level, container } = opts;
     const look = Object.assign({}, LOOK, opts.look);
@@ -8614,6 +8687,9 @@ const RaceRender = (() => {
     buildRamps(city, level);
     if (level.rails) buildRails(city, level);
     if (look.lampPools) buildLampPools(city, level);
+    if (level.water) buildWater(city, level);
+    if (level.containers && level.containers.length) buildContainers(city, level);
+    if (level.cranes && level.cranes.length) buildCranes(city, level);
     // the deformable car models (player, wrecks) and what breaks off them: raised to the ground's
     // height for a crash on a hill (the crash solver works at height 0), else at 0
     const crashRoot = new T.Group();
@@ -8987,6 +9063,21 @@ const RaceRender = (() => {
     return TEX.pavers || (TEX.pavers = canvasTex(256, 256, (c, w, h) => { noise(c, w, h, '#a29d95', 18, 10); c.strokeStyle = 'rgba(60,55,50,0.45)'; c.lineWidth = 2; for (let i = 0; i <= 4; i++) { c.beginPath(); c.moveTo(0, i * 64); c.lineTo(w, i * 64); c.stroke(); c.beginPath(); c.moveTo(i * 64, 0); c.lineTo(i * 64, h); c.stroke(); } }));
   }
   function concrete() { return TEX.concrete || (TEX.concrete = canvasTex(256, 256, (c, w, h) => noise(c, w, h, '#8f8c86', 20, 20))); }
+  // a level's open ground (level.ground): 'grass' (the hillside), else concrete
+  function grass() {
+    return TEX.grass || (TEX.grass = canvasTex(256, 256, (c, w, h) => {
+      noise(c, w, h, '#5f7a3c', 26, 30);
+      let s = 4242; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 2600; i++) { const g = 90 + rnd() * 70; c.fillStyle = `rgba(${g * 0.55 | 0},${g},${g * 0.35 | 0},0.5)`; c.fillRect(rnd() * w, rnd() * h, 1, 2 + rnd() * 3); }
+    }));
+  }
+  // uvMetres: how many metres the mesh's UVs span (surface()), rep: the canvas texture's repeat
+  const groundMaps = (level, uvMetres, rep) => {
+    if (level.ground === 'grass') { const t = grass().clone(); t.needsUpdate = true; t.repeat.set(rep, rep); return { map: t, color: 0xffffff }; }
+    let maps = surface('concrete', uvMetres);
+    if (!maps) { const tex = concrete().clone(); tex.needsUpdate = true; tex.repeat.set(rep, rep); maps = { map: tex }; }
+    return Object.assign({ color: 0x9a958c }, maps);
+  };
 
   // ---------------------------------------------------------------- ground
   // the height of the hills (level.terrain), and the ground's up direction there
@@ -8999,9 +9090,7 @@ const RaceRender = (() => {
   function buildGround(group, level) {
     const g = new T.PlaneGeometry(6000, 6000);
     g.rotateX(-Math.PI / 2);
-    let maps = surface('concrete', 6000);
-    if (!maps) { const tex = concrete().clone(); tex.needsUpdate = true; tex.repeat.set(600, 600); maps = { map: tex }; }
-    const m = new T.Mesh(g, new T.MeshStandardMaterial({ ...maps, color: 0x9a958c, roughness: 0.95 }));
+    const m = new T.Mesh(g, new T.MeshStandardMaterial({ ...groundMaps(level, 6000, 600), roughness: 0.95 }));
     m.position.y = -0.15; m.receiveShadow = true;
     group.add(m);
     // over the hills, a grid that follows the ground (the flat plane lies just below it elsewhere)
@@ -9019,9 +9108,7 @@ const RaceRender = (() => {
       p.setY(i, groundY(level, x, z) - (under ? 0.3 : 0.03)); uv.setXY(i, x / 10, z / 10);
     }
     tg.computeVertexNormals();
-    let hm = surface('concrete', 10);
-    if (!hm) { const tex = concrete().clone(); tex.needsUpdate = true; hm = { map: tex }; }
-    const hills = new T.Mesh(tg, new T.MeshStandardMaterial({ ...hm, color: 0x9a958c, roughness: 0.95 }));
+    const hills = new T.Mesh(tg, new T.MeshStandardMaterial({ ...groundMaps(level, 10, 1), roughness: 0.95 }));
     hills.receiveShadow = true;
     group.add(hills);
   }
@@ -9297,6 +9384,63 @@ float winMask; float frameMask; float litMask;`)
     im.castShadow = shadow; im.receiveShadow = true;
     return im;
   }
+  // ---------------------------------------------------------------- the harbour (level.water, containers, cranes)
+  // the water beyond the quay: dark, with a soft sheen and a ripple normal map (a glossier one
+  // spreads the moon's highlight over the whole bay at grazing angles)
+  function buildWater(group, level) {
+    const ripple = canvasTex(256, 256, (c, w, h) => {
+      const id = c.createImageData(w, h), d = id.data;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const a = Math.sin(x * 0.19 + Math.sin(y * 0.07) * 2) * 0.5 + Math.sin(y * 0.23 + x * 0.05) * 0.5, b = Math.cos(x * 0.11 - y * 0.17) * 0.5, p = 4 * (y * w + x);
+        d[p] = 128 + a * 50; d[p + 1] = 128 + b * 50; d[p + 2] = 255; d[p + 3] = 255;
+      }
+      c.putImageData(id, 0, 0);
+    }, [400, 300]);
+    ripple.colorSpace = T.NoColorSpace;
+    const g = new T.PlaneGeometry(4000, 3000); g.rotateX(-Math.PI / 2); g.translate(200, 0, level.water.z + (level.water.north ? 1500 : -1500));
+    const water = new T.Mesh(g, new T.MeshStandardMaterial({ color: 0x06121e, roughness: 0.62, metalness: 0, normalMap: ripple, normalScale: new T.Vector2(0.5, 0.5), envMapIntensity: 0.6 }));
+    water.position.y = -0.05; water.receiveShadow = true;
+    group.add(water);
+    // the quay's edge: a concrete lip with yellow bollards
+    const edge = new T.Mesh(new T.BoxGeometry(4000, 0.5, 1.2), new T.MeshStandardMaterial({ color: 0x8c8880, roughness: 0.9 }));
+    edge.position.set(200, 0.1, level.water.z + (level.water.north ? -0.6 : 0.6)); edge.receiveShadow = true; group.add(edge);
+  }
+  // shipping containers, stacked: corrugated sides, one instanced set, coloured per container
+  function buildContainers(group, level) {
+    const tex = canvasTex(256, 64, (c, w, h) => {
+      for (let x = 0; x < w; x += 8) { const gr = c.createLinearGradient(x, 0, x + 8, 0); gr.addColorStop(0, '#b8b8b8'); gr.addColorStop(0.5, '#ffffff'); gr.addColorStop(1, '#9c9c9c'); c.fillStyle = gr; c.fillRect(x, 0, 8, h); }
+      c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(0, 0, w, 3); c.fillRect(0, h - 3, w, 3); c.fillRect(0, 0, 3, h); c.fillRect(w - 3, 0, 3, h);
+      c.fillStyle = 'rgba(255,255,255,0.7)'; c.font = 'bold 14px sans-serif'; c.fillText('CCSU 418290', 18, 24);
+    });
+    const geo = new T.BoxGeometry(12.2, 2.6, 2.44); geo.translate(0, 1.3, 0);
+    const im = instanced(geo, new T.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.35 }), level.containers,
+      (o, m) => m.makeRotationY(-o.angle).setPosition(o.x, groundY(level, o.x, o.z) + o.y, o.z));
+    const PAL = [0xa23b2a, 0x1f5f9e, 0x2f7a46, 0xd47a1c, 0xd9d6cf, 0x6b6f75];
+    level.containers.forEach((o, i) => im.setColorAt(i, new T.Color(PAL[o.color % PAL.length])));
+    im.userData.occluder = true;
+    group.add(im);
+  }
+  // ship-to-shore gantry cranes on the quay's edge: legs, a cross-beam, the boom out over the
+  // water and back over the quay, a red light at the top (glow layer)
+  function buildCranes(group, level) {
+    const steel = new T.MeshStandardMaterial({ color: 0x2c5f8f, roughness: 0.55, metalness: 0.5 });
+    const white = new T.MeshStandardMaterial({ color: 0xdcdcd6, roughness: 0.6, metalness: 0.3 });
+    const red = new T.MeshStandardMaterial({ color: 0xff2a1a, emissive: 0xff2a1a, emissiveIntensity: 3 });
+    for (const c of level.cranes) {
+      const g = new T.Group(), part = (w, h, d, x, y, z, m) => { const b = new T.Mesh(new T.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; b.userData.occluder = true; g.add(b); };
+      for (const lx of [-9, 9]) for (const lz of [-7, 7]) part(1.2, 40, 1.2, lx, 20, lz, steel);
+      for (const lz of [-7, 7]) part(19.2, 1.4, 1.4, 0, 40, lz, steel);
+      for (const lx of [-9, 9]) part(1.4, 1.4, 15.2, lx, 30, 0, steel);
+      part(4, 2.6, 110, 0, 44, -22, white);        // the boom: 70 m out over the water, 40 m back
+      part(6, 8, 8, 0, 49, 4, steel);               // the machinery house
+      part(2, 12, 2, 0, 56, -4, steel);              // the A-frame top
+      for (const z of [-75, 32]) { const l = new T.Mesh(new T.SphereGeometry(0.6, 8, 6), red); l.position.set(0, 46, z); l.layers.enable(3); g.add(l); }
+      const top = new T.Mesh(new T.SphereGeometry(0.7, 8, 6), red); top.position.set(0, 62.5, -4); top.layers.enable(3); g.add(top);
+      g.position.set(c.x, groundY(level, c.x, c.z), c.z); g.rotation.y = -c.angle;
+      group.add(g);
+    }
+  }
+
   function buildFurniture(group, level) {
     // on the ground at (x, z) facing h (street lights and signal posts are props: see prepareProps)
     const at = (x, z, h) => new T.Matrix4().makeRotationY(-h).setPosition(x, groundY(level, x, z), z);
@@ -9304,11 +9448,14 @@ float winMask; float frameMask; float litMask;`)
     const bark = new T.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.95 });
     const leaf = leafMaterial();
     const trunk = new T.CylinderGeometry(0.12, 0.2, 3.2, 7); trunk.translate(0, 1.6, 0);
-    const crown = treeCrown();
     group.add(instanced(trunk, bark, level.trees, (o, m) => m.copy(at(o.x, o.z, o.seed)).scale(new T.Vector3(o.size, o.size, o.size))));
-    const crowns = instanced(crown, leaf, level.trees, (o, m) => m.copy(at(o.x, o.z, o.seed)).scale(new T.Vector3(o.size, o.size, o.size)));
-    level.trees.forEach((o, i) => crowns.setColorAt(i, new T.Color().setHSL(0.26 + 0.03 * Math.sin(o.seed * 7.1), 0.5, 0.26 + 0.04 * Math.cos(o.seed * 3.3))));
-    group.add(crowns);
+    // the street's trees in full; the parks' (away from the road, hundreds of them) coarser
+    for (const [list, detail] of [[level.trees.filter((o) => !o.park), 2], [level.trees.filter((o) => o.park), 1]]) {
+      if (!list.length) continue;
+      const crowns = instanced(treeCrown(detail), leaf, list, (o, m) => m.copy(at(o.x, o.z, o.seed)).scale(new T.Vector3(o.size, o.size, o.size)));
+      list.forEach((o, i) => crowns.setColorAt(i, new T.Color().setHSL(0.26 + 0.03 * Math.sin(o.seed * 7.1), 0.5, 0.26 + 0.04 * Math.cos(o.seed * 3.3))));
+      group.add(crowns);
+    }
     // barriers across the side streets: red and white concrete blocks
     const block = new T.BoxGeometry(1.9, 1.0, 0.6); block.translate(0, 0.5, 0);
     const blocks = [];
@@ -9341,7 +9488,7 @@ float lnoise(vec3 p) {
 
   // a tree's crown: a cluster of lumpy blobs (the lumps a function of position, so the faces stay
   // joined), smooth normals, darker underneath and inside
-  function treeCrown() {
+  function treeCrown(detail = 2) {
     let s = 9;
     const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
     const lump = (x, y, z) => 1 + 0.12 * Math.sin(x * 3.1 + y * 1.7) * Math.cos(z * 2.9 - y * 2.3) + 0.06 * Math.sin(x * 7.3 - z * 6.1 + y * 5.2);
@@ -9349,7 +9496,7 @@ float lnoise(vec3 p) {
     for (let b = 0; b < 7; b++) {
       const rad = b === 0 ? 1.55 : 0.85 + r() * 0.55, a = r() * 6.283, d = b === 0 ? 0 : 0.75 + r() * 0.55;
       const cx = Math.cos(a) * d, cy = 4.1 + (b === 0 ? 0.3 : (r() - 0.35) * 1.3), cz = Math.sin(a) * d;
-      const g = new T.IcosahedronGeometry(rad, 2), p = g.attributes.position, n = new Float32Array(p.count * 3), c = new Float32Array(p.count * 3);
+      const g = new T.IcosahedronGeometry(rad, detail), p = g.attributes.position, n = new Float32Array(p.count * 3), c = new Float32Array(p.count * 3);
       for (let i = 0; i < p.count; i++) {
         const x = p.getX(i), y = p.getY(i), z = p.getZ(i), k = lump(x + cx, y + cy, z + cz), len = Math.hypot(x, y, z);
         p.setXYZ(i, cx + x * k, cy + y * k * 0.85, cz + z * k);
@@ -9511,7 +9658,7 @@ float lnoise(vec3 p) {
     return { body: bodyMeshes, wheelMeshes, wheels, paint: bodyMeshes.find(m => m.instanceColor), used: 0 };
   }
 
-  return { create, DUSK };
+  return { create, DUSK, NIGHT, lookFor };
 })();
 
 </script>
@@ -9562,12 +9709,18 @@ const RaceGame = (() => {
   // the crash physics: on the CPU (in a worker) or the GPU (WebGPU); ?solver=gpu, or the select screen's button
   const solverPick = RaceCrash.solverChoice(document.getElementById('btn-solver'));
 
-  const level = CrashLevel.build({ seed: +q.get('seed') || undefined });
+  // the track (?level=, else the player's last pick; scripted runs default to downtown): picking
+  // another on the select screen reloads the page with it
+  const LEVEL = (() => {
+    const want = q.get('level') || (!q.get('test') && !q.has('director') && (() => { try { return localStorage.getItem('race-level'); } catch (e) { return null; } })());
+    return CrashLevel.LEVELS[want] ? want : 'downtown';
+  })();
+  const level = CrashLevel.build({ level: LEVEL, seed: +q.get('seed') || undefined });
   const L = level.length;
   // a touch screen (or ?touch=1): on-screen buttons, and a lighter picture for a phone's GPU
   const TOUCH = q.get('touch') === '1' || (q.get('touch') !== '0' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   if (TOUCH) document.body.classList.add('touch');
-  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: Object.assign({}, RaceRender.DUSK, { lampPools: true, carLights: 3 }), bloom: !TOUCH });   // at dusk, as the Destruction mode
+  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: RaceRender.lookFor(level.look), bloom: !TOUCH && level.look !== 'day' });   // the level's time of day
   const world = RaceWorld.create(level);
   const props = RaceProps.create(level);   // street lights, signals, cones, bins ... to knock over
   const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
@@ -9580,6 +9733,7 @@ const RaceGame = (() => {
     { name: 'Liquid silver', hex: 0x9ea3a8 }, { name: 'Sunset orange', hex: 0xd9581c }, { name: 'Signal yellow', hex: 0xe6b81e }, { name: 'Racing green', hex: 0x1f6b43 },
   ];
   const SCRIPTED = !!TEST || q.has('director');
+  const LEVEL_NOTES = { downtown: 'Towers, hills and three jumps', harbour: 'Flat out past the docks, after dark', hillside: 'Big hills and fast bends at midday' };
   const saved = (() => { if (SCRIPTED) return null; try { return JSON.parse(localStorage.getItem('race-choice')); } catch (e) { return null; } })() || {};
   let carKey = specs[q.get('car')] ? q.get('car') : specs[saved.car] ? saved.car : 'lexus';
   let paintIdx = PAINTS[saved.paint] ? +saved.paint : 0;
@@ -9886,7 +10040,9 @@ const RaceGame = (() => {
     $('#results-note').hidden = !rows.some(r => r.est);
     // the score: its breakdown, and the best so far in this browser (not for scripted runs)
     let best = null;
-    if (!SCRIPTED) try { best = +localStorage.getItem('race-best') || 0; if (score.score > best) localStorage.setItem('race-best', String(score.score)); } catch (e) { best = null; }
+    // each track keeps its own best (downtown under the original key)
+    const bestKey = LEVEL === 'downtown' ? 'race-best' : 'race-best-' + LEVEL;
+    if (!SCRIPTED) try { best = +localStorage.getItem(bestKey) || 0; if (score.score > best) localStorage.setItem(bestKey, String(score.score)); } catch (e) { best = null; }
     const fmt = (n) => n.toLocaleString('en-US');
     $('#results-score').innerHTML = `<h3>Score ${fmt(score.score)}${best === null ? '' : score.score > best ? ' · a new best' : ` · best ${fmt(best)}`}</h3>` +
       `<table>${score.breakdown().map(b => `<tr><td>${b.label}</td><td class="n">×${b.n}</td><td class="p">${fmt(b.pts)}</td></tr>`).join('')}</table>`;
@@ -9979,12 +10135,15 @@ const RaceGame = (() => {
     $('#sel-cars').innerHTML = Object.keys(CARS).map((k) => `<button type="button" class="sel-car" role="radio" data-car="${k}"><b>${CARS[k].name}</b><span>${CARS[k].kind} · ${DRIVE[perf[k].drive]} drive</span></button>`).join('');
     $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
     $('#sel-bars').innerHTML = BARS.map(([k], i) => `<div class="bar"><span class="k">${k}</span><span class="track"><i id="bar-${i}"></i></span><span class="val" id="bar-v${i}"></span></div>`).join('');
-    document.querySelectorAll('.sel-car').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
+    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
     document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
+    $('#sel-levels').innerHTML = Object.entries(CrashLevel.LEVELS).map(([k, D]) => `<button type="button" class="sel-car sel-level" role="radio" data-level="${k}"><b>${D.name}</b><span>${LEVEL_NOTES[k]}</span></button>`).join('');
+    document.querySelectorAll('.sel-level').forEach((b) => b.addEventListener('click', () => { b.blur(); pickLevel(b.dataset.level); }));
     $('#btn-start').addEventListener('click', () => { $('#btn-start').blur(); startRace(); });
   }
   function showSelect() {
-    document.querySelectorAll('.sel-car').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    document.querySelectorAll('.sel-level').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.level === LEVEL)));
     document.querySelectorAll('.swatch').forEach((b, i) => b.setAttribute('aria-checked', String(i === paintIdx)));
     document.querySelectorAll('.sel-row').forEach((r) => r.classList.toggle('focus', +r.dataset.row === selRow));
     $('#sel-paint-name').textContent = PAINTS[paintIdx].name;
@@ -10014,9 +10173,16 @@ const RaceGame = (() => {
     if (!selBusy) R.player.setPaint(PAINTS[paintIdx].hex);   // else chooseCar paints the new model
     showSelect();
   }
+  // another track: the page again with ?level= (the car and paint kept)
+  function pickLevel(key) {
+    if (key === LEVEL || !CrashLevel.LEVELS[key] || state !== 'select') return;
+    try { localStorage.setItem('race-level', key); localStorage.setItem('race-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not remembered */ }
+    const u = new URL(location.href); u.searchParams.set('level', key); location.href = u.toString();
+  }
   function updateSelect(inp) {
-    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 2) % 2; showSelect(); }
+    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 3) % 3; showSelect(); }
     if (inp.nav.x && selRow === 0) { const keys = Object.keys(CARS); chooseCar(keys[(keys.indexOf(carKey) + inp.nav.x + keys.length) % keys.length]); }
+    else if (inp.nav.x && selRow === 2) { const keys = Object.keys(CrashLevel.LEVELS); pickLevel(keys[(keys.indexOf(LEVEL) + inp.nav.x + keys.length) % keys.length]); }
     else if (inp.nav.x) pickPaint(paintIdx + inp.nav.x);
     if (inp.start) startRace();
   }
@@ -10166,7 +10332,7 @@ const RaceGame = (() => {
     const slots = { lexus: 0, mustang: 0 };
     for (const d of draws) R.drawCar(d.key, slots[d.key]++, d);
     R.endCars();
-    // head and tail lights glowing at dusk (everyone's, the player's too, but not in a crash)
+    // head and tail lights glowing at dusk and at night (everyone's, the player's too, but not in a crash)
     const glow = [];
     const lamps = (key, x, z, h, y) => {
       const S = specs[key], c = Math.cos(h), s = Math.sin(h), f = S.xMin + S.length + 0.02, b = S.xMin - 0.02, w = S.width / 2 - 0.32;
@@ -10175,8 +10341,10 @@ const RaceGame = (() => {
         glow.push({ x: x + c * b - s * sd * w, y: y + 0.86, z: z + s * b + c * sd * w, r: 0.95, g: 0.08, b: 0.04 });
       }
     };
-    for (const d of draws) lamps(d.key, d.x, d.z, d.h, d.lift || 0);
-    if (state !== 'crash' && state !== 'replay') { const p = car.pose; lamps(carKey, p.x, p.z, p.heading, car.y); }
+    if (level.look !== 'day') {
+      for (const d of draws) lamps(d.key, d.x, d.z, d.h, d.lift || 0);
+      if (state !== 'crash' && state !== 'replay') { const p = car.pose; lamps(carKey, p.x, p.z, p.heading, car.y); }
+    }
     R.carLights(glow);
     // burst hydrants spray for a few seconds
     for (let i = geysers.length - 1; i >= 0; i--) {

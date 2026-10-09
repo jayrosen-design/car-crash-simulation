@@ -31,10 +31,16 @@ const DestructionGame = (() => {
 
   // the props this level has beyond the Race game's (before the props are made)
   Object.assign(RaceProps.TYPES, DestructionLevel.PROP_TYPES);
-  const level = DestructionLevel.build();
+  // the junction (?level=, else the player's last pick; ?test runs default to the crossroads):
+  // picking another on the select screen reloads the page with it
+  const LEVEL = (() => {
+    const want = q.get('level') || (!q.get('test') && !q.has('director') && (() => { try { return localStorage.getItem('destruction-level'); } catch (e) { return null; } })());
+    return DestructionLevel.LEVELS[want] ? want : 'crossroads';
+  })();
+  const level = DestructionLevel.build({ level: LEVEL });
   const TOUCH = q.get('touch') === '1' || (q.get('touch') !== '0' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   if (TOUCH) document.body.classList.add('touch');
-  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: DestructionLook.DUSK, propParts });
+  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: level.look === 'dusk' ? DestructionLook.DUSK : level.look === 'night' ? RaceRender.NIGHT : {}, propParts });
   const world = RaceWorld.create(level);
   const props = RaceProps.create(level);
   const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
@@ -98,7 +104,8 @@ const DestructionGame = (() => {
     car.gPitch = Math.atan(g.gx * Math.cos(p.h) + g.gz * Math.sin(p.h)); car.gRoll = -Math.atan(-g.gx * Math.sin(p.h) + g.gz * Math.cos(p.h));
   }
   placeCar(SHOW);
-  const bestKey = 'destruction-best';
+  const LEVEL_NOTES = { crossroads: 'Gas station, roadworks, one tanker timed for you', docklands: 'Freight trucks and three tankers, after dark', boulevard: 'Towers, buses and a crowd at midday' };
+  const bestKey = LEVEL === 'crossroads' ? 'destruction-best' : 'destruction-best-' + LEVEL;
   let best = (() => { try { return JSON.parse(localStorage.getItem(bestKey)) || null; } catch (e) { return null; } })();
 
   // ---------------------------------------------------------------- attempt state
@@ -554,14 +561,18 @@ const DestructionGame = (() => {
     $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
     const M = level.medals;
     $('#sel-goals').innerHTML = [['Bronze', M.bronze, 'var(--bronze)'], ['Silver', M.silver, 'var(--silver)'], ['Gold', M.gold, 'var(--gold)']].map(([k, v, c]) => `<dt style="--c:${c}">${k}</dt><dd>${money(v)}</dd>`).join('');
-    document.querySelectorAll('.sel-car').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
+    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
+    $('#sel-levels').innerHTML = Object.entries(DestructionLevel.LEVELS).map(([k, D]) => `<button type="button" class="sel-car sel-level" role="radio" data-level="${k}"><b>${D.name}</b><span>${LEVEL_NOTES[k]}</span></button>`).join('');
+    document.querySelectorAll('.sel-level').forEach((b) => b.addEventListener('click', () => { b.blur(); pickLevel(b.dataset.level); }));
+    $('#sel-title').textContent = level.name;
     document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
     $('#btn-start').addEventListener('click', () => { $('#btn-start').blur(); startAttempt(); });
     $('#btn-again').addEventListener('click', () => { $('#btn-again').blur(); retry(); });
     $('#btn-car').addEventListener('click', () => { $('#btn-car').blur(); toSelect(); });
   }
   function showSelect() {
-    document.querySelectorAll('.sel-car').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    document.querySelectorAll('.sel-level').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.level === LEVEL)));
     document.querySelectorAll('.swatch').forEach((b, i) => b.setAttribute('aria-checked', String(i === paintIdx)));
     document.querySelectorAll('.sel-row').forEach((r) => r.classList.toggle('focus', +r.dataset.row === selRow));
     $('#sel-paint-name').textContent = PAINTS[paintIdx].name;
@@ -581,9 +592,16 @@ const DestructionGame = (() => {
     selBusy = false; showSelect();
   }
   function pickPaint(i) { paintIdx = (i + PAINTS.length) % PAINTS.length; if (!selBusy) R.player.setPaint(PAINTS[paintIdx].hex); showSelect(); }
+  // another junction: the page again with ?level= (the car and paint kept)
+  function pickLevel(key) {
+    if (key === LEVEL || !DestructionLevel.LEVELS[key] || state !== 'select') return;
+    try { localStorage.setItem('destruction-level', key); localStorage.setItem('destruction-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not kept */ }
+    const u = new URL(location.href); u.searchParams.set('level', key); location.href = u.toString();
+  }
   function updateSelect(inp) {
-    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 2) % 2; showSelect(); }
+    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 3) % 3; showSelect(); }
     if (inp.nav.x && selRow === 0) { const keys = Object.keys(CARS); chooseCar(keys[(keys.indexOf(carKey) + inp.nav.x + keys.length) % keys.length]); }
+    else if (inp.nav.x && selRow === 2) { const keys = Object.keys(DestructionLevel.LEVELS); pickLevel(keys[(keys.indexOf(LEVEL) + inp.nav.x + keys.length) % keys.length]); }
     else if (inp.nav.x) pickPaint(paintIdx + inp.nav.x);
     if (inp.start) startAttempt();
   }

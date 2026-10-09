@@ -12,7 +12,8 @@ const Scene3D = (() => {
   const PT = OC.PARTICLES;
   const V = (x = 0, y = 0, z = 0) => new T.Vector3(x, y, z);
   const UP = V(0, 1, 0), YAXIS = V(0, 1, 0), ZAXIS = V(0, 0, 1);
-  const SUN_OFFSET = V(-12, 20, -9);   // sun position relative to the shadow focus
+  const SUN_OFFSET = V(-20, 15, -13);   // sun position relative to the shadow focus (late afternoon, 32 degrees up)
+  const SUN_DIR = SUN_OFFSET.clone().normalize();
 
   let renderer, scene, camera, pipCam, controls, sun, container, raycaster;
   let pathGroup, handle, rigidBarrier, wallGroup, wallMesh, wallLayout, particles;
@@ -31,11 +32,12 @@ const Scene3D = (() => {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = T.PCFSoftShadowMap;
     renderer.toneMapping = T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     el.appendChild(renderer.domElement);
 
     scene = new T.Scene();
-    scene.background = new T.Color(0xb7c2cd);
-    scene.fog = new T.Fog(0xb7c2cd, 90, 380);
+    scene.background = new T.Color(0xd9c3ad);
+    scene.fog = new T.Fog(0xd6c2ae, 110, 520);
     camera = new T.PerspectiveCamera(45, 1, 0.1, 2000);
     camera.layers.enable(1); camera.layers.enable(2);
     // layers: 0 the world, 1 car bodies, 2 effects (particles, fire), 3 the glow layer (bloom)
@@ -47,8 +49,8 @@ const Scene3D = (() => {
     controls.maxDistance = 400;
     raycaster = new T.Raycaster();
 
-    scene.add(new T.HemisphereLight(0xe2e9f1, 0x4a4e55, 1.15));
-    sun = new T.DirectionalLight(0xffffff, 2.3);
+    scene.add(new T.HemisphereLight(0xc9d6ea, 0x5b4c42, 0.95));
+    sun = new T.DirectionalLight(0xffe0bd, 2.7);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const sc = sun.shadow.camera;
@@ -58,7 +60,7 @@ const Scene3D = (() => {
     sun.shadow.normalBias = 0.03;   // removes shadow acne (self-shadow stripes) on large flat faces
     scene.add(sun, sun.target);
 
-    buildSky(); buildGround(); buildPath();
+    buildSky(); buildGround(); buildFacility(); buildPath();
     main = makeSlot();
     slots.push(main);
     buildBarriers();
@@ -97,26 +99,116 @@ const Scene3D = (() => {
     return t;
   }
 
+  // ---------------------------------------------------------------- the test track
+  // Late afternoon: a warm low sun over an open-air crash-test track. The sky is a shader dome; the
+  // same sky (with the track and the buildings as bands) is rendered into an environment map, so
+  // car paint, chrome and glass reflect it (the imported models get it through CarModels).
+  const SKY_FRAG = 'uniform vec3 sunDir; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 hor = vec3(0.98,0.80,0.64), mid = vec3(0.72,0.78,0.88), zen = vec3(0.30,0.45,0.70); vec3 c = mix(hor, mid, smoothstep(0.0, 0.18, h)); c = mix(c, zen, smoothstep(0.15, 0.85, h)); float s = max(dot(vD, sunDir), 0.0); c += vec3(1.0,0.78,0.52) * (pow(s, 700.0) * 4.0 + pow(s, 14.0) * 0.45 + pow(s, 3.0) * 0.08); c = mix(c, vec3(0.62,0.54,0.48), smoothstep(0.0, -0.06, vD.y)); gl_FragColor = vec4(c, 1.0); }';
+  const ENV_FRAG = 'uniform vec3 sunDir; varying vec3 vD; void main(){ vec3 d = normalize(vD); float h = d.y; vec3 c = mix(vec3(0.24,0.22,0.21), vec3(0.95,0.78,0.62), smoothstep(-0.25, 0.0, h)); c = mix(c, vec3(0.70,0.77,0.88), smoothstep(0.02, 0.25, h)); c = mix(c, vec3(0.34,0.48,0.72), smoothstep(0.25, 0.9, h)); float band = step(0.0, h) * (1.0 - smoothstep(0.03, 0.09, h)); c = mix(c, vec3(0.30,0.29,0.30), band * 0.7); float s = max(dot(d, sunDir), 0.0); c += vec3(1.0,0.8,0.55) * (pow(s, 400.0) * 40.0 + pow(s, 10.0) * 0.6); gl_FragColor = vec4(c, 1.0); }';
+  const DOME_VERT = 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
   function buildSky() {
-    const g = new T.SphereGeometry(1500, 32, 16), pos = g.attributes.position, col = new Float32Array(pos.count * 3);
-    const top = new T.Color(0x6f8bab), hor = new T.Color(0xc9d2db);
-    for (let i = 0; i < pos.count; i++) {
-      const t = Math.max(0, pos.getY(i) / 1500), c = hor.clone().lerp(top, Math.pow(t, 0.6));
-      col.set([c.r, c.g, c.b], 3 * i);
-    }
-    g.setAttribute('color', new T.BufferAttribute(col, 3));
-    scene.add(new T.Mesh(g, new T.MeshBasicMaterial({ vertexColors: true, side: T.BackSide, fog: false, depthWrite: false })));
+    const dome = new T.Mesh(new T.SphereGeometry(1500, 32, 16), new T.ShaderMaterial({ side: T.BackSide, depthWrite: false, fog: false,
+      uniforms: { sunDir: { value: SUN_DIR } }, vertexShader: DOME_VERT, fragmentShader: SKY_FRAG }));
+    dome.renderOrder = -1;
+    scene.add(dome);
+    const pm = new T.PMREMGenerator(renderer), room = new T.Scene();
+    room.add(new T.Mesh(new T.SphereGeometry(50, 32, 16), new T.ShaderMaterial({ side: T.BackSide, depthWrite: false,
+      uniforms: { sunDir: { value: SUN_DIR } }, vertexShader: DOME_VERT, fragmentShader: ENV_FRAG })));
+    const env = pm.fromScene(room, 0).texture;
+    pm.dispose();
+    scene.environment = env;
+    if (window.CarModels && CarModels.useEnvironment) CarModels.useEnvironment(env);
   }
 
+  // concrete slabs (4 m, with joints), worn and patched, with a normal map for the surface grain
   function buildGround() {
-    const tex = canvasTexture(256, 256, (c, w, h) => {
-      c.fillStyle = '#5b5f66'; c.fillRect(0, 0, w, h);
-      for (let i = 0; i < 4000; i++) { const v = 70 + Math.random() * 60; c.fillStyle = `rgb(${v},${v + 2},${v + 6})`; c.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }
-    }, [300, 300]);
-    const ground = new T.Mesh(new T.PlaneGeometry(1200, 1200), new T.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0 }));
+    const N = 2048, slabs = 4, size = 16;   // the texture covers 16 x 16 m: 4 x 4 slabs
+    const rnd = (() => { let a = 7; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
+    const height = new Float32Array(N * N);
+    const tex = canvasTexture(N, N, (c, w, h) => {
+      c.fillStyle = '#8d8a85'; c.fillRect(0, 0, w, h);
+      // per-slab tone, mottling, stains and the joints
+      for (let i = 0; i < slabs; i++) for (let j = 0; j < slabs; j++) { const v = rnd() * 16 - 8; c.fillStyle = `rgba(${120 + v},${117 + v},${112 + v},0.55)`; c.fillRect(i * w / slabs, j * h / slabs, w / slabs, h / slabs); }
+      for (let k = 0; k < 30000; k++) { const v = 95 + rnd() * 70, r = 1 + rnd() * 2.5; c.fillStyle = `rgba(${v},${v - 2},${v - 6},${0.25 + rnd() * 0.35})`; c.fillRect(rnd() * w, rnd() * h, r, r); }
+      for (let k = 0; k < 12; k++) { const g = c.createRadialGradient(0, 0, 0, 0, 0, 1), x = rnd() * w, y = rnd() * h, r = 60 + rnd() * 220; g.addColorStop(0, 'rgba(60,56,52,0.1)'); g.addColorStop(1, 'rgba(60,56,52,0)'); c.save(); c.translate(x, y); c.scale(r, r * (0.5 + rnd())); c.fillStyle = g; c.beginPath(); c.arc(0, 0, 1, 0, 6.3); c.fill(); c.restore(); }
+      // tyre marks
+      for (let k = 0; k < 3; k++) { c.strokeStyle = `rgba(30,30,32,${0.04 + rnd() * 0.05})`; c.lineWidth = 7 + rnd() * 5; c.beginPath(); const y = rnd() * h; c.moveTo(0, y); c.bezierCurveTo(w * 0.3, y + rnd() * 80 - 40, w * 0.6, y + rnd() * 80 - 40, w, y + rnd() * 60 - 30); c.stroke(); }
+      c.fillStyle = 'rgba(40,38,36,0.85)';
+      for (let i = 0; i <= slabs; i++) { c.fillRect(i * w / slabs - 2, 0, 4, h); c.fillRect(0, i * h / slabs - 2, w, 4); }
+      // the height field for the normal map: grain, and the joints cut in
+      const img = c.getImageData(0, 0, w, h).data;
+      for (let p = 0; p < N * N; p++) height[p] = img[4 * p] / 255 + (rnd() - 0.5) * 0.08;
+    }, [1200 / size, 1200 / size]);
+    const nrm = canvasTexture(N, N, (c, w, h) => {
+      const id = c.createImageData(w, h), d = id.data, H = (x, y) => height[((y + h) % h) * w + ((x + w) % w)];
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const dx = (H(x + 1, y) - H(x - 1, y)) * 2.2, dy = (H(x, y + 1) - H(x, y - 1)) * 2.2, l = Math.hypot(dx, dy, 1), p = 4 * (y * w + x);
+        d[p] = (-dx / l * 0.5 + 0.5) * 255; d[p + 1] = (dy / l * 0.5 + 0.5) * 255; d[p + 2] = (1 / l * 0.5 + 0.5) * 255; d[p + 3] = 255;
+      }
+      c.putImageData(id, 0, 0);
+    }, [1200 / size, 1200 / size]);
+    nrm.colorSpace = T.NoColorSpace;
+    const ground = new T.Mesh(new T.PlaneGeometry(1200, 1200), new T.MeshStandardMaterial({ map: tex, normalMap: nrm, normalScale: new T.Vector2(0.6, 0.6), roughness: 0.88, metalness: 0, envMapIntensity: 0.5 }));
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
+    // the photogrammetry grid painted round the impact zone (1 m squares), faint
+    const grid = canvasTexture(512, 512, (c, w, h) => {
+      c.clearRect(0, 0, w, h); c.strokeStyle = 'rgba(245,245,240,0.22)'; c.lineWidth = 2;
+      for (let i = 0; i <= 16; i++) { const p = i * w / 16; c.beginPath(); c.moveTo(p, 0); c.lineTo(p, h); c.stroke(); c.beginPath(); c.moveTo(0, p); c.lineTo(w, p); c.stroke(); }
+      c.strokeStyle = 'rgba(255,196,0,0.7)'; c.lineWidth = 5; c.strokeRect(3, 3, w - 6, h - 6);
+    });
+    const gridMesh = new T.Mesh(new T.PlaneGeometry(16, 16), new T.MeshStandardMaterial({ map: grid, transparent: true, roughness: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }));
+    gridMesh.rotation.x = -Math.PI / 2; gridMesh.position.set(-8, 0.005, 0); gridMesh.receiveShadow = true;
+    scene.add(gridMesh);
+  }
+
+  // the facility round the track, well clear of every test: the test hall behind the barrier,
+  // floodlight masts, a fence, and low buildings on the horizon
+  function buildFacility() {
+    const g = new T.Group(), M = (c, r = 0.85, m = 0) => new T.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
+    const box = (w, h, d, x, y, z, mat, shadow = true) => { const b = new T.Mesh(new T.BoxGeometry(w, h, d), mat); b.position.set(x, y, z); b.castShadow = shadow; b.receiveShadow = true; g.add(b); return b; };
+    // the hall: corrugated cladding, a big door, a band of windows, a hazard stripe
+    const clad = canvasTexture(256, 256, (c, w, h) => { for (let x = 0; x < w; x += 16) { const gr = c.createLinearGradient(x, 0, x + 16, 0); gr.addColorStop(0, '#9fa7ae'); gr.addColorStop(0.5, '#c9cfd4'); gr.addColorStop(1, '#8f979e'); c.fillStyle = gr; c.fillRect(x, 0, 16, h); } }, [12, 2]);
+    const hall = M(0xffffff, 0.55, 0.35); hall.map = clad;
+    box(60, 14, 18, 25, 7, -80, hall);
+    box(16, 9, 0.4, 25, 4.5, -70.8, M(0x3b4148, 0.6, 0.4));               // the door
+    box(50, 1.6, 0.3, 25, 11.2, -70.85, M(0x1d2a38, 0.15, 0.6));          // windows
+    const stripe = canvasTexture(256, 32, (c, w, h) => { c.fillStyle = '#ffc400'; c.fillRect(0, 0, w, h); c.fillStyle = '#16171a'; for (let x = -h; x < w; x += 32) { c.beginPath(); c.moveTo(x, h); c.lineTo(x + 16, h); c.lineTo(x + 16 + h, 0); c.lineTo(x + h, 0); c.fill(); } }, [20, 1]);
+    const sm = M(0xffffff, 0.7); sm.map = stripe;
+    box(60, 0.6, 0.32, 25, 0.3, -70.75, sm, false);
+    box(62, 0.8, 20, 25, 14.4, -80, M(0x5d646b, 0.7, 0.3));              // roof edge
+    // a second, lower building and a control tower
+    box(26, 8, 14, 20, 4, 58, M(0xb9b2a6), true);
+    box(26, 0.5, 4, 20, 8.25, 50.5, M(0x2a3644, 0.2, 0.5), false);
+    box(5, 18, 5, -30, 9, 46, M(0xa9a39a), true);
+    box(6.2, 2.4, 6.2, -30, 19.2, 46, M(0x22303e, 0.15, 0.6), true);
+    // floodlight masts, lit
+    const lampMat = new T.MeshStandardMaterial({ color: 0xfff6e0, emissive: 0xfff1d0, emissiveIntensity: 2.5 });
+    for (const [x, z] of [[-60, -34], [-60, 34], [10, -40], [10, 40], [44, -34], [44, 34]]) {
+      box(0.5, 24, 0.5, x, 12, z, M(0x6b7076, 0.5, 0.6));
+      const head = box(2.6, 1.2, 0.5, x, 24.4, z, M(0x2c3034, 0.4, 0.5));
+      const lamp = new T.Mesh(new T.PlaneGeometry(2.3, 0.9), lampMat); lamp.position.set(x, 24.4, z + (z > 0 ? -0.26 : 0.26)); lamp.rotation.y = z > 0 ? Math.PI : 0; lamp.layers.enable(3); g.add(lamp);
+      head.rotation.x = z > 0 ? 0.25 : -0.25;
+    }
+    // a perimeter fence: posts, rails and mesh (one instanced set each)
+    const postGeo = new T.CylinderGeometry(0.05, 0.05, 2.4, 6), posts = [], R = 112;
+    for (let a = 0; a < 360; a += 1.5) { const r = a * Math.PI / 180; posts.push([Math.cos(r) * R, Math.sin(r) * R * 0.85]); }
+    const pm = new T.InstancedMesh(postGeo, M(0x7a7f85, 0.5, 0.7), posts.length), m4 = new T.Matrix4();
+    posts.forEach(([x, z], i) => { m4.makeTranslation(x, 1.2, z); pm.setMatrixAt(i, m4); });
+    pm.castShadow = false; g.add(pm);
+    const mesh = canvasTexture(64, 64, (c, w, h) => { c.clearRect(0, 0, w, h); c.strokeStyle = 'rgba(150,155,160,0.9)'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, 0); c.lineTo(w, h); c.moveTo(w, 0); c.lineTo(0, h); c.stroke(); }, [800, 24]);
+    const fenceMat = new T.MeshStandardMaterial({ map: mesh, transparent: true, alphaTest: 0.3, side: T.DoubleSide, roughness: 0.6, metalness: 0.5 });
+    const ring = new T.Mesh(new T.CylinderGeometry(R, R, 2.2, 160, 1, true), fenceMat); ring.scale.z = 0.85; ring.position.y = 1.1; g.add(ring);
+    // the horizon: low buildings and trees as dark silhouettes in the haze
+    const pal = [0x5f6670, 0x6e675f, 0x56605c, 0x7a7068, 0x4f5862].map((c) => M(c, 0.95)), tree = M(0x3e4a36, 1);
+    for (let k = 0; k < 90; k++) {
+      const a = (k / 90) * Math.PI * 2 + 0.03 * Math.sin(k * 7.1), r = 240 + 110 * ((k * 37) % 11) / 11, x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (k % 3 === 0) { const tr = new T.Mesh(new T.SphereGeometry(6 + (k % 5) * 1.5, 10, 8), tree); tr.scale.y = 1.3; tr.position.set(x, 5 + (k % 4), z); g.add(tr); continue; }
+      const hgt = 6 + ((k * 53) % 17) * 1.2, w = 16 + ((k * 29) % 13) * 3;
+      box(w, hgt, w * 0.6, x, hgt / 2, z, pal[k % pal.length], false).rotation.y = Math.atan2(z, x);
+    }
+    scene.add(g);
   }
 
   // ---------------------------------------------------------------- approach path + gizmo
@@ -173,12 +265,35 @@ const Scene3D = (() => {
   // ---------------------------------------------------------------- barriers
   function buildBarriers() {
     rigidBarrier = new T.Group();
-    const concrete = new T.MeshStandardMaterial({ color: 0x9a9ea3, roughness: 0.9 });
+    // cast concrete: formwork panels (1.2 m), their tie holes, mottling and a darker stained foot
+    const rnd = (() => { let a = 11; return () => { a = (a * 16807) % 2147483647; return a / 2147483647; }; })();
+    const castTex = canvasTexture(512, 256, (c, w, h) => {
+      c.fillStyle = '#a3a4a3'; c.fillRect(0, 0, w, h);
+      for (let k = 0; k < 6000; k++) { const v = 130 + rnd() * 60; c.fillStyle = `rgba(${v},${v},${v - 4},0.35)`; c.fillRect(rnd() * w, rnd() * h, 1.5, 1.5); }
+      for (let k = 0; k < 10; k++) { const g = c.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, 'rgba(70,70,68,0.14)'); g.addColorStop(1, 'rgba(70,70,68,0)'); c.save(); c.translate(rnd() * w, rnd() * h); c.scale(30 + rnd() * 60, 20 + rnd() * 40); c.fillStyle = g; c.beginPath(); c.arc(0, 0, 1, 0, 6.3); c.fill(); c.restore(); }
+      const foot = c.createLinearGradient(0, h * 0.7, 0, h); foot.addColorStop(0, 'rgba(60,58,55,0)'); foot.addColorStop(1, 'rgba(60,58,55,0.35)'); c.fillStyle = foot; c.fillRect(0, 0, w, h);
+      c.strokeStyle = 'rgba(70,70,70,0.45)'; c.lineWidth = 2;
+      for (let x = 0; x <= w; x += w / 4) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
+      c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
+      c.fillStyle = 'rgba(40,40,40,0.6)';
+      for (let x = w / 8; x < w; x += w / 4) for (const y of [h / 4, 3 * h / 4]) { c.beginPath(); c.arc(x - 20, y, 3, 0, 6.3); c.arc(x + 20, y, 3, 0, 6.3); c.fill(); }
+    }, [1, 1]);
+    const concrete = new T.MeshStandardMaterial({ color: 0xffffff, map: castTex, roughness: 0.92 });
     // The steel plate's front face is the physical barrier face (x = 0). The block starts behind
     // the plate so no two faces share a plane (coplanar faces z-fight and flicker).
     const block = new T.Mesh(new T.BoxGeometry(2.96, 2.4, 2 * P.RIGID_BARRIER.halfWidth), concrete);
     block.position.set(1.52, 1.2, 0); block.castShadow = block.receiveShadow = true;
-    const plate = new T.Mesh(new T.BoxGeometry(0.04, 1.9, 2 * P.RIGID_BARRIER.halfWidth - 0.4), new T.MeshStandardMaterial({ color: 0x59606a, roughness: 0.6, metalness: 0.2 }));
+    // the face: a steel wall of load cells (square plates, bolted), as on a real rigid barrier
+    const cellTex = canvasTexture(512, 256, (c, w, h) => {
+      c.fillStyle = '#3b4148'; c.fillRect(0, 0, w, h);
+      const n = 8, m = 4, cw = w / n, ch = h / m;
+      for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) {
+        const x = i * cw + 3, y = j * ch + 3, g = c.createLinearGradient(x, y, x + cw, y + ch);
+        g.addColorStop(0, '#6d7680'); g.addColorStop(1, '#4f575f'); c.fillStyle = g; c.fillRect(x, y, cw - 6, ch - 6);
+        c.fillStyle = '#2a2f35'; for (const [u, v] of [[8, 8], [cw - 14, 8], [8, ch - 14], [cw - 14, ch - 14]]) c.fillRect(x + u, y + v, 4, 4);
+      }
+    }, [1, 1]);
+    const plate = new T.Mesh(new T.BoxGeometry(0.04, 1.9, 2 * P.RIGID_BARRIER.halfWidth - 0.4), new T.MeshStandardMaterial({ map: cellTex, roughness: 0.45, metalness: 0.55 }));
     plate.position.set(0.02, 1.0, 0); plate.receiveShadow = true;
     const stripeTex = canvasTexture(256, 32, (c, w, h) => {
       c.fillStyle = '#f0c419'; c.fillRect(0, 0, w, h); c.fillStyle = '#1b1b1b';

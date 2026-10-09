@@ -44,12 +44,18 @@ const RaceGame = (() => {
   // the crash physics: on the CPU (in a worker) or the GPU (WebGPU); ?solver=gpu, or the select screen's button
   const solverPick = RaceCrash.solverChoice(document.getElementById('btn-solver'));
 
-  const level = CrashLevel.build({ seed: +q.get('seed') || undefined });
+  // the track (?level=, else the player's last pick; scripted runs default to downtown): picking
+  // another on the select screen reloads the page with it
+  const LEVEL = (() => {
+    const want = q.get('level') || (!q.get('test') && !q.has('director') && (() => { try { return localStorage.getItem('race-level'); } catch (e) { return null; } })());
+    return CrashLevel.LEVELS[want] ? want : 'downtown';
+  })();
+  const level = CrashLevel.build({ level: LEVEL, seed: +q.get('seed') || undefined });
   const L = level.length;
   // a touch screen (or ?touch=1): on-screen buttons, and a lighter picture for a phone's GPU
   const TOUCH = q.get('touch') === '1' || (q.get('touch') !== '0' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
   if (TOUCH) document.body.classList.add('touch');
-  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: Object.assign({}, RaceRender.DUSK, { lampPools: true, carLights: 3 }), bloom: !TOUCH });   // at dusk, as the Destruction mode
+  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: RaceRender.lookFor(level.look), bloom: !TOUCH && level.look !== 'day' });   // the level's time of day
   const world = RaceWorld.create(level);
   const props = RaceProps.create(level);   // street lights, signals, cones, bins ... to knock over
   const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
@@ -62,6 +68,7 @@ const RaceGame = (() => {
     { name: 'Liquid silver', hex: 0x9ea3a8 }, { name: 'Sunset orange', hex: 0xd9581c }, { name: 'Signal yellow', hex: 0xe6b81e }, { name: 'Racing green', hex: 0x1f6b43 },
   ];
   const SCRIPTED = !!TEST || q.has('director');
+  const LEVEL_NOTES = { downtown: 'Towers, hills and three jumps', harbour: 'Flat out past the docks, after dark', hillside: 'Big hills and fast bends at midday' };
   const saved = (() => { if (SCRIPTED) return null; try { return JSON.parse(localStorage.getItem('race-choice')); } catch (e) { return null; } })() || {};
   let carKey = specs[q.get('car')] ? q.get('car') : specs[saved.car] ? saved.car : 'lexus';
   let paintIdx = PAINTS[saved.paint] ? +saved.paint : 0;
@@ -368,7 +375,9 @@ const RaceGame = (() => {
     $('#results-note').hidden = !rows.some(r => r.est);
     // the score: its breakdown, and the best so far in this browser (not for scripted runs)
     let best = null;
-    if (!SCRIPTED) try { best = +localStorage.getItem('race-best') || 0; if (score.score > best) localStorage.setItem('race-best', String(score.score)); } catch (e) { best = null; }
+    // each track keeps its own best (downtown under the original key)
+    const bestKey = LEVEL === 'downtown' ? 'race-best' : 'race-best-' + LEVEL;
+    if (!SCRIPTED) try { best = +localStorage.getItem(bestKey) || 0; if (score.score > best) localStorage.setItem(bestKey, String(score.score)); } catch (e) { best = null; }
     const fmt = (n) => n.toLocaleString('en-US');
     $('#results-score').innerHTML = `<h3>Score ${fmt(score.score)}${best === null ? '' : score.score > best ? ' · a new best' : ` · best ${fmt(best)}`}</h3>` +
       `<table>${score.breakdown().map(b => `<tr><td>${b.label}</td><td class="n">×${b.n}</td><td class="p">${fmt(b.pts)}</td></tr>`).join('')}</table>`;
@@ -461,12 +470,15 @@ const RaceGame = (() => {
     $('#sel-cars').innerHTML = Object.keys(CARS).map((k) => `<button type="button" class="sel-car" role="radio" data-car="${k}"><b>${CARS[k].name}</b><span>${CARS[k].kind} · ${DRIVE[perf[k].drive]} drive</span></button>`).join('');
     $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
     $('#sel-bars').innerHTML = BARS.map(([k], i) => `<div class="bar"><span class="k">${k}</span><span class="track"><i id="bar-${i}"></i></span><span class="val" id="bar-v${i}"></span></div>`).join('');
-    document.querySelectorAll('.sel-car').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
+    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
     document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
+    $('#sel-levels').innerHTML = Object.entries(CrashLevel.LEVELS).map(([k, D]) => `<button type="button" class="sel-car sel-level" role="radio" data-level="${k}"><b>${D.name}</b><span>${LEVEL_NOTES[k]}</span></button>`).join('');
+    document.querySelectorAll('.sel-level').forEach((b) => b.addEventListener('click', () => { b.blur(); pickLevel(b.dataset.level); }));
     $('#btn-start').addEventListener('click', () => { $('#btn-start').blur(); startRace(); });
   }
   function showSelect() {
-    document.querySelectorAll('.sel-car').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    document.querySelectorAll('.sel-level').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.level === LEVEL)));
     document.querySelectorAll('.swatch').forEach((b, i) => b.setAttribute('aria-checked', String(i === paintIdx)));
     document.querySelectorAll('.sel-row').forEach((r) => r.classList.toggle('focus', +r.dataset.row === selRow));
     $('#sel-paint-name').textContent = PAINTS[paintIdx].name;
@@ -496,9 +508,16 @@ const RaceGame = (() => {
     if (!selBusy) R.player.setPaint(PAINTS[paintIdx].hex);   // else chooseCar paints the new model
     showSelect();
   }
+  // another track: the page again with ?level= (the car and paint kept)
+  function pickLevel(key) {
+    if (key === LEVEL || !CrashLevel.LEVELS[key] || state !== 'select') return;
+    try { localStorage.setItem('race-level', key); localStorage.setItem('race-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not remembered */ }
+    const u = new URL(location.href); u.searchParams.set('level', key); location.href = u.toString();
+  }
   function updateSelect(inp) {
-    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 2) % 2; showSelect(); }
+    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 3) % 3; showSelect(); }
     if (inp.nav.x && selRow === 0) { const keys = Object.keys(CARS); chooseCar(keys[(keys.indexOf(carKey) + inp.nav.x + keys.length) % keys.length]); }
+    else if (inp.nav.x && selRow === 2) { const keys = Object.keys(CrashLevel.LEVELS); pickLevel(keys[(keys.indexOf(LEVEL) + inp.nav.x + keys.length) % keys.length]); }
     else if (inp.nav.x) pickPaint(paintIdx + inp.nav.x);
     if (inp.start) startRace();
   }
@@ -648,7 +667,7 @@ const RaceGame = (() => {
     const slots = { lexus: 0, mustang: 0 };
     for (const d of draws) R.drawCar(d.key, slots[d.key]++, d);
     R.endCars();
-    // head and tail lights glowing at dusk (everyone's, the player's too, but not in a crash)
+    // head and tail lights glowing at dusk and at night (everyone's, the player's too, but not in a crash)
     const glow = [];
     const lamps = (key, x, z, h, y) => {
       const S = specs[key], c = Math.cos(h), s = Math.sin(h), f = S.xMin + S.length + 0.02, b = S.xMin - 0.02, w = S.width / 2 - 0.32;
@@ -657,8 +676,10 @@ const RaceGame = (() => {
         glow.push({ x: x + c * b - s * sd * w, y: y + 0.86, z: z + s * b + c * sd * w, r: 0.95, g: 0.08, b: 0.04 });
       }
     };
-    for (const d of draws) lamps(d.key, d.x, d.z, d.h, d.lift || 0);
-    if (state !== 'crash' && state !== 'replay') { const p = car.pose; lamps(carKey, p.x, p.z, p.heading, car.y); }
+    if (level.look !== 'day') {
+      for (const d of draws) lamps(d.key, d.x, d.z, d.h, d.lift || 0);
+      if (state !== 'crash' && state !== 'replay') { const p = car.pose; lamps(carKey, p.x, p.z, p.heading, car.y); }
+    }
     R.carLights(glow);
     // burst hydrants spray for a few seconds
     for (let i = geysers.length - 1; i >= 0; i--) {

@@ -64,7 +64,8 @@ const check = (name, ok, detail) => { console.log(`=== ${name}: ${detail} ${ok ?
 const want = (name) => !filter || name.includes(filter);
 
 const level = CrashLevel.build();
-if (want('level')) {
+// the level checks for each track (the downtown circuit: 'level'; the others 'level-<key>')
+function checkLevel(level, name, lapMax) {
   const C = level.circuit;
   let kmax = 0; for (let i = 0; i < C.N; i++) kmax = Math.max(kmax, Math.abs(C.k[i]));
   let inRoad = 0;
@@ -76,10 +77,14 @@ if (want('level')) {
       if (Math.hypot(x - p.x, z - p.z) < level.roadHalf) inRoad++;
     }
   }
-  const again = CrashLevel.build();
+  const again = CrashLevel.build({ level: level.level });
   const same = JSON.stringify(again.buildings) === JSON.stringify(level.buildings) && JSON.stringify(again.colliders) === JSON.stringify(level.colliders);
-  check('level', level.length > 1400 && level.length < 1800 && 1 / kmax >= 25 && inRoad === 0 && same,
-    `lap ${level.length.toFixed(0)} m (1400-1800), tightest corner ${(1 / kmax).toFixed(0)} m radius (at least 25), ${level.buildings.length} buildings, ${inRoad} colliders in the road (must be 0), same seed same city: ${same}`);
+  check(name, level.length > 1400 && level.length < lapMax && 1 / kmax >= 25 && inRoad === 0 && same,
+    `lap ${level.length.toFixed(0)} m (1400-${lapMax}), tightest corner ${(1 / kmax).toFixed(0)} m radius (at least 25), ${level.buildings.length} buildings, ${inRoad} colliders in the road (must be 0), same seed same city: ${same}`);
+}
+for (const key of Object.keys(CrashLevel.LEVELS)) {
+  const name = key === 'downtown' ? 'level' : 'level-' + key;
+  if (want(name)) checkLevel(key === 'downtown' ? level : CrashLevel.build({ level: key }), name, key === 'downtown' ? 1800 : 2000);
 }
 
 if (want('car')) {
@@ -184,7 +189,8 @@ if (want('damage')) {
     `a 2 m/s scrape ${(d2 * 100).toFixed(0)}% (none), an 8 m/s nudge into a car ${(nudge * 100).toFixed(1)}% (under 3%), a wall at 13 m/s ${(d13 * 100).toFixed(0)}% (12-35%), at 28 m/s ${(d28 * 100).toFixed(0)}% (a wreck: 100% or more)`);
 }
 
-if (want('race')) {
+// a full AI race on each track (downtown: 'race', about 3 minutes; the longer ones 'race-<key>')
+function checkRace(level, name, tMax) {
   // eight AI cars on the grid, traffic around the leader, the props in the street; 3 laps
   const world = RaceWorld.create(level), specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
   const props = RaceProps.create(level);
@@ -218,8 +224,12 @@ if (want('race')) {
     }
   }
   const done = ai.rivals.filter(r => r.prog.done), times = done.map(r => r.prog.time).sort((a, b) => a - b);
-  check('race', done.length === 8 && maxStuck < 5 && overlaps === 0 && times[0] > 150 && times[0] < 210,
-    `${done.length}/8 finished 3 laps; winner ${times.length ? times[0].toFixed(0) : '-'} s, last ${times.length ? times[times.length - 1].toFixed(0) : '-'} s (winner 150-210 s: about 3 minutes); longest stuck ${maxStuck.toFixed(1)} s (under 5); ${crashes} crashes; ${propHits} props knocked over (up to ${maxAwake} moving at once); traffic up to ${maxTraffic} cars, ${overlaps} lane overlaps (must be 0)`);
+  check(name, done.length === 8 && maxStuck < 5 && overlaps === 0 && times[0] > 150 && times[0] < tMax,
+    `${done.length}/8 finished 3 laps; winner ${times.length ? times[0].toFixed(0) : '-'} s, last ${times.length ? times[times.length - 1].toFixed(0) : '-'} s (winner 150-${tMax} s${tMax === 210 ? ': about 3 minutes' : ''}); longest stuck ${maxStuck.toFixed(1)} s (under 5); ${crashes} crashes; ${propHits} props knocked over (up to ${maxAwake} moving at once); traffic up to ${maxTraffic} cars, ${overlaps} lane overlaps (must be 0)`);
+}
+for (const key of Object.keys(CrashLevel.LEVELS)) {
+  const name = key === 'downtown' ? 'race' : 'race-' + key;
+  if (want(name)) checkRace(key === 'downtown' ? level : CrashLevel.build({ level: key }), name, key === 'downtown' ? 210 : 280);
 }
 
 if (want('wall-angle')) {

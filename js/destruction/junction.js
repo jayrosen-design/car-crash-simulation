@@ -59,8 +59,39 @@ const DestructionLevel = (() => {
   };
 
   /* opts: { seed } -> the level (see the return value) */
+  // ---------------------------------------------------------------- the levels
+  // The same streets three ways: the time of day (look, for render.js), how tall the city grows
+  // (base + rand, up to tall more toward the junction within radius, spike for a few towers), the
+  // skyline (radius, tallest), the traffic (a car every gap[0] + rand gap[1] s per lane; the share
+  // of sedans and trucks, the rest buses), the specials (lane, type, speed, when they reach the middle)
+  // and the medal targets (set from the scripted attempts, ?test=plain|tanker|ramp); water: the docks
+  // beyond the far end of Main St (cranes on the quay), yard: container stacks in the back lots.
+  const LEVELS = {
+    crossroads: { name: 'Crossroads at dusk', seed: 20261009, look: 'dusk',
+      heights: { base: 10, rand: 16, tall: [26, 60], spike: 40, radius: 420 }, skyline: [620, 170],
+      traffic: { gap: [3.0, 2.6], sedans: 0.88, trucks: 0.96 },
+      specials: [['W1', 'tanker', 13, 10.6], ['E1', 'bus', 13.5, 12.2], ['E2', 'truck', 14, 9.2], ['W2', 'truck', 13, 13.6], ['E0', 'tanker', 13, 21.0], ['W0', 'bus', 13, 17.5]],
+      medals: { bronze: 300000, silver: 1000000, gold: 3000000 } },
+    // the docks after dark: low warehouses, freight traffic, three tankers
+    docklands: { name: 'Docklands at night', seed: 5511, look: 'night', water: 300, yard: true,
+      heights: { base: 7, rand: 8, tall: [6, 14], spike: 12, radius: 300 }, skyline: [700, 60],
+      traffic: { gap: [2.8, 2.4], sedans: 0.66, trucks: 0.94 },
+      specials: [['W1', 'tanker', 13, 10.6], ['E1', 'tanker', 13.5, 12.4], ['E2', 'truck', 14, 9.2], ['W2', 'truck', 13, 13.6], ['W0', 'truck', 13, 16.0], ['E0', 'tanker', 13, 20.0]],
+      // scripted: no boost $1.8M, boosting into the tanker $2.2M, the ramp and its x4 $9.0M
+      medals: { bronze: 500000, silver: 1500000, gold: 4000000 } },
+    // downtown at midday: towers, a bus lane's worth of buses, one tanker
+    boulevard: { name: 'Boulevard at noon', seed: 8123, look: 'day',
+      heights: { base: 14, rand: 22, tall: [40, 90], spike: 60, radius: 500 }, skyline: [620, 230],
+      traffic: { gap: [2.6, 2.2], sedans: 0.8, trucks: 0.86 },
+      specials: [['W1', 'tanker', 13, 10.6], ['E1', 'bus', 13.5, 12.2], ['E2', 'bus', 14, 9.2], ['W2', 'bus', 13, 13.6], ['E0', 'truck', 13, 19.0], ['W0', 'bus', 13, 17.5]],
+      // scripted: no boost $0.77M, boosting into the tanker $1.15M, the ramp and its x4 $1.77M
+      medals: { bronze: 250000, silver: 800000, gold: 1500000 } },
+  };
+
+  /* opts: { level (a LEVELS key, default crossroads), seed } */
   function build(opts = {}) {
-    const R = rng(opts.seed || 20261009);
+    const levelKey = LEVELS[opts.level] ? opts.level : 'crossroads', D = LEVELS[levelKey];
+    const R = rng(opts.seed || D.seed);
 
     // ------------------------------------------------ the ground: flat around the junction, Main St
     // climbing to the south (the whole hillside, so the buildings along it climb too)
@@ -148,15 +179,26 @@ const DestructionLevel = (() => {
     const inGas = (b) => b.x + b.hx > MAIN_HALF + WALK && b.x - b.hx < 52 && b.z + b.hz > HARBOR_HALF + WALK && b.z - b.hz < 52;
     // and the roadworks yard on the near-right corner
     const inYard = (b) => b.x - b.hx < -MAIN_HALF - WALK && b.x + b.hx > -32 && b.z + b.hz > -42 && b.z - b.hz < -HARBOR_HALF - WALK;
+    const containers = [], cranes = [];
+    function yardLot(x, z, w, d) {
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j += 2) {
+        const cx = x + i * 13.4, cz = z + j * 2.4, n = 1 + Math.floor(R() * 3);
+        if (buildings.some((o) => Math.abs(o.x - cx) < o.hx + 8 && Math.abs(o.z - cz) < o.hz + 3)) continue;
+        for (let k = 0; k < n; k++) containers.push({ x: cx, z: cz, y: k * 2.6, angle: 0, color: Math.floor(R() * 6) });
+        boxes.push({ x: cx, z: cz, hx: 6.1, hz: 1.22, angle: 0, height: n * 2.6 });
+      }
+    }
     function addBuilding(b) {
       for (const o of buildings) if (Math.abs(o.x - b.x) < o.hx + b.hx + 1 && Math.abs(o.z - b.z) < o.hz + b.hz + 1) return false;
       if (inGas(b) || inYard(b)) return false;
+      if (D.water && b.z + b.hz > D.water - 6) return false;
       buildings.push(b);
       boxes.push({ x: b.x, z: b.z, hx: b.hx, hz: b.hz, angle: b.angle, height: Math.min(b.height, 12) });
       return true;
     }
     // how tall: a downtown junction, taller toward it, a few towers
-    const tall = (x, z) => { const d = Math.hypot(x, z * 0.8), k = Math.max(0, 1 - d / 420), r = R(); return 10 + r * 16 + k * k * (26 + R() * 60) + (r > 0.92 ? 40 : 0); };
+    const HT = D.heights;
+    const tall = (x, z) => { const d = Math.hypot(x, z * 0.8), k = Math.max(0, 1 - d / HT.radius), r = R(); return HT.base + r * HT.rand + k * k * (HT.tall[0] + R() * HT.tall[1]) + (r > 0.92 ? HT.spike : 0); };
     // frontage along each arm, both sides, facing the street (axis-aligned)
     const frontage = (axis, sign, from, to) => {
       for (let s = from; s < to;) {
@@ -179,12 +221,14 @@ const DestructionLevel = (() => {
       if (R() < 0.15) continue;
       const x = gx + (R() - 0.5) * 10, z = gz + (R() - 0.5) * 10, w = 16 + R() * 22, d = 16 + R() * 22;
       if (Math.abs(x) < MAIN_HALF + WALK + 22 + w / 2 || Math.abs(z) < HARBOR_HALF + WALK + 22 + d / 2) continue;
+      // the docklands' container yards: stacks in the lots north of Harbor Blvd
+      if (D.yard && z > 40) { if (z + d / 2 < D.water - 6) yardLot(x, z, w, d); continue; }
       addBuilding({ x, z, hx: w / 2, hz: d / 2, angle: 0, height: tall(x, z), style: Math.floor(R() * 4) });
     }
     const skyline = [];
     for (let a = 0; a < 2 * Math.PI; a += 0.05) {
-      const rr = 620 + R() * 360;
-      skyline.push({ x: Math.cos(a) * rr, z: -40 + Math.sin(a) * rr, hx: 14 + R() * 24, hz: 14 + R() * 24, angle: R() * 0.4, height: 30 + R() * R() * 170, style: Math.floor(R() * 4) });
+      const rr = D.skyline[0] + R() * 360;
+      skyline.push({ x: Math.cos(a) * rr, z: -40 + Math.sin(a) * rr, hx: 14 + R() * 24, hz: 14 + R() * 24, angle: R() * 0.4, height: 30 * D.skyline[1] / 170 + R() * R() * D.skyline[1], style: Math.floor(R() * 4) });
     }
     // the gas station: a kiosk at the back of the lot, the canopy's four posts over two pump islands
     const gas = { kiosk: { x: 41, z: 44, hx: 8, hz: 5, angle: 0, height: 4.2, style: 3 }, canopy: { x: 30, z: 31, hx: 11, hz: 7.5, height: 5.4 }, pumps: [] };
@@ -273,18 +317,16 @@ const DestructionLevel = (() => {
     const sedan = () => (R() < 0.6 ? 'lexus' : 'mustang');
     // specials, timed by when they reach the middle of the junction (centre at ARM along their lane)
     const special = (lane, type, v, tMid) => schedule.push({ t: tMid - ARM / v, lane, type, v, paint: Math.floor(R() * 8), special: true });
-    special('W1', 'tanker', 13, 10.6);     // meets a boosted run
-    special('E1', 'bus', 13.5, 12.2);      // meets a run without boost
-    special('E2', 'truck', 14, 9.2);
-    special('W2', 'truck', 13, 13.6);
-    special('E0', 'tanker', 13, 21.0);     // into the pile-up
-    special('W0', 'bus', 13, 17.5);
+    // (crossroads: W1's tanker meets a boosted run, E1's bus a run without boost, E0's tanker joins
+    // the pile-up)
+    for (const sp of D.specials) special(...sp);
+    const TR = D.traffic;
     for (const L of lanes.filter(q => q.light === 'harbor')) {
-      for (let t = WARMUP + R() * 3; t < 60; t += 3.0 + R() * 2.6) {
+      for (let t = WARMUP + R() * 3; t < 60; t += TR.gap[0] + R() * TR.gap[1]) {
         const v = 13.5 + R() * 3.5;
         // keep clear of the specials in this lane (they set the pace near their time)
         if (schedule.some(q => q.special && q.lane === L.id && Math.abs(q.t - t) < 3.2)) continue;
-        const u = R(), type = u < 0.88 ? sedan() : u < 0.96 ? 'truck' : 'bus';
+        const u = R(), type = u < TR.sedans ? sedan() : u < TR.trucks ? 'truck' : 'bus';
         schedule.push({ t, lane: L.id, type, v, paint: Math.floor(R() * 8) });
       }
     }
@@ -320,7 +362,8 @@ const DestructionLevel = (() => {
     const underStreet = (x, z) => (Math.abs(x) < MAIN_HALF + WALK + 0.5 && z < ARM) || (Math.abs(z) < HARBOR_HALF + WALK + 0.5 && Math.abs(x) < ARM);
 
     return {
-      name: 'Crossroads', seed: opts.seed || 20261009,
+      level: levelKey, name: D.name, look: D.look, seed: opts.seed || D.seed,
+      containers, cranes: D.water ? [-150, -60, 60, 150].map((x) => ({ x, z: D.water - 4, angle: Math.PI })) : [], water: D.water ? { z: D.water, north: true } : null,
       laneWidth: LANE_W, roadHalf: MAIN_HALF, mainHalf: MAIN_HALF, harborHalf: HARBOR_HALF, walk: WALK, approach: APPROACH, arm: ARM, plateau: PLATEAU,
       start: null, player: { x: -1.75, z: -APPROACH + 16, h: Math.PI / 2 },
       surfaces: { roads, walks, kerbs, lines }, groundGrid: { x0: -340, x1: 340, z0: -460, z1: -PLATEAU + 10 }, underStreet,
@@ -328,11 +371,11 @@ const DestructionLevel = (() => {
       colliders: { boxes, cyls }, collidersNear, terrain, groundAt, rampProfile,
       lanes, signal, schedule, warmup: WARMUP, parked, pickups, values: VALUES,
       // medal targets (game dollars), set from scripted attempts (tools/destruction-check.js)
-      medals: { bronze: 300000, silver: 1000000, gold: 3000000 },
+      medals: D.medals,
       bounds: { x0: -ARM, x1: ARM, z0: -APPROACH, z1: ARM },
     };
   }
 
-  return { build, rng, PROP_TYPES, VALUES, LANE_W };
+  return { build, rng, LEVELS, PROP_TYPES, VALUES, LANE_W };
 })();
 if (typeof module === 'object' && module.exports) module.exports = DestructionLevel;

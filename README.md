@@ -153,7 +153,7 @@ In playback:
 
 <img src="media/race.jpg" width="640" alt="Race mode: the player's Lexus in a pack of rival cars on a city street, with a rival spun round by a takedown">
 
-`Race.html` puts you behind the wheel: three laps of a city street circuit at dusk against seven rivals, through traffic going both ways, in the spirit of arcade street racers. A crash is worked out by the same lattice solver as the simulations, starting from your car's real position, speed and spin at the moment of impact. While it computes in the background, a slow-motion crash camera plays it back. Open it from the home page, the **Simulation** menu in the simulator, or `/race` on the website. For development, open `game.html`.
+`Race.html` puts you behind the wheel: three laps of a city street circuit against seven rivals, through traffic going both ways, in the spirit of arcade street racers. There are three tracks, each at its own time of day. A crash is worked out by the same lattice solver as the simulations, starting from your car's real position, speed and spin at the moment of impact. While it computes in the background, a slow-motion crash camera plays it back. Open it from the home page, the **Simulation** menu in the simulator, or `/race` on the website. For development, open `game.html`.
 
 | | Keyboard | Controller (Xbox layout) |
 |---|---|---|
@@ -185,7 +185,13 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Where the figures come from.** They aren't typed in. `RaceCar.measure` works them out at load by driving each car on an empty road with the game's own physics, about 0.1 s for both. `tools/race-check.js` checks the same figures.
   - **The paint** covers the whole car, parts that break off it in a crash included.
   - **Remembered choice.** The choice is kept in the browser for the next race. `?car=lexus|mustang` sets the car the screen starts on.
-- **The circuit.** A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, guard rails along the kerbs (open at the side streets, so you can't drive off into the blocks between the streets), street lights, trees and closed side streets, rolling hills on three stretches and three jump ramps across the street. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
+- **Three tracks** (`CrashLevel.LEVELS` in `js/race/level.js`; the **Track** row on the select screen, or `?level=`; the last pick is remembered). Picking one reloads the page with it. Each track keeps its own best score.
+  - **Downtown at dusk** (`downtown`, below): towers, three hills and three jumps; 1.47 km.
+  - **Harbour at night** (`harbour`): flat and fast, two long straights past a container quay (174 containers, stacked) with gantry cranes and dark water, a chicane, low sheds and warehouses (none over 43 m), half the windows lit, stars and a moon; 1.63 km, three jumps.
+  - **Hillside at noon** (`hillside`): sweeping bends (60 m radius and up) over four big hills (up to 9 m), low buildings (none over 23 m), grass and parks with 1,427 trees, under a high sun; 1.84 km, two jumps.
+  - Each is a set of corners, hills, ramps, building heights, open lots and a time of day; the city, its streets and its props are generated from them as for downtown.
+  - **Frame time** (development machine, 12 s flat out with boost): the harbour p95 16.9 ms, the hillside p95 17.1 ms.
+- **The circuit** (downtown). A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, guard rails along the kerbs (open at the side streets, so you can't drive off into the blocks between the streets), street lights, trees and closed side streets, rolling hills on three stretches and three jump ramps across the street. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
 - **Eight cars.** You start sixth on the grid, against seven rivals in Lexus and Mustang models, each with a name, a paint colour, a skill level and an aggression level.
 - **Traffic, both ways.** Cars keep to their lanes and follow the car ahead with the Intelligent Driver Model \[[77](#ref-77)\]: $\dot v = a\big[1 - (v/v_0)^4 - (s^*/s)^2\big]$, $s^* = s_0 + vT + \frac{v\,\Delta v}{2\sqrt{ab}}$. Here $s$ is the gap to the car ahead and $\Delta v$ the closing speed. The game uses $a = 1.6$ m/s², $b = 3$ m/s², $s_0 = 4$ m, a time gap $T = 1.4$ s, and cruising speeds $v_0$ of 13–19 m/s (47–68 km/h). They are added ahead of you and removed behind you, so the street is busy wherever the race is. They move on rails until something hits them, then become free cars that brake to a stop.
 - **Boost.** Hold Shift for 1.65× engine power, with a surge as it kicks in (up to 1.4 times that, fading over 0.6 s) that also widens the view. It fills from near misses (passing a traffic car within 1.2 m at over 54 km/h; more for oncoming ones), slams and takedowns, and by the metre from runs in the oncoming lanes (from 40 m on), drifting (from 20 m) and in the air (from 5 m); once a run is long enough, the metres before count too.
@@ -247,9 +253,11 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
 - **Rendering** (`js/race/render.js`). Rivals and traffic are instanced copies of the two car models, one draw call per material. Your car is the simulator's deformable model, so the crash's damage shows on the same mesh you drove.
   - **Street surfaces.** Road, pavements, kerbs and walls use photographed CC0 textures from Poly Haven, with normal and roughness maps.
   - **Facades.** Windows, floors and shop fronts are drawn by a shader over the wall textures, with some windows lit.
+  - **Time of day.** `RaceRender.lookFor(level.look)`: dusk, night (`RaceRender.NIGHT`: a starry sky with a moon, the city's glow on the horizon, the street lights' pools doing the work) or day (the street HDRI, no glows or bloom).
   - **Dusk.** The same time of day as Destruction (`RaceRender.DUSK`): a low orange sun and a violet sky, a procedural sky and environment map for the reflections, more windows lit. A sun shadow map follows the car.
   - **Lights.** Pools of light under the street lights. Every car's headlights and tail lights glow (camera-facing sprites), and a selective bloom makes them and the lit signs shine. The bloom is off on touch screens.
   - **Guard rails.** Instanced rails along both kerbs.
+  - **The other tracks' dressing.** The harbour's container stacks are one instanced set (colliders too), its gantry cranes carry glowing red lights, and its water is dark with a soft sheen and a ripple normal map. The hillside's open ground is grass; its park trees (away from the road) use a coarser crown than the street's (560 triangles rather than 1,260).
   - **Frame time.** About 16.7 ms per frame on the development machine (95th percentile 17 ms) with the dusk lighting, rails, light pools and bloom.
 - **Textures** come from `tools/fetch-race-assets.py`. It downloads them, scales and recompresses them with Blender's image library, and writes `media/race/assets.js`. The single-file `Race.html` embeds them.
 
@@ -274,7 +282,8 @@ node tools/headless-check.js world      the crash solver's world barrier
   - **shove:** steering into a car alongside pushes it at least 1.5 times as far as holding straight, and faster than the contacts alone would;
   - **attack:** an aggressive rival 15 m behind your car in the next lane catches it and drives into it within 8 s; a calm one never does;
   - **drift:** your handling at 90 km/h, a brake tap with full lock and then throttle steering in: a 20–45° slide held for at least 1.5 s, over 80% of the speed kept, and straight again within 1.5 s of letting go (both cars). The same inputs don't make a rival's car drift;
-  - **a full race:** eight AI cars race three laps through traffic and the props, all finish, the winner takes 150–210 s (about 3 minutes), none is stuck for more than 5 s, and lane-bound traffic never overlaps.
+  - **a full race:** eight AI cars race three laps through traffic and the props, all finish, the winner takes 150–210 s (about 3 minutes), none is stuck for more than 5 s, and lane-bound traffic never overlaps. `race-harbour` and `race-hillside` run the same on the other tracks (winner within 280 s: 217 and 223 s);
+  - **the other tracks:** `level-harbour` and `level-hillside`, as `level`. The downtown circuit builds exactly as before the tracks were added.
 - **The `world` checks** in `headless-check.js`:
   - a one-cylinder world reproduces the pole barrier exactly;
   - a box wall agrees with the rigid barrier (peak deceleration and crush), also when turned 30°;
@@ -289,7 +298,7 @@ node tools/headless-check.js world      the crash solver's world barrier
 
 <img src="media/destruction.jpg" width="640" alt="Destruction mode: a gas tanker exploding in a busy junction at dusk, a wrecked car flipped over in front, the damage adding up in dollars">
 
-`Destruction.html` is a crash mode in the spirit of Burnout 3's. You drive down into one busy crossroads at dusk and cause as much damage as you can.
+`Destruction.html` is a crash mode in the spirit of Burnout 3's. You drive down into a busy junction and cause as much damage as you can. There are three junctions (the **Junction** row on the select screen, or `?level=`): the crossroads at dusk (below), the docklands at night and a boulevard at noon.
 - **The impact.** The full crash solver works out your car's impact, as in Race, played back in slow motion.
 - **The pile-up.** Then the wrecks tumble on as rigid bodies while the traffic keeps piling in.
 - **Payouts.** Everything damaged pays out in dollars.
@@ -312,6 +321,11 @@ On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once
 ### An attempt
 
 - **Car and paint.** The same cars and eight paints as Race. The select screen also shows the junction's targets and your best.
+- **Three junctions** (`DestructionLevel.LEVELS` in `js/destruction/junction.js`). The same streets, each with its own time of day, city, traffic and specials; each keeps its own best.
+  - **Crossroads at dusk** (`crossroads`, below).
+  - **Docklands at night** (`docklands`): low warehouses (none over 32 m), container yards in the back lots, the docks and gantry cranes beyond the far end of Main St; freight traffic (33 box trucks among 131 vehicles) and three tankers. Targets $0.5M / $1.5M / $4M.
+  - **Boulevard at noon** (`boulevard`): towers up to 168 m (half the buildings over 50 m), 21 buses among 141 vehicles and one tanker. Targets $250k / $800k / $1.5M.
+  - **The targets** come from the scripted attempts (`junction.html?level=<key>&test=plain|tanker|ramp`): docklands $1.8M, $2.2M and $9.0M, boulevard $0.77M, $1.15M and $1.77M; the ramp's ×4 is the way to gold.
 - **The junction: "Crossroads at dusk"** (`js/destruction/junction.js`).
   - **Main St.** Two lanes each way. You start 340 m from the junction, at the top of a gentle hill (9 m of drop), standing on the hill's surface with its slope. The street is flat within 75 m of the junction, because the crash solver's ground is flat.
   - **Harbor Blvd.** It crosses with three lanes each way and a painted median. It is on green for the whole run-up. Main St is on red, with a queue waiting on the far side.
@@ -407,10 +421,10 @@ node tools/headless-check.js world      includes the solver's moving boxes, roof
 ```
 
 - **`destruction-check.js`** checks:
-  - **the junction:** no building, tree or post in a road; every lane inside the roads; the ground flat round the junction; the ramp's lip 2 m up in its lane only; the same seed builds the same junction;
+  - **the junction** (each level: `junction`, `junction-docklands`, `junction-boulevard`): no building, tree, post or container in a road; every lane inside the roads; the ground flat round the junction; the ramp's lip 2 m up in its lane only; the same seed builds the same junction;
   - **the broad phase:** the Race cars keep `world.js`'s old 7 m limit; a car square into the end of a 12 m bus is found at first touch (the old limit found it only 75 cm in);
   - **prop reach:** a bus's front corner knocks a cone over;
-  - **traffic:** two minutes without the player. No vehicle touches another, the red light holds the queue, everyone who enters leaves, and a rerun is identical;
+  - **traffic** (each level: `traffic`, `traffic-docklands`, `traffic-boulevard`): two minutes without the player. No vehicle touches another, the red light holds the queue, everyone who enters leaves, and a rerun is identical;
   - **the pile-up:** a wreck left across the lanes is run into;
   - **the wrecks:**
     - a dropped wreck settles (it sinks under 1 cm and never gains energy);
@@ -549,9 +563,9 @@ Playback finds the two frames around the playback time and blends between them (
 ### Rendering and loading
 
 - **three.js scene** (`scene.js`):
-  - a test track with sky, ground and shadows;
+  - an open-air test track in the late afternoon: a low warm sun (32° up) with soft shadows, a shader sky that is also rendered into the environment map (so the car paint, chrome and glass reflect it; `CarModels.useEnvironment`), 4 m concrete slabs with joints, wear and a normal map, a faint measuring grid round the impact zone, and a facility well clear of every test (a test hall, a control tower, floodlight masts that glow, a fence and low buildings and trees on the horizon). It changes only what is drawn, never the physics;
   - an approach-path gizmo;
-  - the rigid barrier, or an instanced brick wall;
+  - the rigid barrier (cast concrete with formwork panels, and a face of bolted steel load cells), or an instanced brick wall;
   - one or more **car slots**, each with its body, interior (seat, dash, steering wheel, airbag, belts), dummy and curtain airbag;
   - cameras, with an onboard picture-in-picture inset.
 - **Imported cars** (`carmodel.js`): parsed once from the embedded GLB, then skinned to the physics lattice on the GPU (see [Rendering the damage](#rendering-the-damage)).
@@ -2248,7 +2262,7 @@ The CPU solver is unchanged by the GPU option. With the GPU option off, eight cr
 node tools/build-standalone.js
 ```
 
-Writes `Simulator.html` (from `index.html` and every script), `Race.html` (from `game.html`, its scripts and the textures in `media/race/assets.js`), `Destruction.html` (from `junction.html` the same way) and `Car Crash Simulation.html` (from `home.html`, `css/site.css` and `media/`). Edit the sources, not these four files. It stops if any embedded file doesn't appear intact. `node tools/build-standalone.js Destruction` builds only the files whose names contain the word.
+Writes `Simulator.html` (from `index.html` and every script), `Race.html` (from `game.html`, its scripts and the textures in `media/race/assets.js`), `Destruction.html` (from `junction.html` the same way) and `Car Crash Simulation.html` (from `home.html`, `css/site.css` and `media/`; it embeds the 16:9 videos only and plays them on phones too, while the website serves the 9:16 cuts). Edit the sources, not these four files. It stops if any embedded file doesn't appear intact. `node tools/build-standalone.js Destruction` builds only the files whose names contain the word.
 
 ```
 blender -b -Y --factory-startup --python tools/fetch-race-assets.py
@@ -2271,9 +2285,9 @@ node tools/record-video.js [shots|video|loop|race|destruction|labs] [--lab <id>]
 ```
 
 Records the built `Simulator.html` in headless Chrome. It writes:
-- `media/crash-reel.mp4`: the one-minute trailer, with its soundtrack;
-- `media/poster.jpg`: the video's poster frame;
-- `media/hero-loop.mp4`: the home page's background, the trailer's chorus without titles or sound (`loop` records just this);
+- `media/crash-reel.mp4` and `media/crash-reel-mobile.mp4`: the one-minute trailer, with its soundtrack, in 16:9 and 9:16;
+- `media/poster.jpg`, `media/poster-mobile.jpg`: the video's poster frames;
+- `media/hero-loop.mp4`, `media/hero-loop-mobile.mp4`: the home page's background, the trailer's chorus with the colour grade alone (no titles, readouts or sound; `loop` makes just these);
 - `media/race-trailer.mp4`, `media/race-poster.jpg`: the Race game's one-minute trailer and its poster, and the same cut for phones held upright (9:16), `media/race-trailer-mobile.mp4` and `media/race-poster-mobile.jpg` (`race` records just these, from `Race.html`);
 - `media/destruction-trailer.mp4`, `media/destruction-trailer-mobile.mp4` and their posters: the Destruction game's trailer in both formats (`destruction`, from `Destruction.html`);
 - `media/shot-rigid.jpg`, `media/shot-brick.jpg`: the barrier tests;
@@ -2281,7 +2295,7 @@ Records the built `Simulator.html` in headless Chrome. It writes:
 
 How it works:
 - **Virtual clock.** The page runs on a virtual clock that advances exactly 1/30 s per captured frame, so the video is smooth however long each frame takes to render.
-- **The trailer.** `tools/trailer.js` holds the shot list. The crashes are the simulator's own runs with the GPU (WebGPU) solver, except the brick wall, which runs on the CPU. The recorder sets the replay speed and the camera for every frame and lays the titles, colour grade and flashes over the page. At 150 BPM and 30 fps a beat is exactly 12 frames, so every first contact lands on a beat. The shots are drawn at 1920 × 1080 and scaled to 1280 × 720.
+- **The trailer.** `tools/trailer.js` holds the shot list. The crashes are the simulator's own runs with the GPU (WebGPU) solver, except the brick wall, which runs on the CPU. The recorder sets the replay speed and the camera for every frame. At 150 BPM and 30 fps a beat is exactly 12 frames, so every first contact lands on a beat. The shots are filmed square, like the game trailers, and the same compositor (`tools/trailer-kit.js`) lays the website's look over them in both formats: the logo, slammed titles, lower thirds, and the replay's clock and speed as a readout. Both are encoded at 1280 × 720 and 720 × 1280. The home page plays the 9:16 cuts (the trailer and the background loop) on a phone held upright.
 - **The soundtrack.** `tools/trailer-music.js` is an original rock track (drums, bass, double-tracked distorted guitars, a lead guitar and trailer hits), synthesised with Web Audio in an `OfflineAudioContext` in the page. It follows the same bar grid, and the shot list says where the impacts, whooshes and title hits go.
 - **The game trailers** (`tools/trailer-kit.js`, with `tools/race-trailer.js` and `tools/destruction-trailer.js`).
   - **Takes.** Each take is a fresh run of the game on the virtual clock. The game's opt-in director hook (`RaceGame.director`, `DestructionGame.director`: player input and camera, both null in play) lets the script drive the player and film several cameras at once: cars to chase, sweeping paths over the city, orbits round the crash. The crashes are the game's own, solved by the full crash solver; the recorder lets each one finish before playing on, so the slow-motion crash camera never waits for it. Slow motion is filmed slow, with a shorter step of the clock.
@@ -2438,7 +2452,7 @@ js/
     look.js       dusk, the heavy vehicles' meshes, dents, explosions and fires, lights, bloom, shake
     game.js       an attempt: select, countdown, the crash and its hand-over to the pile-up, score, HUD, results
 models/           generated car models (Draco GLB as base64) and physics data
-media/            the home page's trailers (crash tests, Race and Destruction, the games' also in 9:16 for phones), background loop, posters and pictures (destruction.jpg: the Destruction card)
+media/            the home page's trailers (crash tests, Race and Destruction, each also in 9:16 for phones), background loop, posters and pictures (destruction.jpg: the Destruction card)
 media/race/       the Race game's textures and sky (generated by fetch-race-assets.py)
 tools/
   headless-check.js     physics and lab checks in Node
@@ -2451,7 +2465,7 @@ tools/
   record-video.js       records the home page's media in headless Chrome
   trailer.js            the trailer's shot list, cameras, titles and recorder
   trailer-music.js      the trailers' soundtracks, synthesised with Web Audio
-  trailer-kit.js        the game trailers' recorder, edit and compositor (16:9 and 9:16 from square takes)
+  trailer-kit.js        the trailers' recorder, edit and compositor (16:9 and 9:16 from square takes)
   race-trailer.js       the Race trailer: its director, scripted takes and shot list
   destruction-trailer.js  the Destruction trailer: the flyover, the gold run and its shot list
   encode-video.py       encodes the video with Blender's FFmpeg

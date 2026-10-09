@@ -13,6 +13,10 @@
  * (cos h, sin h); a lateral offset l is measured to the right of the circuit's direction, along
  * (-sin h, cos h). Curvature k = dh/ds, positive turning right.
  *
+ * Three levels (LEVELS): the downtown circuit at dusk, the harbour at night (flat, long straights,
+ * low warehouses) and the hillside at noon (sweeping bends over big hills, low houses, parks). Each
+ * sets the corners, hills, ramps, how the buildings grow and the time of day (look, for render.js).
+ *
  * DOM-free: global CrashLevel in the browser, module.exports in Node.
  */
 const CrashLevel = (() => {
@@ -85,15 +89,40 @@ const CrashLevel = (() => {
   }
   function norm(x, z) { const l = Math.hypot(x, z) || 1; return [x / l, z / l]; }
 
+  // ---------------------------------------------------------------- the levels
+  // corners: [x, z, radius] in race order (the start on the first straight); hills: [x, z, height,
+  // spread]; ramps: [s, up, top, down, height] on straights off the hills; heights: how tall the
+  // buildings grow (base + rand, up to tall more toward centre within radius, spike for a few);
+  // openLots: the share of back lots left open (parks: trees in them); skyline: the distant ring's
+  // radius and tallest; look: the time of day (render.js); ground: what the open ground is (render.js);
+  // quay: the harbour's water starts south of this z, with container stacks and cranes on the quay
+  const LEVELS = {
+    // a lap of about 1.47 km: three laps take about 3 minutes at race pace
+    downtown: { name: 'Downtown at dusk', seed: 20261007, look: 'dusk',
+      corners: [[0, 0, 34], [480, 0, 30], [480, 215, 58], [338, 364, 140], [158, 364, 46], [0, 205, 60]],
+      hills: [[480, 112, 6, 36], [416, 300, 4, 40], [0, 112, 5, 34]],
+      ramps: [[215, 12, 2, 8, 1.4], [998, 11, 2, 8, 1.3], [1215, 12, 2, 8, 1.5]],
+      heights: { base: 9, rand: 14, tall: [40, 95], spike: 30, centre: [440, 185], radius: 520 }, openLots: 0.12, skyline: [820, 160] },
+    // flat docks: two long straights joined by tight corners and a chicane; low sheds and warehouses
+    harbour: { name: 'Harbour at night', seed: 7311, look: 'night', quay: -64, ground: 'asphalt',
+      corners: [[0, 0, 36], [560, 0, 34], [560, 170, 30], [430, 250, 40], [300, 330, 70], [40, 330, 36], [-60, 190, 60]],
+      hills: [],
+      ramps: [[230, 12, 2, 8, 1.5], [820, 12, 2, 8, 1.4], [1100, 12, 2, 8, 1.4]],
+      heights: { base: 7, rand: 9, tall: [8, 22], spike: 14, centre: [280, 160], radius: 400 }, openLots: 0.3, skyline: [900, 70] },
+    // a fast loop round a hillside: big hills, sweeping bends, low houses and parks under a high sun
+    hillside: { name: 'Hillside at noon', seed: 4471, look: 'day', parks: true, ground: 'grass',
+      corners: [[0, 0, 60], [420, -40, 110], [640, 140, 90], [560, 400, 120], [240, 450, 80], [-40, 260, 90]],
+      hills: [[540, 30, 9, 55], [620, 290, 7, 60], [360, 470, 6, 50], [-60, 120, 8, 50]],
+      ramps: [[220, 12, 2, 8, 1.5], [1380, 12, 2, 8, 1.4]],
+      heights: { base: 6, rand: 7, tall: [6, 18], spike: 10, centre: [300, 200], radius: 300 }, openLots: 0.45, skyline: [900, 45] },
+  };
+
   // ---------------------------------------------------------------- the level
-  /* opts: { seed } -> the level (see the return value at the end) */
+  /* opts: { level (a LEVELS key, default downtown), seed } -> the level (see the return value at the end) */
   function build(opts = {}) {
-    const R = rng(opts.seed || 20261007);
-    // the street corners (m) and their radii, in race order; the start is on the first straight
-    // (a lap of about 1.47 km: three laps take about 3 minutes at race pace)
-    const corners = [
-      [0, 0, 34], [480, 0, 30], [480, 215, 58], [338, 364, 140], [158, 364, 46], [0, 205, 60],
-    ];
+    const levelKey = LEVELS[opts.level] ? opts.level : 'downtown', D = LEVELS[levelKey];
+    const R = rng(opts.seed || D.seed);
+    const corners = D.corners;
     const C = buildCircuit(corners);
     const L = C.length;
     // grid of circuit samples, for nearest-point queries
@@ -142,11 +171,11 @@ const CrashLevel = (() => {
     // Rolling hills: smooth bumps on the second and last straights and over the sweeping bend; the
     // first straight, its start and grid stay flat. Everything stands on this ground (street,
     // pavements, buildings, props); the height is never below 0. [x, z, height, spread] (m)
-    const HILLS = [[480, 112, 6, 36], [416, 300, 4, 40], [0, 112, 5, 34]];
+    const HILLS = D.hills;
     // Jump ramps across the street on three straights (the first, the bottom one and the long
     // diagonal; none on a hill): from s, up `up` m to `height`, a short top, down `down` m.
     const ramps = [];
-    for (const [s0, up, top, down, height] of [[215, 12, 2, 8, 1.4], [998, 11, 2, 8, 1.3], [1215, 12, 2, 8, 1.5]]) {
+    for (const [s0, up, top, down, height] of D.ramps) {
       const p = poseAt(s0, 0), len = up + top + down;
       ramps.push({ s: s0, up, top, down, height, len, x: p.x, z: p.z, h: p.h, cx: p.x + Math.cos(p.h) * len / 2, cz: p.z + Math.sin(p.h) * len / 2, rad: Math.hypot(len / 2, ROAD_HALF) + 1 });
     }
@@ -202,13 +231,13 @@ const CrashLevel = (() => {
     const nearSide = (s, side, margin) => sideStreets.some(q => q.side === side && Math.abs(wrapDiff(q.s, s)) < q.width / 2 + margin);
     function wrapDiff(a, b) { let d = a - b; if (d > L / 2) d -= L; if (d < -L / 2) d += L; return d; }
 
-    // district: how tall the buildings grow (downtown along the second and third streets)
-    const downtown = [440, 185];
+    // district: how tall the buildings grow (downtown: along the second and third streets)
+    const HT = D.heights;
     const heightAt = (x, z) => {
-      const d = Math.hypot(x - downtown[0], z - downtown[1]);
-      const tall = Math.max(0, 1 - d / 520);
+      const d = Math.hypot(x - HT.centre[0], z - HT.centre[1]);
+      const tall = Math.max(0, 1 - d / HT.radius);
       const r = R();
-      return 9 + r * 14 + tall * tall * (40 + R() * 95) + (r > 0.93 ? 30 : 0);
+      return HT.base + r * HT.rand + tall * tall * (HT.tall[0] + R() * HT.tall[1]) + (r > 0.93 ? HT.spike : 0);
     };
     // buildings as oriented boxes; reject overlaps with a coarse grid of their bounding circles
     const BCELL = 40, bgrid = new Map();
@@ -223,6 +252,7 @@ const CrashLevel = (() => {
     }
     function addBuilding(b) {
       if (overlaps(b)) return false;
+      if (D.quay !== undefined && b.z - Math.hypot(b.hx, b.hz) < -6) return false;   // the quay and the water
       // every corner and the middle of every side must stay off the street and pavement
       const c = Math.cos(b.angle), s = Math.sin(b.angle);
       for (const [u, w] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1], [0, 0]]) {
@@ -258,9 +288,9 @@ const CrashLevel = (() => {
     // blocks behind: a grid of lots inside and around the loop, some left open as plazas
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let i = 0; i < C.N; i++) { x0 = Math.min(x0, C.x[i]); x1 = Math.max(x1, C.x[i]); z0 = Math.min(z0, C.z[i]); z1 = Math.max(z1, C.z[i]); }
-    const M = 220;
+    const M = 220, parkLots = [];
     for (let gx = x0 - M; gx <= x1 + M; gx += 46) for (let gz = z0 - M; gz <= z1 + M; gz += 46) {
-      if (R() < 0.12) continue;
+      if (R() < D.openLots) { if (D.parks) parkLots.push([gx, gz]); continue; }
       const w = 18 + R() * 22, d = 18 + R() * 22, x = gx + (R() - 0.5) * 10, z = gz + (R() - 0.5) * 10;
       const f = nearest(x, z), p = poseAt(f.s, 0);
       if (Math.hypot(x - p.x, z - p.z) < 36) continue;
@@ -269,8 +299,8 @@ const CrashLevel = (() => {
     // distant skyline (no colliders): a ring of towers beyond the blocks
     const skyline = [];
     for (let a = 0; a < 2 * Math.PI; a += 0.06) {
-      const rr = 820 + R() * 380, cx = (x0 + x1) / 2 + Math.cos(a) * rr, cz = (z0 + z1) / 2 + Math.sin(a) * rr * 0.8;
-      skyline.push({ x: cx, z: cz, hx: 15 + R() * 25, hz: 15 + R() * 25, angle: R() * 0.4, height: 30 + R() * R() * 160, style: Math.floor(R() * 4) });
+      const rr = D.skyline[0] + R() * 380, cx = (x0 + x1) / 2 + Math.cos(a) * rr, cz = (z0 + z1) / 2 + Math.sin(a) * rr * 0.8;
+      skyline.push({ x: cx, z: cz, hx: 15 + R() * 25, hz: 15 + R() * 25, angle: R() * 0.4, height: 30 * D.skyline[1] / 160 + R() * R() * D.skyline[1], style: Math.floor(R() * 4) });
     }
 
     // street furniture along the pavements (colliders: tree trunks; the street lights are props that
@@ -287,6 +317,31 @@ const CrashLevel = (() => {
           cyls.push({ x: q.x, z: q.z, r: 0.22, height: 4 });
         }
       }
+    }
+    // parks (hillside): trees in the open lots, clear of the street and the buildings
+    for (const [gx, gz] of parkLots) for (let k = 0; k < 7; k++) {
+      const x = gx + (R() - 0.5) * 40, z = gz + (R() - 0.5) * 40, size = 0.9 + R() * 0.8, seed = Math.floor(R() * 1e6);
+      const f = nearest(x, z), p = poseAt(f.s, 0);
+      if (Math.hypot(x - p.x, z - p.z) < WALK_OUT + 4) continue;
+      if (buildings.some((b) => Math.abs(b.x - x) < b.hx + 3 + Math.abs(Math.sin(b.angle)) * b.hz && Math.abs(b.z - z) < b.hz + 3 + Math.abs(Math.sin(b.angle)) * b.hx)) continue;
+      trees.push({ x, z, size, seed, park: true });
+      cyls.push({ x, z, r: 0.22, height: 4 });
+    }
+    // the harbour: container stacks along the quay (colliders), gantry cranes at its edge, the water
+    const containers = [], cranes = [];
+    if (D.quay !== undefined) {
+      for (let x = -30; x < 600; x += 13.4) {
+        if (R() < 0.18) continue;
+        for (let row = 0; row < 3; row++) {
+          const z = -18 - row * 3.2, n = 1 + Math.floor(R() * 3);
+          if (R() < 0.15) continue;
+          const f = nearest(x, z), p = poseAt(f.s, 0);
+          if (Math.hypot(x - p.x, z - p.z) < WALK_OUT + 4) continue;
+          for (let k = 0; k < n; k++) containers.push({ x, z, y: k * 2.6, angle: 0, color: Math.floor(R() * 6) });
+          boxes.push({ x, z, hx: 6.1, hz: 1.22, angle: 0, height: n * 2.6 });
+        }
+      }
+      for (const x of [60, 200, 340, 480]) cranes.push({ x, z: D.quay + 4, angle: 0 });
     }
     // side streets: a stub of road, barriers across it, signals at the corners
     for (const q of sideStreets) {
@@ -371,7 +426,7 @@ const CrashLevel = (() => {
     }
 
     return {
-      seed: opts.seed || 20261007, circuit: C, length: L, laps: 3, lanes: LANES, laneWidth: LANE_W, roadHalf: ROAD_HALF, walkOut: WALK_OUT,
+      level: levelKey, name: D.name, look: D.look, ground: D.ground, containers, cranes, water: D.quay !== undefined ? { z: D.quay } : null, seed: opts.seed || D.seed, circuit: C, length: L, laps: 3, lanes: LANES, laneWidth: LANE_W, roadHalf: ROAD_HALF, walkOut: WALK_OUT,
       start: { s: START_S }, corners,
       buildings, skyline, sideStreets, lamps, trees, signals, barriers, rails, stops, props, ramps, hills: HILLS,
       colliders: { boxes, cyls }, collidersNear, nearest, poseAt, sampleAt, wrapDiff, terrain, groundAt, rampProfile,
@@ -391,6 +446,6 @@ const CrashLevel = (() => {
     return true;
   }
 
-  return { build, buildCircuit, rng, obbOverlap, LANES, LANE_W, ROAD_HALF, WALK_OUT };
+  return { build, buildCircuit, rng, obbOverlap, LEVELS, LANES, LANE_W, ROAD_HALF, WALK_OUT };
 })();
 if (typeof module === 'object' && module.exports) module.exports = CrashLevel;

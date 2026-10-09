@@ -41,7 +41,8 @@ const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
 const level = Level.build();
 const STEP = 1 / 240;
 
-if (want('junction')) {
+// the junction checks for each level (the crossroads: 'junction'; the others 'junction-<key>')
+function checkJunction(level, name) {
   // a point inside an oriented rectangle { x, z, h, len, wid } (with a margin)
   const inRect = (r, x, z, m = 0) => { const c = Math.cos(r.h), s = Math.sin(r.h), dx = x - r.x, dz = z - r.z; return Math.abs(dx * c + dz * s) <= r.len / 2 + m && Math.abs(-dx * s + dz * c) <= r.wid / 2 + m; };
   const roads = level.surfaces.roads;
@@ -60,9 +61,13 @@ if (want('junction')) {
   const r0 = level.ramps[0], G = {};
   let lip = 0, besideRamp = 0;
   for (let z = r0.z; z < r0.z + r0.len; z += 0.25) { lip = Math.max(lip, level.groundAt(-5.25, z, G).h); besideRamp = Math.max(besideRamp, level.groundAt(-1.75, z, G).h); }
-  const same = JSON.stringify(Level.build().colliders) === JSON.stringify(level.colliders) && JSON.stringify(Level.build().schedule) === JSON.stringify(level.schedule);
-  check('junction', inRoad === 0 && laneOut === 0 && bumpy === 0 && level.terrain(0, -200) > 3 && Math.abs(lip - r0.height) < 0.02 && besideRamp === 0 && same,
+  const same = JSON.stringify(Level.build({ level: level.level }).colliders) === JSON.stringify(level.colliders) && JSON.stringify(Level.build({ level: level.level }).schedule) === JSON.stringify(level.schedule);
+  check(name, inRoad === 0 && laneOut === 0 && bumpy === 0 && level.terrain(0, -200) > 3 && Math.abs(lip - r0.height) < 0.02 && besideRamp === 0 && same,
     `${level.buildings.length} buildings, ${level.colliders.boxes.length + level.colliders.cyls.length} colliders, ${inRoad} in a road (must be 0); lane points off the roads ${laneOut} (0); ground off flat round the junction at ${bumpy} points (0), ${level.terrain(0, -200).toFixed(1)} m up the approach at 200 m; ramp lip ${lip.toFixed(2)} m (${r0.height}), beside it ${besideRamp} m (0); same seed same junction: ${same}`);
+}
+for (const key of Object.keys(Level.LEVELS)) {
+  const name = key === 'crossroads' ? 'junction' : 'junction-' + key;
+  if (want(name)) checkJunction(key === 'crossroads' ? level : Level.build({ level: key }), name);
 }
 
 if (want('broadphase')) {
@@ -101,7 +106,8 @@ if (want('propreach')) {
   check('propreach', hits > 0 && Math.hypot(pr.p[0] - 5.4, pr.p[2] - 1.1) > 2, `a bus at 10 m/s, a cone by its front corner: ${hits} hits, the cone moved ${Math.hypot(pr.p[0] - 5.4, pr.p[2] - 1.1).toFixed(1)} m`);
 }
 
-if (want('traffic')) {
+// two minutes of each level's traffic (the crossroads: 'traffic'; the others 'traffic-<key>')
+function checkTraffic(level, name) {
   const run = (secs) => {
     const w = RaceWorld.create(level), tr = Traffic.create(level, w, { specs });
     tr.reset();
@@ -121,8 +127,12 @@ if (want('traffic')) {
     return { touches, ranRed, entered: ids.size, left, stuck, hash: h.digest('hex').slice(0, 16), maxN, queue: tr.vehicles.filter(v => v.lane.light === 'main').length };
   };
   const a = run(120), b = run(120);
-  check('traffic', a.touches === 0 && a.ranRed === 0 && a.left > a.entered * 0.7 && a.stuck === 0 && a.queue === 8 && a.hash === b.hash,
+  check(name, a.touches === 0 && a.ranRed === 0 && a.left > a.entered * 0.7 && a.stuck === 0 && a.queue === 8 && a.hash === b.hash,
     `2 minutes: ${a.entered} vehicles, ${a.left} through and gone, up to ${a.maxN} at once, ${a.touches} touches (0), ${a.stuck} stopped on Harbor Blvd (0), queue at the red light ${a.queue} (8, never past the line: ${a.ranRed} times over it); rerun identical: ${a.hash === b.hash}`);
+}
+for (const key of Object.keys(Level.LEVELS)) {
+  const name = key === 'crossroads' ? 'traffic' : 'traffic-' + key;
+  if (want(name)) checkTraffic(key === 'crossroads' ? level : Level.build({ level: key }), name);
 }
 
 if (want('pileup')) {
