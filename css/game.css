@@ -47,6 +47,9 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .health.critical .health-bar i { background: linear-gradient(90deg, #d8322a, #ff6a4d); }
 .hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(200, 20, 10, 0) 55%, rgba(200, 20, 10, 0.55) 100%); }
 .chip { position: absolute; bottom: 120px; right: 24px; padding: 6px 12px; border-radius: 8px; background: rgba(242, 178, 51, 0.92); color: #1a1205; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; }
+/* over the rival that took you down, until you pay it back (placed by game.js with a transform) */
+.revenge-tag { position: absolute; left: 0; top: 0; padding: 3px 8px; border-radius: 6px; background: rgba(214, 40, 30, 0.92); color: #fff; font-weight: 800; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; pointer-events: none; will-change: transform; }
+.revenge-tag::after { content: ''; position: absolute; left: 50%; bottom: -5px; margin-left: -5px; border: 5px solid transparent; border-bottom: 0; border-top-color: rgba(214, 40, 30, 0.92); }
 .eyebrow { margin: 0 0 6px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
 .credits { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.45; }
 .credits a { color: var(--muted); }

@@ -11,7 +11,8 @@
  * worked backwards along the circuit. Steering is pure pursuit toward a point ahead on that line.
  * When traffic blocks their lane they pick the clearest lane, the oncoming ones included. Their pace
  * stretches and shrinks with their distance to the player (rubber-banding), and they boost on the
- * straights.
+ * straights. The aggressive ones pick fights, as in Burnout 3: they close in on a car alongside,
+ * the player first, and slam into it, and they move across to block a player catching them.
  *
  * DOM-free: global RaceAI in the browser, module.exports in Node.
  */
@@ -130,7 +131,8 @@ const RaceAI = (() => {
       car.place(g.x, g.z, g.h, 0);
       const body = world.add(car, { kind: 'rival' });
       const r = { body, key: g.key, name: g.name, paint: g.paint, skill: g.skill, lane: g.lane, l: g.lane, laneT: g.lane, boost: 0.4, boosting: false,
-        stuck: 0, wreck: 0, prog: { i: -1, s: g.s, prevS: g.s, lap: 1, dist: 0, done: false, time: 0 } };
+        stuck: 0, wreck: 0, prog: { i: -1, s: g.s, prevS: g.s, lap: 1, dist: 0, done: false, time: 0 },
+        aggr: g.aggr || 0, att: { state: 'idle', t: 0, target: null } };   // aggression 0..1 and the attack in hand
       body.rival = r;
       rivals.push(r);
     }
@@ -144,6 +146,61 @@ const RaceAI = (() => {
       if (ctx.player && ctx.player.track && !ctx.player.ghost && !ctx.player.frozen) add(ctx.player, ctx.player.track.s, ctx.player.track.l);
       return out;
     }
+    // Attacks, after Burnout 3's aggression: when the game allows it (ctx.attack(r)), an aggressive
+    // rival picks a car near it (the player first, if no one else is after them), closes in
+    // alongside, swings out, then steers into it for up to 1.2 s, and cools down (longer after a slam
+    // that landed, shorter the more aggressive it is). Returns what the attack asks of the driving
+    // this step ({ l: a lateral offset to hold, or aim: a point to steer at; v: a speed }) or null.
+    const ACTIVE = { close: 1, windup: 1, slam: 1 };
+    const attacking = (o, target) => !!ACTIVE[o.att.state] && (!target || o.att.target === target);
+    function attack(r, f, dt, ctx, bend) {
+      const A = r.att;
+      A.t -= dt;
+      if (A.state === 'cool') { if (A.t <= 0) { A.state = 'idle'; A.t = 0.25; } return null; }
+      if (A.state === 'idle') {
+        if (A.t > 0) return null;
+        A.t = 0.25;
+        if (!(r.aggr > 0) || bend || r.body.car.forward < 20 || !ctx.attack || !ctx.attack(r)) return null;
+        // the nearest car within 30 m (ahead: it catches up; behind: it lets it come alongside), at
+        // speed; the player counts 20 m nearer
+        let best = null, bs = Infinity;
+        const cand = (b, bonus) => {
+          if (!b || !b.track || b.ghost || b.frozen || b.wrecked || b.car.speed < 18) return;
+          const d = level.wrapDiff(b.track.s, f.s), dl = Math.abs(b.track.l - r.l);
+          if (d < -30 || d > 30 || dl > 8) return;
+          if (Math.abs(d) + dl - bonus < bs) { bs = Math.abs(d) + dl - bonus; best = b; }
+        };
+        if (ctx.player && !rivals.some(o => o !== r && attacking(o, ctx.player))) cand(ctx.player, 20);
+        for (const o of rivals) if (o !== r && !(o.wreck > 0)) cand(o.body, 0);
+        if (!best || R() > r.aggr * 0.35) return null;
+        A.state = 'close'; A.target = best; A.t = 8;
+      }
+      const T = A.target, tc = T.car, tf = T.track;
+      const d = tf ? level.wrapDiff(tf.s, f.s) : 0;
+      if (!tf || T.ghost || T.frozen || T.wrecked || d < -40 || d > 80 || (A.state === 'close' && A.t <= 0)) { standDown(r, false); return null; }
+      let side = Math.sign(r.l - tf.l) || 1;
+      const vT = Math.max(0, tc.forward);
+      if (A.state === 'close') {
+        if (Math.abs(d) < 3.5 && Math.abs(tf.l - r.l) < 4.5) { A.state = 'windup'; A.t = 0.4; A.side = side; }
+        // catching up (or easing off for it): its own lanes through the traffic; within 15 m, a lane
+        // over from the target, on whichever side is clearer
+        const v = vT + Math.max(-6, Math.min(10, d * 0.6));
+        if (Math.abs(d) >= 15) return { v };
+        const free = (sd) => { const l = tf.l + sd * 3.4; return Math.abs(l) > 6 ? -1 : timeFree(r.obs || [], l, v) - (sd === side ? 0 : 0.3); };
+        if (free(-side) > free(side)) side = -side;
+        return { l: tf.l + side * 3.4, v };
+      }
+      side = A.side || side;   // swinging out and slamming: from the side it came alongside on
+      if (A.state === 'windup') {
+        if (A.t <= 0) { A.state = 'slam'; A.t = 1.2; }
+        return { l: Math.max(-6.2, Math.min(6.2, tf.l + side * 4.6)), v: vT + d * 0.6, swing: true };
+      }
+      if (A.t <= 0) { standDown(r, false); return null; }
+      const lead = 0.1 * r.body.car.speed;   // steer at where the target will be
+      return { aim: { x: tc.x + Math.cos(tc.h) * lead, z: tc.z + Math.sin(tc.h) * lead }, v: vT + 3 };
+    }
+    // the attack is over: it landed on its target, or it hit something else (or ran out of time)
+    function standDown(r, landed) { r.att.state = 'cool'; r.att.t = landed ? 4 + 8 * (1 - r.aggr) : 3; r.att.target = null; }
     // seconds before rival r (speed v) would reach the nearest car in lane l (4 if nothing within reach)
     function timeFree(obs, l, v) {
       let ttc = 4;
@@ -173,7 +230,12 @@ const RaceAI = (() => {
       const slowAhead = obs.some(o => Math.abs(o.l - r.l) < 2.2 && o.d > 0 && o.d < 70 && o.va < vWant - 3);
       // in a bend, change lanes only to avoid a crash (a change mid-corner carries the car wide)
       const bend = Math.abs(f.k) > 0.004 || Math.abs(level.poseAt(f.s + 30, 0).k) > 0.004;
-      if (bend ? here < 1.0 : (r.laneTimer <= 0 || here < 2.2 || slowAhead || (r.l < 0 && timeFree(obs, 1.75, vWant) > 2.5))) {
+      const atk = r.att ? attack(r, f, dt, ctx, bend) : null;
+      // an aggressive rival with the player close behind and catching it moves across to block
+      const P = ctx.player, dp = !atk && r.aggr > 0.5 && !bend && P && P.track && ctx.attack && ctx.attack(r) ? level.wrapDiff(P.track.s, f.s) : 0;
+      if (atk && atk.l !== undefined) r.laneT = atk.l;
+      else if (dp < -4 && dp > -25 && P.car.forward > fwd + 1) { r.laneT = Math.max(-5.25, Math.min(5.25, P.track.l)); r.laneTimer = 1; }
+      else if (bend ? here < 1.0 : (r.laneTimer <= 0 || here < 2.2 || slowAhead || (r.l < 0 && timeFree(obs, 1.75, vWant) > 2.5))) {
         let best = r.laneT, bestScore = -Infinity;
         for (const l of [5.25, 1.75, -1.75, -5.25]) {
           if (l < 0 && obs.some(o => Math.abs(o.l - l) < 2.3 && o.va < -1 && o.d > 0 && o.d < 300)) continue;   // oncoming cars in that lane: no
@@ -185,21 +247,24 @@ const RaceAI = (() => {
       r.l += Math.max(-3.6 * dt, Math.min(3.6 * dt, r.laneT - r.l));
       // aim at a point ahead on the line, moved toward the inside of the corner (but off the kerb,
       // where the street lights stand)
-      const Ld = Math.max(7, Math.min(32, 0.4 * v + 5));
+      // (swinging out for a slam: a short look-ahead, to get out there in time)
+      const Ld = atk && atk.swing ? 9 : Math.max(7, Math.min(32, 0.4 * v + 5));
       const ahead = level.poseAt(f.s + Ld, 0), k = level.poseAt(f.s + Ld * 0.6, 0).k;
       let kMax = 0; for (let d = 0; d <= Ld + 10; d += 4) kMax = Math.max(kMax, Math.abs(level.poseAt(f.s + d, 0).k));
       const cut = Math.max(-1.5, Math.min(1.5, k * 140));
       // bends: keep to the middle lanes, clear of the kerbs (eased, so the line doesn't jump at a bend's end)
       r.edge = r.edge === undefined ? 4.8 : r.edge + ((kMax > 0.004 ? 3.6 : 4.8) - r.edge) * (1 - Math.exp(-dt / 0.7));
-      const edge = r.edge;
+      const edge = atk && atk.swing ? 6.2 : r.edge;   // swinging out for a slam: wide, nearly to the kerb
       const lt = Math.max(-edge, Math.min(edge, r.l + cut));
-      const tx = ahead.x - Math.sin(ahead.h) * lt, tz = ahead.z + Math.cos(ahead.h) * lt;
+      // (a slam steers straight at its target instead)
+      const tx = atk && atk.aim ? atk.aim.x : ahead.x - Math.sin(ahead.h) * lt, tz = atk && atk.aim ? atk.aim.z : ahead.z + Math.cos(ahead.h) * lt;
       const c = Math.cos(car.h), s = Math.sin(car.h), dx = tx - p.x, dz = tz - p.z;
       const alpha = Math.atan2(-dx * s + dz * c, dx * c + dz * s);
       // pure pursuit, plus a correction for the car's offset from the line here (pure pursuit alone
       // settles wide of the line in a long bend, as the car understeers)
       const lHere = Math.max(-edge, Math.min(edge, r.l + Math.max(-1.5, Math.min(1.5, f.k * 140))));
-      const delta = Math.atan(2 * car.L * Math.sin(alpha) / Ld) + Math.max(-0.04, Math.min(0.04, 0.015 * (lHere - f.l)));
+      const delta = atk && atk.aim ? Math.atan(2 * car.L * Math.sin(alpha) / Math.max(3, Math.hypot(dx, dz)))   // a slam: sharply, at its target
+        : Math.atan(2 * car.L * Math.sin(alpha) / Ld) + Math.max(-0.04, Math.min(0.04, 0.015 * (lHere - f.l)));
       const lock = car.tune.steer / (1 + Math.max(0, Math.abs(fwd)) / 14) + 0.035;
       const steer = Math.max(-1, Math.min(1, delta / lock));
       // pace: the slowest the profile asks for over the next half second, scaled by skill and the
@@ -212,6 +277,7 @@ const RaceAI = (() => {
         vp = Math.min(vp, prof[level.sampleAt(f.s + d)] * Math.sqrt(Math.max(0.5, Math.min(1.2, 1 - lt * q.k))));
       }
       let vt = Math.min(vp * r.skill * band, (car.tune.power > 150e3 ? 66 : 62) * band);
+      if (atk) vt = Math.min(Math.max(0, atk.v), vp);   // an attack sets the pace, within what the road allows
       // car-following: something slower ahead in this lane that we'd reach before stopping: match it
       for (const o of obs) {
         if (Math.abs(o.l - r.l) > 2.2 || o.d < 0) continue;
@@ -252,13 +318,14 @@ const RaceAI = (() => {
       const p = level.poseAt(s, r.lane);
       r.body.car.place(p.x, p.z, p.h, 12);
       r.body.ghost = 2; r.body.wrecked = false; r.wreck = 0; r.stuck = 0; r.l = r.laneT = r.lane;
+      if (r.att) standDown(r, false);
       r.prog.prevS = s;
     }
     // drive another body the same way (the player's car once the player has finished)
     function adopt(body, lane, skill) {
       return { body, lane, l: lane, laneT: lane, skill, boost: 0, boosting: false, stuck: 0, wreck: 0, prog: { i: -1, s: 0, prevS: 0, lap: 1, dist: 0, done: false, time: 0 } };
     }
-    return { rivals, drive, track, respawn, adopt, profile: prof };
+    return { rivals, drive, track, respawn, adopt, standDown, attacking, profile: prof };
   }
 
   // A near miss: the player's car passes traffic car t (lane-bound, untouched) side by side with

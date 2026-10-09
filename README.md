@@ -183,7 +183,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **The paint** covers the whole car, parts that break off it in a crash included.
   - **Remembered choice.** The choice is kept in the browser for the next race. `?car=lexus|mustang` sets the car the screen starts on.
 - **The circuit.** A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, street lights, trees and closed side streets, rolling hills on three stretches and three jump ramps across the street. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
-- **Eight cars.** You start sixth on the grid, against seven rivals in Lexus and Mustang models, each with a name, a paint colour and a skill level.
+- **Eight cars.** You start sixth on the grid, against seven rivals in Lexus and Mustang models, each with a name, a paint colour, a skill level and an aggression level.
 - **Traffic, both ways.** Cars keep to their lanes and follow the car ahead with the Intelligent Driver Model \[[77](#ref-77)\]: $\dot v = a\big[1 - (v/v_0)^4 - (s^*/s)^2\big]$, $s^* = s_0 + vT + \frac{v\,\Delta v}{2\sqrt{ab}}$. Here $s$ is the gap to the car ahead and $\Delta v$ the closing speed. The game uses $a = 1.6$ m/s², $b = 3$ m/s², $s_0 = 4$ m, a time gap $T = 1.4$ s, and cruising speeds $v_0$ of 13–19 m/s (47–68 km/h). They are added ahead of you and removed behind you, so the street is busy wherever the race is. They move on rails until something hits them, then become free cars that brake to a stop.
 - **Boost.** Hold Shift for 1.65× engine power. It fills from near misses (passing a traffic car within a metre; more for oncoming ones), driving in the oncoming lanes, drifting, slams and takedowns.
 - **Slams and takedowns,** as in Burnout 3 (`rules.js`). A slam never wrecks a rival by itself.
@@ -192,6 +192,8 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Takedowns.** A rival that wrecks within two seconds of your hit is yours: a wall, traffic or another car at over 7 m/s, a crash anyway, or a spin past 60°. It counts half a second later, and is lost if you crash first. Two within 1.5 s are a double; three or more within 30 s a spree.
   - **Psyche-outs.** A rival that wrecks with no contact while you're tailgating it (within 7 m, in the last second) is a takedown too.
   - **Takedown denied.** A rival you slammed that touches something and comes through its two seconds.
+  - **Rivals fight back.** From 10 s into the race, the aggressive ones pick fights (`ai.js`), at most two at a time and none while you're a ghost after a respawn. A rival picks a car within 30 m, you first: it catches up through the traffic (or eases off to let you come alongside), takes a lane next to you on the clearer side, swings out and steers into you for up to 1.2 s, then cools down (longer after a slam that landed, shorter the more aggressive it is). It stands down when it hits anything else. Aggressive rivals also move across to block you when you're catching them from close behind. Rivals fight each other the same way. Each slam you land on a rival makes it more aggressive.
+  - **Slammed.** A rival's slam on you follows the same rules, the other way round: it takes some of your boost, and a full one turns your wheel away from the hit (all of it for 0.3 s, then handed back over up to a second). Crash within two seconds of a rival driving into you and it took you down ("taken down by …" on the crash screen); it's then marked as your revenge target (a tag over its car and a red ring on the map), and taking it down is a revenge takedown. Come through a rival's full slam after touching something and it's a lucky escape.
   - Without your help, a rival needs 13 m/s into a wall (nose or tail first) and 20 m/s into another rival, so the pack can jostle. Wrecked rivals spin away from the hit and rejoin three seconds later.
 - **Collisions.** Walls are slippery, and a car already spinning hard isn't spun harder by one, so a scrape along a wall keeps most of your speed (91% after a 26° scrape at 108 km/h). Sliding into a wall sideways is a bounce, not a wreck. Car against car, the lighter car is pushed out more, and steering into a car alongside shoves it (an extra push of 12 m/s² at full lock, on top of the contact). A wreck is shoved out of the way without slowing the car that hits it.
 - **Health, then the crash.** Your car has a health bar rather than crashing at the first hard hit.
@@ -256,9 +258,10 @@ node tools/headless-check.js world      the crash solver's world barrier
   - **jump:** airtime off the first ramp from 144 km/h (0.8–1.6 s, and it lands), less from 43 km/h; over the steepest crest none at 108 km/h, but a take-off at 216 km/h;
   - **damage:** a scrape is free, an 8 m/s nudge into a car costs under 3%, a 13 m/s wall 12–35%, and 28 m/s is a wreck;
   - **walls:** 18 m/s along a wall's normal is a crash nose first and not 60° off square, which also costs less health. A car pushed broadside into a wall touches it mid-side. A 26° scrape at 108 km/h keeps over 88% of the speed and leaves the car running along the wall;
-  - **slams:** real contacts are classified: a shunt from behind (full and light), side slams (full and light), a rub, and a rival's own hit on you (not your slam);
-  - **takedown rules:** the timeline of `rules.js`: a fragile rival wrecks on a light touch, the takedown counts half a second later, a second soon after is a double, a crash before it counts loses it, a slammed rival that touches something and comes through is denied (not without a touch), a tailgated rival's wreck is a psyche-out, and three in 30 s are a spree;
+  - **slams:** real contacts are classified: your shunt from behind (full and light), side slams (full and light), a rub, and a rival's slam on you;
+  - **takedown rules:** the timeline of `rules.js`: a fragile rival wrecks on a light touch, the takedown counts half a second later, a second soon after is a double, a crash before it counts loses it, a slammed rival that touches something and comes through is denied (not without a touch), a tailgated rival's wreck is a psyche-out, and three in 30 s are a spree; crashing within two seconds of a rival's slam is its takedown of you, and taking it down then is revenge; touching something after a rival's full slam and coming through is a lucky escape;
   - **shove:** steering into a car alongside pushes it at least 1.5 times as far as holding straight, and faster than the contacts alone would;
+  - **attack:** an aggressive rival 15 m behind your car in the next lane catches it and drives into it within 8 s; a calm one never does;
   - **a full race:** eight AI cars race three laps through traffic and the props, all finish, the winner takes 150–210 s (about 3 minutes), none is stuck for more than 5 s, and lane-bound traffic never overlaps.
 - **The `world` checks** in `headless-check.js`:
   - a one-cylinder world reproduces the pole barrier exactly;
@@ -2244,8 +2247,8 @@ js/
     vehicle.js    driving physics: rigid body, Magic Formula tyres, engine, brakes, assists
     world.js      collisions between cars and with the city, hills, jumps and flight, damage, step history
     props.js      street lights, cones, bins, hydrants, benches, crates ...: rigid bodies to knock over
-    rules.js      slams and takedowns: rubs, light and full slams, the window, doubles, sprees, psyche-outs
-    ai.js         traffic (Intelligent Driver Model) and the rivals
+    rules.js      slams and takedowns: rubs, light and full slams, the window, doubles, sprees, psyche-outs, revenge
+    ai.js         traffic (Intelligent Driver Model) and the rivals, who also pick fights
     input.js      keyboard and gamepad, rumble
     crash.js      the crash solver in a Web Worker, streaming frames to the crash camera
     render.js     the city, instanced cars, the player's deformable car, cameras

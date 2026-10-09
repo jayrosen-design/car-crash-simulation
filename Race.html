@@ -55,6 +55,9 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .health.critical .health-bar i { background: linear-gradient(90deg, #d8322a, #ff6a4d); }
 .hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(200, 20, 10, 0) 55%, rgba(200, 20, 10, 0.55) 100%); }
 .chip { position: absolute; bottom: 120px; right: 24px; padding: 6px 12px; border-radius: 8px; background: rgba(242, 178, 51, 0.92); color: #1a1205; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; }
+/* over the rival that took you down, until you pay it back (placed by game.js with a transform) */
+.revenge-tag { position: absolute; left: 0; top: 0; padding: 3px 8px; border-radius: 6px; background: rgba(214, 40, 30, 0.92); color: #fff; font-weight: 800; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; pointer-events: none; will-change: transform; }
+.revenge-tag::after { content: ''; position: absolute; left: 50%; bottom: -5px; margin-left: -5px; border: 5px solid transparent; border-bottom: 0; border-top-color: rgba(214, 40, 30, 0.92); }
 .eyebrow { margin: 0 0 6px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 12px; }
 .credits { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.45; }
 .credits a { color: var(--muted); }
@@ -233,6 +236,7 @@ body.touch .overlay:not(.select) { padding-top: 56px; }
     </div>
     <div id="msg" class="msg" hidden></div>
     <div id="chip" class="chip" hidden></div>
+    <div id="revenge-tag" class="revenge-tag" hidden>Revenge</div>
     <div id="hud-wrong" class="wrong" hidden>Wrong way</div>
   </div>
 
@@ -5000,7 +5004,8 @@ if (typeof module === 'object' && module.exports) module.exports = RaceWorld;
  * worked backwards along the circuit. Steering is pure pursuit toward a point ahead on that line.
  * When traffic blocks their lane they pick the clearest lane, the oncoming ones included. Their pace
  * stretches and shrinks with their distance to the player (rubber-banding), and they boost on the
- * straights.
+ * straights. The aggressive ones pick fights, as in Burnout 3: they close in on a car alongside,
+ * the player first, and slam into it, and they move across to block a player catching them.
  *
  * DOM-free: global RaceAI in the browser, module.exports in Node.
  */
@@ -5119,7 +5124,8 @@ const RaceAI = (() => {
       car.place(g.x, g.z, g.h, 0);
       const body = world.add(car, { kind: 'rival' });
       const r = { body, key: g.key, name: g.name, paint: g.paint, skill: g.skill, lane: g.lane, l: g.lane, laneT: g.lane, boost: 0.4, boosting: false,
-        stuck: 0, wreck: 0, prog: { i: -1, s: g.s, prevS: g.s, lap: 1, dist: 0, done: false, time: 0 } };
+        stuck: 0, wreck: 0, prog: { i: -1, s: g.s, prevS: g.s, lap: 1, dist: 0, done: false, time: 0 },
+        aggr: g.aggr || 0, att: { state: 'idle', t: 0, target: null } };   // aggression 0..1 and the attack in hand
       body.rival = r;
       rivals.push(r);
     }
@@ -5133,6 +5139,61 @@ const RaceAI = (() => {
       if (ctx.player && ctx.player.track && !ctx.player.ghost && !ctx.player.frozen) add(ctx.player, ctx.player.track.s, ctx.player.track.l);
       return out;
     }
+    // Attacks, after Burnout 3's aggression: when the game allows it (ctx.attack(r)), an aggressive
+    // rival picks a car near it (the player first, if no one else is after them), closes in
+    // alongside, swings out, then steers into it for up to 1.2 s, and cools down (longer after a slam
+    // that landed, shorter the more aggressive it is). Returns what the attack asks of the driving
+    // this step ({ l: a lateral offset to hold, or aim: a point to steer at; v: a speed }) or null.
+    const ACTIVE = { close: 1, windup: 1, slam: 1 };
+    const attacking = (o, target) => !!ACTIVE[o.att.state] && (!target || o.att.target === target);
+    function attack(r, f, dt, ctx, bend) {
+      const A = r.att;
+      A.t -= dt;
+      if (A.state === 'cool') { if (A.t <= 0) { A.state = 'idle'; A.t = 0.25; } return null; }
+      if (A.state === 'idle') {
+        if (A.t > 0) return null;
+        A.t = 0.25;
+        if (!(r.aggr > 0) || bend || r.body.car.forward < 20 || !ctx.attack || !ctx.attack(r)) return null;
+        // the nearest car within 30 m (ahead: it catches up; behind: it lets it come alongside), at
+        // speed; the player counts 20 m nearer
+        let best = null, bs = Infinity;
+        const cand = (b, bonus) => {
+          if (!b || !b.track || b.ghost || b.frozen || b.wrecked || b.car.speed < 18) return;
+          const d = level.wrapDiff(b.track.s, f.s), dl = Math.abs(b.track.l - r.l);
+          if (d < -30 || d > 30 || dl > 8) return;
+          if (Math.abs(d) + dl - bonus < bs) { bs = Math.abs(d) + dl - bonus; best = b; }
+        };
+        if (ctx.player && !rivals.some(o => o !== r && attacking(o, ctx.player))) cand(ctx.player, 20);
+        for (const o of rivals) if (o !== r && !(o.wreck > 0)) cand(o.body, 0);
+        if (!best || R() > r.aggr * 0.35) return null;
+        A.state = 'close'; A.target = best; A.t = 8;
+      }
+      const T = A.target, tc = T.car, tf = T.track;
+      const d = tf ? level.wrapDiff(tf.s, f.s) : 0;
+      if (!tf || T.ghost || T.frozen || T.wrecked || d < -40 || d > 80 || (A.state === 'close' && A.t <= 0)) { standDown(r, false); return null; }
+      let side = Math.sign(r.l - tf.l) || 1;
+      const vT = Math.max(0, tc.forward);
+      if (A.state === 'close') {
+        if (Math.abs(d) < 3.5 && Math.abs(tf.l - r.l) < 4.5) { A.state = 'windup'; A.t = 0.4; A.side = side; }
+        // catching up (or easing off for it): its own lanes through the traffic; within 15 m, a lane
+        // over from the target, on whichever side is clearer
+        const v = vT + Math.max(-6, Math.min(10, d * 0.6));
+        if (Math.abs(d) >= 15) return { v };
+        const free = (sd) => { const l = tf.l + sd * 3.4; return Math.abs(l) > 6 ? -1 : timeFree(r.obs || [], l, v) - (sd === side ? 0 : 0.3); };
+        if (free(-side) > free(side)) side = -side;
+        return { l: tf.l + side * 3.4, v };
+      }
+      side = A.side || side;   // swinging out and slamming: from the side it came alongside on
+      if (A.state === 'windup') {
+        if (A.t <= 0) { A.state = 'slam'; A.t = 1.2; }
+        return { l: Math.max(-6.2, Math.min(6.2, tf.l + side * 4.6)), v: vT + d * 0.6, swing: true };
+      }
+      if (A.t <= 0) { standDown(r, false); return null; }
+      const lead = 0.1 * r.body.car.speed;   // steer at where the target will be
+      return { aim: { x: tc.x + Math.cos(tc.h) * lead, z: tc.z + Math.sin(tc.h) * lead }, v: vT + 3 };
+    }
+    // the attack is over: it landed on its target, or it hit something else (or ran out of time)
+    function standDown(r, landed) { r.att.state = 'cool'; r.att.t = landed ? 4 + 8 * (1 - r.aggr) : 3; r.att.target = null; }
     // seconds before rival r (speed v) would reach the nearest car in lane l (4 if nothing within reach)
     function timeFree(obs, l, v) {
       let ttc = 4;
@@ -5162,7 +5223,12 @@ const RaceAI = (() => {
       const slowAhead = obs.some(o => Math.abs(o.l - r.l) < 2.2 && o.d > 0 && o.d < 70 && o.va < vWant - 3);
       // in a bend, change lanes only to avoid a crash (a change mid-corner carries the car wide)
       const bend = Math.abs(f.k) > 0.004 || Math.abs(level.poseAt(f.s + 30, 0).k) > 0.004;
-      if (bend ? here < 1.0 : (r.laneTimer <= 0 || here < 2.2 || slowAhead || (r.l < 0 && timeFree(obs, 1.75, vWant) > 2.5))) {
+      const atk = r.att ? attack(r, f, dt, ctx, bend) : null;
+      // an aggressive rival with the player close behind and catching it moves across to block
+      const P = ctx.player, dp = !atk && r.aggr > 0.5 && !bend && P && P.track && ctx.attack && ctx.attack(r) ? level.wrapDiff(P.track.s, f.s) : 0;
+      if (atk && atk.l !== undefined) r.laneT = atk.l;
+      else if (dp < -4 && dp > -25 && P.car.forward > fwd + 1) { r.laneT = Math.max(-5.25, Math.min(5.25, P.track.l)); r.laneTimer = 1; }
+      else if (bend ? here < 1.0 : (r.laneTimer <= 0 || here < 2.2 || slowAhead || (r.l < 0 && timeFree(obs, 1.75, vWant) > 2.5))) {
         let best = r.laneT, bestScore = -Infinity;
         for (const l of [5.25, 1.75, -1.75, -5.25]) {
           if (l < 0 && obs.some(o => Math.abs(o.l - l) < 2.3 && o.va < -1 && o.d > 0 && o.d < 300)) continue;   // oncoming cars in that lane: no
@@ -5174,21 +5240,24 @@ const RaceAI = (() => {
       r.l += Math.max(-3.6 * dt, Math.min(3.6 * dt, r.laneT - r.l));
       // aim at a point ahead on the line, moved toward the inside of the corner (but off the kerb,
       // where the street lights stand)
-      const Ld = Math.max(7, Math.min(32, 0.4 * v + 5));
+      // (swinging out for a slam: a short look-ahead, to get out there in time)
+      const Ld = atk && atk.swing ? 9 : Math.max(7, Math.min(32, 0.4 * v + 5));
       const ahead = level.poseAt(f.s + Ld, 0), k = level.poseAt(f.s + Ld * 0.6, 0).k;
       let kMax = 0; for (let d = 0; d <= Ld + 10; d += 4) kMax = Math.max(kMax, Math.abs(level.poseAt(f.s + d, 0).k));
       const cut = Math.max(-1.5, Math.min(1.5, k * 140));
       // bends: keep to the middle lanes, clear of the kerbs (eased, so the line doesn't jump at a bend's end)
       r.edge = r.edge === undefined ? 4.8 : r.edge + ((kMax > 0.004 ? 3.6 : 4.8) - r.edge) * (1 - Math.exp(-dt / 0.7));
-      const edge = r.edge;
+      const edge = atk && atk.swing ? 6.2 : r.edge;   // swinging out for a slam: wide, nearly to the kerb
       const lt = Math.max(-edge, Math.min(edge, r.l + cut));
-      const tx = ahead.x - Math.sin(ahead.h) * lt, tz = ahead.z + Math.cos(ahead.h) * lt;
+      // (a slam steers straight at its target instead)
+      const tx = atk && atk.aim ? atk.aim.x : ahead.x - Math.sin(ahead.h) * lt, tz = atk && atk.aim ? atk.aim.z : ahead.z + Math.cos(ahead.h) * lt;
       const c = Math.cos(car.h), s = Math.sin(car.h), dx = tx - p.x, dz = tz - p.z;
       const alpha = Math.atan2(-dx * s + dz * c, dx * c + dz * s);
       // pure pursuit, plus a correction for the car's offset from the line here (pure pursuit alone
       // settles wide of the line in a long bend, as the car understeers)
       const lHere = Math.max(-edge, Math.min(edge, r.l + Math.max(-1.5, Math.min(1.5, f.k * 140))));
-      const delta = Math.atan(2 * car.L * Math.sin(alpha) / Ld) + Math.max(-0.04, Math.min(0.04, 0.015 * (lHere - f.l)));
+      const delta = atk && atk.aim ? Math.atan(2 * car.L * Math.sin(alpha) / Math.max(3, Math.hypot(dx, dz)))   // a slam: sharply, at its target
+        : Math.atan(2 * car.L * Math.sin(alpha) / Ld) + Math.max(-0.04, Math.min(0.04, 0.015 * (lHere - f.l)));
       const lock = car.tune.steer / (1 + Math.max(0, Math.abs(fwd)) / 14) + 0.035;
       const steer = Math.max(-1, Math.min(1, delta / lock));
       // pace: the slowest the profile asks for over the next half second, scaled by skill and the
@@ -5201,6 +5270,7 @@ const RaceAI = (() => {
         vp = Math.min(vp, prof[level.sampleAt(f.s + d)] * Math.sqrt(Math.max(0.5, Math.min(1.2, 1 - lt * q.k))));
       }
       let vt = Math.min(vp * r.skill * band, (car.tune.power > 150e3 ? 66 : 62) * band);
+      if (atk) vt = Math.min(Math.max(0, atk.v), vp);   // an attack sets the pace, within what the road allows
       // car-following: something slower ahead in this lane that we'd reach before stopping: match it
       for (const o of obs) {
         if (Math.abs(o.l - r.l) > 2.2 || o.d < 0) continue;
@@ -5241,13 +5311,14 @@ const RaceAI = (() => {
       const p = level.poseAt(s, r.lane);
       r.body.car.place(p.x, p.z, p.h, 12);
       r.body.ghost = 2; r.body.wrecked = false; r.wreck = 0; r.stuck = 0; r.l = r.laneT = r.lane;
+      if (r.att) standDown(r, false);
       r.prog.prevS = s;
     }
     // drive another body the same way (the player's car once the player has finished)
     function adopt(body, lane, skill) {
       return { body, lane, l: lane, laneT: lane, skill, boost: 0, boosting: false, stuck: 0, wreck: 0, prog: { i: -1, s: 0, prevS: 0, lap: 1, dist: 0, done: false, time: 0 } };
     }
-    return { rivals, drive, track, respawn, adopt, profile: prof };
+    return { rivals, drive, track, respawn, adopt, standDown, attacking, profile: prof };
   }
 
   // A near miss: the player's car passes traffic car t (lane-bound, untouched) side by side with
@@ -5594,6 +5665,11 @@ if (typeof module === 'object' && module.exports) module.exports = RaceProps;
  * several within half a minute a spree. A rival that wrecks with no contact while the player is
  * tailgating it is a psyche-out.
  *
+ * Rivals slam the player the same way (ai.js picks the fights). A player who crashes within two
+ * seconds of a rival driving into them was taken down by that rival, which becomes their revenge
+ * target: taking it down is a revenge takedown. A player fully slammed by a rival who touches
+ * something and comes through the window had a lucky escape.
+ *
  * The numbers are this game's own, tuned to its 240 Hz world (world.js) and real gravity.
  *
  * DOM-free: global RaceRules in the browser, module.exports in Node.
@@ -5634,23 +5710,28 @@ const RaceRules = (() => {
   function create() {
     const st = new Map();   // rival -> its state
     const S = (r) => { let s = st.get(r); if (!s) st.set(r, s = { hitAt: -1e9, slamAt: -1e9, fragileUntil: -1e9, armed: false, touched: false, tailAt: -1e9 }); return s; };
-    const pending = [];     // wrecks waiting to count: { r, at, psyche }
+    const pending = [];     // wrecks waiting to count: { r, at, psyche, revenge }
     const done = [];        // times of the takedowns that counted
-    let crashedAt = -1e9;
+    const pl = { hitAt: -1e9, by: null, slamAt: -1e9, armed: false, touched: false };   // the player, hit by rivals
+    let crashedAt = -1e9, revenge = null;
     return {
-      /* a contact between the player (body me) and rival r at time t: records the hit; returns the
-       * player's slam on the rival ({ type, full }) or null (a rub, the rival's own hit, or too soon
-       * after the last slam between them) */
+      /* a contact between the player (body me) and rival r at time t: records the hit both ways;
+       * returns the slam, the player's on the rival or the rival's on the player ({ by: 'player'|
+       * 'rival', type, full }), or null (a rub, or too soon after the last slam between them) */
       contact(e, me, r, t) {
-        const s = S(r);
+        const s = S(r), mine = attacker(e) === me;
         s.hitAt = t;
-        if (attacker(e) !== me || t - s.slamAt < COOLDOWN) return null;
-        const slam = classify(e, me, r.body);
+        if (!mine) { pl.hitAt = t; pl.by = r; }
+        if (t - s.slamAt < COOLDOWN) return null;
+        const slam = mine ? classify(e, me, r.body) : classify(e, r.body, me);
         if (!slam) return null;
         s.slamAt = t;
-        if (slam.full) { s.fragileUntil = t + FRAGILE; s.armed = true; s.touched = false; }
-        return slam;
+        if (mine && slam.full) { s.fragileUntil = t + FRAGILE; s.armed = true; s.touched = false; }
+        if (!mine && slam.full) { pl.slamAt = t; pl.armed = true; pl.touched = false; }
+        return Object.assign(slam, { by: mine ? 'player' : 'rival' });
       },
+      // the player touched something else (a wall, a post, traffic) with approach speed vn at time t
+      playerContact(vn, t) { if (pl.armed && t - pl.slamAt < WINDOW && vn > 0.5) pl.touched = true; },
       /* rival r touched something other than the player (event e) at time t: whether it wrecks (a
        * crash anyway, or a solid touch while fragile, or a hard one within the window). A slammed
        * rival that survives a touch is denied when its window ends (update). */
@@ -5673,13 +5754,23 @@ const RaceRules = (() => {
         s.armed = false; s.touched = false; s.fragileUntil = -1e9;
         const hit = t - s.hitAt < WINDOW, psyche = !hit && t - s.tailAt < TAIL_T;
         if (!hit && !psyche) return false;
-        pending.push({ r, at: t + COMMIT, psyche });
+        pending.push({ r, at: t + COMMIT, psyche, revenge: r === revenge });
         return true;
       },
-      playerCrashed(t) { crashedAt = t; },
-      /* what happens at time t: takedowns that count ({ kind: 'takedown', r, psyche, double, spree };
-       * spree: how many within SPREE s, this one included) and slammed rivals that touched something
-       * and came through their window ({ kind: 'denied', r }) */
+      /* the player crashed at time t: a takedown not yet counted is lost; returns the rival that took
+       * the player down (it drove into the player within the window), now the revenge target, or null */
+      playerCrashed(t) {
+        crashedAt = t; pl.armed = false;
+        if (t - pl.hitAt >= WINDOW || !pl.by) return null;
+        revenge = pl.by; pl.by = null;
+        return revenge;
+      },
+      // the rival that took the player down last, not yet paid back (null: none)
+      get revenge() { return revenge; },
+      /* what happens at time t: takedowns that count ({ kind: 'takedown', r, psyche, double, spree,
+       * revenge }; spree: how many within SPREE s, this one included), slammed rivals that touched
+       * something and came through their window ({ kind: 'denied', r }), and the player coming
+       * through a rival's full slam after touching something ({ kind: 'lucky' }) */
       update(t) {
         const out = [];
         for (let i = pending.length - 1; i >= 0; i--) {
@@ -5689,12 +5780,18 @@ const RaceRules = (() => {
           pending.splice(i, 1);
           const double = done.length > 0 && t - done[done.length - 1] < DOUBLE;
           done.push(t);
-          out.push({ kind: 'takedown', r: p.r, psyche: p.psyche, double, spree: done.filter(d => t - d < SPREE).length });
+          if (p.revenge && p.r === revenge) revenge = null;
+          out.push({ kind: 'takedown', r: p.r, psyche: p.psyche, double, spree: done.filter(d => t - d < SPREE).length, revenge: p.revenge });
         }
         for (const [r, s] of st) if (s.armed && t - s.slamAt >= WINDOW) {
           s.armed = false;
           if (s.touched) out.push({ kind: 'denied', r });
           s.touched = false;
+        }
+        if (pl.armed && t - pl.slamAt >= WINDOW) {
+          pl.armed = false;
+          if (pl.touched) out.push({ kind: 'lucky' });
+          pl.touched = false;
         }
         return out;
       },
@@ -8245,7 +8342,9 @@ float lnoise(vec3 p) {
  * drifting, slams and takedowns, and is spent holding the boost button. Slams and takedowns follow
  * Burnout 3's rules (rules.js): a slam never wrecks a rival by itself; a full one (side, or a shunt
  * from behind) puts it out of control for a moment, and its wreck within two seconds of your hit is
- * your takedown. A slam takes a little of the rival's boost for you.
+ * your takedown. A slam takes a little of the rival's boost for you. The aggressive rivals slam you
+ * too (ai.js picks their fights): a full one turns your wheel away for a moment, and a crash soon
+ * after is that rival's takedown of you, and it becomes your revenge target.
  *
  * Crashes: when a hit is hard enough (world.js), the cars go back one step (to just before they
  * touched) and are handed to the full crash solver (crash.js), which runs in the background. The
@@ -8296,14 +8395,15 @@ const RaceGame = (() => {
   let paintIdx = PAINTS[saved.paint] ? +saved.paint : 0;
 
   // ---------------------------------------------------------------- the grid
+  // aggr: how readily a rival picks a fight (ai.js), 0 to 1
   const RIVALS = [
-    { name: 'Ava Lindqvist', key: 'mustang', paint: 0x2b5fa8, skill: 1.0 },
-    { name: 'Marco Reyes', key: 'lexus', paint: 0xe0b022, skill: 0.985 },
-    { name: 'Kenji Tanaka', key: 'mustang', paint: 0x1f7a4a, skill: 0.975 },
-    { name: 'Léa Moreau', key: 'lexus', paint: 0xe8e8e6, skill: 0.965 },
-    { name: 'Sam Okafor', key: 'mustang', paint: 0xd2541e, skill: 0.955 },
-    { name: 'Nina Novak', key: 'lexus', paint: 0x111214, skill: 0.945 },
-    { name: 'Ravi Mehta', key: 'mustang', paint: 0x6b2c8f, skill: 0.935 },
+    { name: 'Ava Lindqvist', key: 'mustang', paint: 0x2b5fa8, skill: 1.0, aggr: 0.5 },
+    { name: 'Marco Reyes', key: 'lexus', paint: 0xe0b022, skill: 0.985, aggr: 0.25 },
+    { name: 'Kenji Tanaka', key: 'mustang', paint: 0x1f7a4a, skill: 0.975, aggr: 0.8 },
+    { name: 'Léa Moreau', key: 'lexus', paint: 0xe8e8e6, skill: 0.965, aggr: 0.35 },
+    { name: 'Sam Okafor', key: 'mustang', paint: 0xd2541e, skill: 0.955, aggr: 0.9 },
+    { name: 'Nina Novak', key: 'lexus', paint: 0x111214, skill: 0.945, aggr: 0.45 },
+    { name: 'Ravi Mehta', key: 'mustang', paint: 0x6b2c8f, skill: 0.935, aggr: 0.65 },
   ];
   const PLAYER_SLOT = 5;
   const slotPose = (i) => { const s = level.start.s - 8 - Math.floor(i / 2) * 9, lane = i % 2 ? 5.25 : 1.75, p = level.poseAt(s, lane); return { s, lane, x: p.x, z: p.z, h: p.h }; };
@@ -8359,7 +8459,8 @@ const RaceGame = (() => {
 
   // ---------------------------------------------------------------- boost, near misses, takedowns
   let boost = 0.3, takedowns = 0, slowmo = 0;
-  const rules = RaceRules.create();   // slams, takedowns, doubles, sprees, psyche-outs
+  const rules = RaceRules.create();   // slams, takedowns, doubles, sprees, psyche-outs, revenge
+  let ooc = null;                     // the player out of control after a rival's full slam: { t, dur, kick }
   function gainBoost(x, label) { boost = Math.min(1, boost + x); if (label) chip(label); }
 
   // ---------------------------------------------------------------- health
@@ -8398,9 +8499,9 @@ const RaceGame = (() => {
   function takedown(td) {
     takedowns++;
     gainBoost(1, null);
-    toast(td.spree >= 3 ? `Takedown spree ×${td.spree}` : td.double ? 'Double takedown!' : td.psyche ? 'Psyche-out!' : 'Takedown!', 1600);
+    toast(td.spree >= 3 ? `Takedown spree ×${td.spree}` : td.revenge ? 'Revenge!' : td.double ? 'Double takedown!' : td.psyche ? 'Psyche-out!' : 'Takedown!', 1600);
     RaceInput.rumble(0.8, 0.6, 300);
-    if (TEST) (testOut.takedowns = testOut.takedowns || []).push({ t: +simT.toFixed(2), psyche: td.psyche, double: td.double, spree: td.spree });
+    if (TEST) (testOut.takedowns = testOut.takedowns || []).push({ t: +simT.toFixed(2), psyche: td.psyche, double: td.double, spree: td.spree, revenge: td.revenge });
   }
 
   // ---------------------------------------------------------------- crashes
@@ -8409,7 +8510,9 @@ const RaceGame = (() => {
   const testOut = (window.__race = { test: null }).test = { frames: [], aheadOfStream: 0 };
   function triggerCrash(e) {
     if (state !== 'race') return;
-    rules.playerCrashed(simT);   // a takedown not yet counted is lost
+    // a takedown not yet counted is lost; a rival that drove into the player just before took them down
+    const by = rules.playerCrashed(simT);
+    ooc = null;
     const other = e.b && e.b !== me ? e.b : (e.a !== me ? e.a : null);
     // back to the start of this step: just before the cars touched
     world.restore(me, 1);
@@ -8432,7 +8535,7 @@ const RaceGame = (() => {
     FX.setTimeScale(0.25);
     RaceInput.rumble(1, 1, 450);
     $('#crash').hidden = false; $('#crash-skip').hidden = true;
-    $('#crash-speed').textContent = `Impact ${Math.round(crash.impactKmh)} km/h`;
+    $('#crash-speed').textContent = `Impact ${Math.round(crash.impactKmh)} km/h` + (by ? ` · taken down by ${by.name}` : '');
     if (TEST) testOut.crashAt = performance.now();
   }
   const PT = { x: 0, z: 0, y: 0 };   // the crash camera's target (y: the ground's height there)
@@ -8508,6 +8611,7 @@ const RaceGame = (() => {
     if (TEST) { testOut.respawnMs = performance.now() - testOut.crashAt; testOut.parts = crash.debris.length; testOut.glass = crash.glass.length; testOut.mode = crash.mode; testOut.T0 = crash.T0; }
     state = prog.done ? 'finished' : 'race'; crash = null; crashUnits = []; frozenDraw = null;
     health = 1;   // repaired
+    if (rules.revenge) chip(`Revenge: ${rules.revenge.name}`);
     R.setCrashLift(0); PT.y = 0;
     FX.setTimeScale(1);
     if (audio) FX.engineStart();
@@ -8594,6 +8698,8 @@ const RaceGame = (() => {
       ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.stroke(path);
       ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.stroke(path);
       for (const r of ai.rivals) { const c = r.body.car; ctx.fillStyle = '#' + r.paint.toString(16).padStart(6, '0'); ctx.beginPath(); ctx.arc(X(c.x), Z(c.z), 3.5, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; ctx.stroke(); }
+      // the revenge target: a red ring
+      if (rules.revenge) { const c = rules.revenge.body.car; ctx.strokeStyle = '#e6281e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(c.x), Z(c.z), 7, 0, 7); ctx.stroke(); }
       ctx.fillStyle = '#ff4a3d'; ctx.beginPath(); ctx.arc(X(car.x), Z(car.z), 5, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
     };
   })();
@@ -8616,7 +8722,23 @@ const RaceGame = (() => {
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('#msg').hidden = true; }
     if (chipT > 0) { chipT -= dt; if (chipT <= 0) $('#chip').hidden = true; }
     $('#hud-wrong').hidden = prog.wrong < 1 || state !== 'race';
+    revengeTag();
     mini();
+  }
+  // the revenge target's tag, over its car while it's in view (within 160 m)
+  const tagAt = new THREE.Vector3();
+  function revengeTag() {
+    const rv = rules.revenge, el = $('#revenge-tag');
+    let show = false;
+    if (rv && !(rv.wreck > 0) && state === 'race') {
+      const c = rv.body.car, cv = R.renderer.domElement;
+      tagAt.set(c.x, c.y + 2.1, c.z).project(R.camera);
+      if (tagAt.z < 1 && Math.abs(tagAt.x) < 1 && Math.abs(tagAt.y) < 1 && Math.hypot(c.x - car.x, c.z - car.z) < 160) {
+        show = true;
+        el.style.transform = `translate(${((tagAt.x + 1) / 2 * cv.clientWidth).toFixed(1)}px, ${((1 - tagAt.y) / 2 * cv.clientHeight).toFixed(1)}px) translate(-50%, -100%)`;
+      }
+    }
+    if (el.hidden === show) el.hidden = !show;
   }
 
   // ---------------------------------------------------------------- car select
@@ -8707,7 +8829,9 @@ const RaceGame = (() => {
   let acc = 0, last = performance.now(), simT = 0, audio = false, prevSpin = 0, paused = false, held = false;
   let input = { steer: 0, throttle: 0, brake: 0 };
   const testDrive = { throttle: 1 };
-  const ctxAI = { traffic, racing: true, player: me, lead: leadOver };
+  // rivals may attack (ai.js) once the race is 10 s old, two at a time, not while the player is a ghost
+  const ctxAI = { traffic, racing: true, player: me, lead: leadOver,
+    attack: (r) => state === 'race' && simT > 10 && !me.ghost && ai.rivals.filter(o => o !== r && ai.attacking(o)).length < 2 };
   let stepN = 0;
   // a director (the trailer recorder, tools/race-trailer.js) can drive the player and place the
   // camera; both stay null in the game
@@ -8717,8 +8841,15 @@ const RaceGame = (() => {
     if (TEST === 'takedown') return { throttle: 1, steer: simT < 1.2 ? 0.5 : -0.5 };   // shove, then pull away
     if (TEST) return testDrive;
     if (state === 'finished' && autopilot) return ai.drive(autopilot, STEP, ctxAI);
-    const want = !!input.boost && boost > 0.01;
-    return Object.assign({}, input, { boost: want });
+    const want = !!input.boost && boost > 0.01, inp = Object.assign({}, input, { boost: want });
+    // fully slammed by a rival: the wheel turns away from the hit, all of it for 0.3 s, then handed back
+    if (ooc) {
+      ooc.t += STEP;
+      const k = ooc.t < 0.3 ? 1 : Math.max(0, 1 - (ooc.t - 0.3) / (ooc.dur - 0.3));
+      inp.steer = (inp.steer || 0) * (1 - k) + ooc.kick * k;
+      if (ooc.t >= ooc.dur) ooc = null;
+    }
+    return inp;
   }
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
@@ -8779,6 +8910,7 @@ const RaceGame = (() => {
           }
           for (const u of rules.update(simT)) {
             if (u.kind === 'takedown') takedown(u);
+            else if (u.kind === 'lucky') chip('Lucky escape');
             else { chip('Takedown denied'); if (TEST) testOut.denied = (testOut.denied || 0) + 1; }
           }
         }
@@ -8838,6 +8970,13 @@ const RaceGame = (() => {
       }
       return;
     }
+    // the player and a rival: the slam, either way (rules.js), noted before the hit's damage, so a
+    // crash from it is the rival's takedown of the player
+    const r = mine && other && other.rival && !(other.rival.wreck > 0) ? other.rival : null;
+    const slam = r ? rules.contact(e, me, r, simT) : null;
+    // a rival on the attack stands down once it touches its target (the attack landed) or hits
+    // anything else (over 2 m/s)
+    for (const b of [e.a, e.b]) if (b && b.rival && ai.attacking(b.rival)) { const landed = (b === e.a ? e.b : e.a) === b.rival.att.target; if (landed || e.vn > 2) ai.standDown(b.rival, landed); }
     // the player: the hit wears the health down; the crash when it's gone
     if (mine && state === 'race' && !me.ghost) {
       let d = RaceWorld.hitDamage(e, me);
@@ -8847,21 +8986,30 @@ const RaceGame = (() => {
       if (d > 0) hurt(d);
       if (health <= 0) { triggerCrash(e); return; }
     }
-    if (mine && other && other.rival && !(other.rival.wreck > 0)) {
-      const r = other.rival, slam = rules.contact(e, me, r, simT);
-      if (slam) {
-        // a slam takes some of the rival's boost for the player; a full one also puts the rival out of
-        // control for a moment, steering away from the hit (the push itself is world.js's)
-        const x = slam.full ? 0.08 : 0.03;
-        gainBoost(x, slam.full ? (slam.type === 'rear' ? 'Shunt' : 'Side slam') : 'Slam');
-        r.boost = Math.max(0, r.boost - x);
-        if (slam.full && !(r.stagger > 0)) {
-          const c = r.body.car, side = Math.sign((c.x - car.x) * -Math.sin(c.h) + (c.z - car.z) * Math.cos(c.h)) || 1;
-          r.stagger = 0.4 + Math.min(0.6, e.vn * 0.08); r.kick = side * 0.8;
-        }
-        if (TEST) (testOut.slams = testOut.slams || []).push({ t: +simT.toFixed(2), type: slam.type, full: slam.full, vn: +e.vn.toFixed(1) });
+    if (mine && !r) rules.playerContact(e.vn, simT);   // walls, posts, traffic: for a lucky escape
+    if (slam && slam.by === 'player') {
+      // the player's slam takes some of the rival's boost; a full one also puts the rival out of
+      // control for a moment, steering away from the hit (the push itself is world.js's), and it
+      // bears a grudge
+      const x = slam.full ? 0.08 : 0.03;
+      gainBoost(x, slam.full ? (slam.type === 'rear' ? 'Shunt' : 'Side slam') : 'Slam');
+      r.boost = Math.max(0, r.boost - x);
+      if (slam.full) r.aggr = Math.min(1, r.aggr + 0.15);
+      if (slam.full && !(r.stagger > 0)) {
+        const c = r.body.car, side = Math.sign((c.x - car.x) * -Math.sin(c.h) + (c.z - car.z) * Math.cos(c.h)) || 1;
+        r.stagger = 0.4 + Math.min(0.6, e.vn * 0.08); r.kick = side * 0.8;
+      }
+    } else if (slam) {
+      // a rival's slam on the player: the same, the other way round
+      const x = slam.full ? 0.08 : 0.03;
+      boost = Math.max(0, boost - x); r.boost = Math.min(1, r.boost + x);
+      if (slam.full) {
+        chip(`Slammed by ${r.name}`);
+        const c = r.body.car, side = Math.sign((car.x - c.x) * -Math.sin(car.h) + (car.z - c.z) * Math.cos(car.h)) || 1;
+        if (!ooc) ooc = { t: 0, dur: 0.4 + Math.min(0.6, e.vn * 0.08), kick: side * 0.8 };
       }
     }
+    if (slam && TEST) (testOut.slams = testOut.slams || []).push({ t: +simT.toFixed(2), by: slam.by, type: slam.type, full: slam.full, vn: +e.vn.toFixed(1) });
     if (mine && other && other.traffic) other.traffic.touched = true;
     if (mine && e.vn > 2) {
       const pos = [e.x, car.y + 0.5, e.z];

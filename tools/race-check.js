@@ -23,12 +23,17 @@
  *          corner, one or the other from step to step); a 26 degree scrape at 108 km/h keeps most of
  *          its speed (the walls are slippery: 84% kept with the old friction) and leaves the car
  *          running along the wall, not spun round
- * slam:    real contacts classified (rules.js): a shunt from behind, side slams, a rub, a rival's own
- *          hit on the player, the one-second cooldown
+ * slam:    real contacts classified (rules.js): the player's shunt from behind, side slams, a rub, and
+ *          a rival's slam on the player
  * takedown-rules: the rules' timeline: a fragile slammed rival wrecks on a light touch, the takedown
  *          counts half a second later, a second one soon after is a double, a crash before it counts
  *          loses it, a slammed rival that touches something and comes through is denied (and not
- *          without a touch), a tailgated rival's wreck is a psyche-out, three in 30 s a spree
+ *          without a touch), a tailgated rival's wreck is a psyche-out, three in 30 s a spree; a
+ *          player crashing within the window of a rival's slam was taken down by it, and taking it
+ *          down then is a revenge takedown; a player who touches something after a rival's full
+ *          slam and comes through had a lucky escape
+ * attack:  an aggressive rival (ai.js) 15 m behind the player's car in the next lane catches it and
+ *          drives into it within 8 s; a calm one never does
  * shove:   steering into a car alongside pushes it away harder than holding the wheel straight, and
  *          faster than the contacts alone would (6.3 m/s sideways at most without world.js's shove)
  * Exits non-zero on any failure.
@@ -253,7 +258,7 @@ if (want('slam')) {
       if (e.kind !== 'car') continue;
       touches++;
       const s = R.contact(e, a, r, i / 240);
-      if (s) return `${s.type} ${s.full ? 'full' : 'light'}`;
+      if (s) return `${s.by} ${s.type} ${s.full ? 'full' : 'light'}`;
     }
     return touches ? 'rub' : 'no contact';
   };
@@ -263,10 +268,10 @@ if (want('slam')) {
     sideFull: run([0, 0, 0.25, 25], [0, 2.6, 0, 25]),       // turned into it: about 6 m/s sideways
     sideLight: run([0, 0, 0.12, 25], [0, 2.6, 0, 25]),      // about 3 m/s
     rub: run([0, 0, 0.04, 25], [0, 2.6, 0, 25]),            // about 1 m/s
-    rivals: run([0, 0, 0, 25], [0, 2.6, -0.25, 25]),        // the rival turned into the player: not the player's slam
+    rivals: run([0, 0, 0, 25], [0, 2.6, -0.25, 25]),        // the rival turned into the player: the rival's slam
   };
-  const ok = got.rearFull === 'rear full' && got.rearLight === 'rear light' && got.sideFull === 'side full' && got.sideLight === 'side light' && got.rub === 'rub' && got.rivals === 'rub';
-  check('slam', ok, Object.entries(got).map(([k, v]) => `${k}: ${v}`).join('; ') + ' (rear full, rear light, side full, side light, rub, rub)');
+  const ok = got.rearFull === 'player rear full' && got.rearLight === 'player rear light' && got.sideFull === 'player side full' && got.sideLight === 'player side light' && got.rub === 'rub' && got.rivals === 'rival side full';
+  check('slam', ok, Object.entries(got).map(([k, v]) => `${k}: ${v}`).join('; ') + ' (player rear full, player rear light, player side full, player side light, rub, rival side full)');
 }
 
 if (want('takedown-rules')) {
@@ -301,6 +306,23 @@ if (want('takedown-rules')) {
   log.push(['spree', spree === 'takedown r7 spree 1 / takedown r8 spree 2 / takedown r9 spree 3']);
   slam(r10, 120);
   log.push(['a wreck after the window is no takedown', R.wrecked(r10, 123) === false]);
+  // the rival drives into the player (it is the faster toward the other)
+  const rivalSlam = (Rr, r, t) => Rr.contact({ a: r.body, b: me, kind: 'car', vn: 10, x: 2.45, z: 0, nx: 1, nz: 0, ua: 30, ub: -20 }, me, r, t);
+  const R2 = RaceRules.create(), rv = rival('rv');
+  const s2 = rivalSlam(R2, rv, 0);
+  log.push(["a rival's full slam on the player", !!s2 && s2.by === 'rival' && s2.full]);
+  log.push(['taken down by it', R2.playerCrashed(1.0) === rv && R2.revenge === rv]);
+  R2.contact({ a: me, b: rv.body, kind: 'car', vn: 10, x: 2.45, z: 0, nx: -1, nz: 0, ua: 30, ub: -20 }, me, rv, 20); R2.rivalContact({ vn: 2 }, rv, 20.3); R2.wrecked(rv, 20.3);
+  const rev = R2.update(20.8);
+  log.push(['revenge', rev.length === 1 && rev[0].revenge === true && R2.revenge === null]);
+  const R3 = RaceRules.create(), rx = rival('rx');
+  rivalSlam(R3, rx, 0);
+  log.push(['a crash after the window is no one\'s', R3.playerCrashed(2.5) === null && R3.revenge === null]);
+  const R4 = RaceRules.create(), ry = rival('ry'), rz = rival('rz');
+  rivalSlam(R4, ry, 0); R4.playerContact(2, 0.5);
+  log.push(['lucky escape', R4.update(1.0).length === 0 && R4.update(2.0).map(u => u.kind).join() === 'lucky']);
+  rivalSlam(R4, rz, 10);
+  log.push(['no touch: no lucky escape', R4.update(12.1).length === 0]);
   const bad = log.filter(([, ok]) => !ok).map(([k]) => k);
   check('takedown-rules', !bad.length, `${log.length - bad.length}/${log.length} rules hold${bad.length ? '; failing: ' + bad.join(', ') : ''}`);
 }
@@ -321,6 +343,29 @@ if (want('shove')) {
   };
   const into = push(0.6), straight = push(0);
   check('shove', into.d > straight.d * 1.5 && into.vside > 7, `pushed ${into.d.toFixed(2)} m steering into it, ${straight.d.toFixed(2)} m holding straight (at least 1.5 times); up to ${into.vside.toFixed(1)} m/s sideways (over 7)`);
+}
+
+if (want('attack')) {
+  // the player's car (driven by the rivals' AI) on the first straight, past its ramp, and one rival
+  // 15 m behind in the kerb lane, both at 90 km/h; attacks allowed, no traffic
+  const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
+  const run = (aggr) => {
+    const world = RaceWorld.create(level), s0 = 235, q0 = level.poseAt(s0, 5.25), p0 = level.poseAt(s0 + 15, 1.75);
+    const ai = RaceAI.createRivals(level, world, { grid: [{ key: 'mustang', x: q0.x, z: q0.z, h: q0.h, s: s0, lane: 5.25, skill: 1, paint: 0, name: 'R', aggr }], specs, seed: 3 });
+    ai.rivals[0].body.car.place(q0.x, q0.z, q0.h, 25);
+    const pc = RaceCar.create(specs.lexus); pc.place(p0.x, p0.z, p0.h, 25);
+    const me = world.add(pc, { kind: 'player' }), pilot = ai.adopt(me, 1.75, 0.9);
+    const none = { cars: [] }, ctxPilot = { traffic: none, racing: true, player: null, lead: () => 0 };
+    const ctx = { traffic: none, racing: true, player: me, lead: () => 0, attack: () => true };
+    for (let i = 0; i < 240 * 8; i++) {
+      for (const e of world.step(1 / 240, (b) => b === me ? ai.drive(pilot, 1 / 240, ctxPilot) : ai.drive(b.rival, 1 / 240, ctx))) {
+        if (e.kind === 'car' && RaceRules.attacker(e).rival) return { t: i / 240, vn: e.vn };
+      }
+    }
+    return null;
+  };
+  const hot = run(1), calm = run(0);
+  check('attack', !!hot && !calm, `aggressive rival: ${hot ? `drove into the player at ${hot.t.toFixed(1)} s, ${hot.vn.toFixed(1)} m/s` : 'never touched the player'} (must); calm rival: ${calm ? `drove into the player at ${calm.t.toFixed(1)} s` : 'never did'} (must not)`);
 }
 
 console.log(failures ? `\n${failures} check(s) with problems` : '\nall race checks passed');

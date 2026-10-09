@@ -11,6 +11,11 @@
  * several within half a minute a spree. A rival that wrecks with no contact while the player is
  * tailgating it is a psyche-out.
  *
+ * Rivals slam the player the same way (ai.js picks the fights). A player who crashes within two
+ * seconds of a rival driving into them was taken down by that rival, which becomes their revenge
+ * target: taking it down is a revenge takedown. A player fully slammed by a rival who touches
+ * something and comes through the window had a lucky escape.
+ *
  * The numbers are this game's own, tuned to its 240 Hz world (world.js) and real gravity.
  *
  * DOM-free: global RaceRules in the browser, module.exports in Node.
@@ -51,23 +56,28 @@ const RaceRules = (() => {
   function create() {
     const st = new Map();   // rival -> its state
     const S = (r) => { let s = st.get(r); if (!s) st.set(r, s = { hitAt: -1e9, slamAt: -1e9, fragileUntil: -1e9, armed: false, touched: false, tailAt: -1e9 }); return s; };
-    const pending = [];     // wrecks waiting to count: { r, at, psyche }
+    const pending = [];     // wrecks waiting to count: { r, at, psyche, revenge }
     const done = [];        // times of the takedowns that counted
-    let crashedAt = -1e9;
+    const pl = { hitAt: -1e9, by: null, slamAt: -1e9, armed: false, touched: false };   // the player, hit by rivals
+    let crashedAt = -1e9, revenge = null;
     return {
-      /* a contact between the player (body me) and rival r at time t: records the hit; returns the
-       * player's slam on the rival ({ type, full }) or null (a rub, the rival's own hit, or too soon
-       * after the last slam between them) */
+      /* a contact between the player (body me) and rival r at time t: records the hit both ways;
+       * returns the slam, the player's on the rival or the rival's on the player ({ by: 'player'|
+       * 'rival', type, full }), or null (a rub, or too soon after the last slam between them) */
       contact(e, me, r, t) {
-        const s = S(r);
+        const s = S(r), mine = attacker(e) === me;
         s.hitAt = t;
-        if (attacker(e) !== me || t - s.slamAt < COOLDOWN) return null;
-        const slam = classify(e, me, r.body);
+        if (!mine) { pl.hitAt = t; pl.by = r; }
+        if (t - s.slamAt < COOLDOWN) return null;
+        const slam = mine ? classify(e, me, r.body) : classify(e, r.body, me);
         if (!slam) return null;
         s.slamAt = t;
-        if (slam.full) { s.fragileUntil = t + FRAGILE; s.armed = true; s.touched = false; }
-        return slam;
+        if (mine && slam.full) { s.fragileUntil = t + FRAGILE; s.armed = true; s.touched = false; }
+        if (!mine && slam.full) { pl.slamAt = t; pl.armed = true; pl.touched = false; }
+        return Object.assign(slam, { by: mine ? 'player' : 'rival' });
       },
+      // the player touched something else (a wall, a post, traffic) with approach speed vn at time t
+      playerContact(vn, t) { if (pl.armed && t - pl.slamAt < WINDOW && vn > 0.5) pl.touched = true; },
       /* rival r touched something other than the player (event e) at time t: whether it wrecks (a
        * crash anyway, or a solid touch while fragile, or a hard one within the window). A slammed
        * rival that survives a touch is denied when its window ends (update). */
@@ -90,13 +100,23 @@ const RaceRules = (() => {
         s.armed = false; s.touched = false; s.fragileUntil = -1e9;
         const hit = t - s.hitAt < WINDOW, psyche = !hit && t - s.tailAt < TAIL_T;
         if (!hit && !psyche) return false;
-        pending.push({ r, at: t + COMMIT, psyche });
+        pending.push({ r, at: t + COMMIT, psyche, revenge: r === revenge });
         return true;
       },
-      playerCrashed(t) { crashedAt = t; },
-      /* what happens at time t: takedowns that count ({ kind: 'takedown', r, psyche, double, spree };
-       * spree: how many within SPREE s, this one included) and slammed rivals that touched something
-       * and came through their window ({ kind: 'denied', r }) */
+      /* the player crashed at time t: a takedown not yet counted is lost; returns the rival that took
+       * the player down (it drove into the player within the window), now the revenge target, or null */
+      playerCrashed(t) {
+        crashedAt = t; pl.armed = false;
+        if (t - pl.hitAt >= WINDOW || !pl.by) return null;
+        revenge = pl.by; pl.by = null;
+        return revenge;
+      },
+      // the rival that took the player down last, not yet paid back (null: none)
+      get revenge() { return revenge; },
+      /* what happens at time t: takedowns that count ({ kind: 'takedown', r, psyche, double, spree,
+       * revenge }; spree: how many within SPREE s, this one included), slammed rivals that touched
+       * something and came through their window ({ kind: 'denied', r }), and the player coming
+       * through a rival's full slam after touching something ({ kind: 'lucky' }) */
       update(t) {
         const out = [];
         for (let i = pending.length - 1; i >= 0; i--) {
@@ -106,12 +126,18 @@ const RaceRules = (() => {
           pending.splice(i, 1);
           const double = done.length > 0 && t - done[done.length - 1] < DOUBLE;
           done.push(t);
-          out.push({ kind: 'takedown', r: p.r, psyche: p.psyche, double, spree: done.filter(d => t - d < SPREE).length });
+          if (p.revenge && p.r === revenge) revenge = null;
+          out.push({ kind: 'takedown', r: p.r, psyche: p.psyche, double, spree: done.filter(d => t - d < SPREE).length, revenge: p.revenge });
         }
         for (const [r, s] of st) if (s.armed && t - s.slamAt >= WINDOW) {
           s.armed = false;
           if (s.touched) out.push({ kind: 'denied', r });
           s.touched = false;
+        }
+        if (pl.armed && t - pl.slamAt >= WINDOW) {
+          pl.armed = false;
+          if (pl.touched) out.push({ kind: 'lucky' });
+          pl.touched = false;
         }
         return out;
       },
