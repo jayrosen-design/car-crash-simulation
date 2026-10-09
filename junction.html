@@ -36,10 +36,12 @@
       <div class="speedo"><span id="hud-speed">0</span><span class="unit">km/h</span><span class="gear">gear <b id="hud-gear">1</b></span></div>
     </div>
     <div id="msg" class="msg" hidden></div>
+    <button type="button" id="btn-menu" class="btn" aria-label="Pause menu">☰ Menu <small>Esc</small></button>
   </div>
 
   <div id="select" class="overlay select" hidden>
     <header class="sel-head">
+      <nav class="game-nav" aria-label="Car Crash Simulation"><a href="Car Crash Simulation.html">← Home</a><a href="Race.html">Race mode</a></nav>
       <p class="eyebrow">Car Crash Simulation · Destruction</p>
       <h2 id="sel-title">Crossroads at dusk</h2>
       <p class="muted">Drive into the busiest junction in town and wreck all you can. Cars, buses and gas tankers pay out; tankers and pumps explode. Boost starts full: spend it on speed or save it for a bigger Crashbreaker. The ramp in the right lane flies you over the traffic.</p>
@@ -91,13 +93,23 @@
       <h2 id="results-title">$0</h2>
       <p id="results-medal" class="d-medal-line"></p>
       <dl id="results-list" class="specs"></dl>
-      <div class="actions"><button id="btn-again" class="btn primary">Retry <small>Enter · A</small></button><button id="btn-car" class="btn">Change car</button><a class="btn" href="Car Crash Simulation.html">Home</a></div>
+      <div class="actions"><button id="btn-again" class="btn primary">Retry <small>Enter · A</small></button><button id="btn-car" class="btn">Change car</button><a class="btn" href="Race.html">Play Race</a><a class="btn" href="Car Crash Simulation.html">Home</a></div>
     </div>
   </div>
 
   <div id="pause" class="overlay" hidden>
     <div class="panel card">
       <h2>Paused</h2>
+      <div class="pause-menu">
+        <button type="button" id="btn-resume" class="btn primary">Resume <small>Esc · Menu</small></button>
+        <button type="button" id="btn-retry" class="btn">Retry</button>
+        <button type="button" id="btn-quit" class="btn">Quit to car and level select</button>
+        <a class="btn" href="Race.html">Play Race</a>
+        <a class="btn" href="Car Crash Simulation.html">Home</a>
+      </div>
+      <p class="muted small">↑ ↓ to choose · Enter or A to pick · Esc or Menu to carry on</p>
+      <details class="pause-keys">
+        <summary>Controls</summary>
       <table class="keys">
         <tr><th></th><th>Keyboard</th><th>Controller</th></tr>
         <tr><td>Steer</td><td>A / D, ← / →</td><td>Left stick</td></tr>
@@ -106,8 +118,7 @@
         <tr><td>Retry</td><td>R</td><td>View</td></tr>
         <tr><td>Pause</td><td>Esc, P</td><td>Menu</td></tr>
       </table>
-      <p class="muted">Press Esc or Menu to carry on.</p>
-      <button type="button" id="btn-resume" class="btn primary">Resume</button>
+      </details>
     </div>
   </div>
 

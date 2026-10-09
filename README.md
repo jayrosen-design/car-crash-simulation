@@ -162,10 +162,12 @@ In playback:
 | Camera (chase or bumper) | C | Y |
 | Look back | B | Left bumper |
 | Back on the road | R | View |
-| Pause | Esc, P | Menu |
-| Menus (car select) | arrows or WASD, Enter | d-pad or left stick, A |
+| Pause | Esc, P, or the Menu button at the top | Menu |
+| Menus (car select, pause, results) | arrows or WASD, Enter | d-pad or left stick, A |
 
 Controllers work through the Gamepad API's standard mapping, with rumble where the browser supports it.
+
+**Ways out.** The car select has links home and to Destruction. The pause menu offers Resume, Restart race (straight back to the grid with the same car and track), Quit to car and track select, Play Destruction and Home. The results offer Race again (also straight to the grid), Change car or track, the crash replay, Play Destruction and Home.
 
 **On a touch screen** (phones and tablets), on-screen buttons appear on their own while racing:
 - **Left thumb:** steer left and right.
@@ -312,7 +314,10 @@ Open it from the home page, the **Simulation** menu in the simulator, or `/destr
 | Boost; after the crash, the Crashbreaker | Shift | A or right bumper |
 | Handbrake | Space | X |
 | Retry (at any time) | R, or Enter on the results | View, or A |
-| Pause | Esc, P | Menu |
+| Pause | Esc, P, or the Menu button at the top left | Menu |
+| Menus (select, pause, results) | arrows or WASD, Enter | d-pad or left stick, A |
+
+The car select has links home and to Race. The pause menu offers Resume, Retry, Quit to car and level select, Play Race and Home; the results offer Retry, Change car, Play Race and Home.
 
 On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once the Crashbreaker is ready, and Retry sits at the top. The running total moves to the top left.
 

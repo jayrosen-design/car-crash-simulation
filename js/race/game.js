@@ -384,7 +384,11 @@ const RaceGame = (() => {
     $('#btn-replay').hidden = !crashes.length;
     $('#results').hidden = false;
   }
-  $('#btn-again').addEventListener('click', () => location.reload());
+  // racing again: the page again, straight into the race with the same car and track (?go), or to the
+  // car and track select
+  const reloadTo = (race) => { const u = new URL(location.href); if (race) u.searchParams.set('go', '1'); else u.searchParams.delete('go'); location.href = u.toString(); };
+  $('#btn-again').addEventListener('click', () => reloadTo(true));
+  $('#btn-change').addEventListener('click', () => reloadTo(false));
   $('#btn-replay').addEventListener('click', () => startReplay(crashes.length - 1));
 
   // ---------------------------------------------------------------- HUD
@@ -433,6 +437,8 @@ const RaceGame = (() => {
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('#msg').hidden = true; }
     if (chipT > 0) { chipT -= dt; if (chipT <= 0) $('#chip').hidden = true; }
     $('#hud-wrong').hidden = prog.wrong < 1 || state !== 'race';
+    const canPause = state === 'race' || state === 'countdown';
+    if ($('#btn-menu').hidden === canPause) $('#btn-menu').hidden = !canPause;
     revengeTag();
     mini();
   }
@@ -544,7 +550,15 @@ const RaceGame = (() => {
       });
     }
   }
-  $('#btn-resume').addEventListener('click', () => { if (upright.matches && TOUCH) return; paused = false; $('#pause').hidden = true; });
+  // the pause menu (Esc, P, the controller's Menu button, the HUD's menu button or a phone's II):
+  // carry on, restart, quit to the select screen, or leave for the other game mode or home
+  function setPaused(on) { paused = on; $('#pause').hidden = !on; if (on) RaceInput.menuReset(); }
+  $('#btn-resume').addEventListener('click', () => { if (upright.matches && TOUCH) return; setPaused(false); });
+  $('#btn-restart').addEventListener('click', () => reloadTo(true));
+  $('#btn-quit').addEventListener('click', () => reloadTo(false));
+  $('#btn-menu').addEventListener('click', () => { if (state === 'race' || state === 'countdown') setPaused(true); });
+  // a clicked button lets go of the keyboard focus (Enter or Space would press it again)
+  document.querySelectorAll('#pause .btn, #results .btn, #btn-menu').forEach((b) => b.addEventListener('click', () => b.blur()));
 
   // ---------------------------------------------------------------- loop
   const sparks = new FX.Particles(R.scene, 2500);
@@ -580,12 +594,14 @@ const RaceGame = (() => {
     if (TEST) testOut.frames.push([state, Math.round(dt * 1000), crash ? crash.F.t.length : -1, crash ? crash.debris.length : -1]);
     input = RaceInput.poll(dt);
     if (input.any && !audio) { FX.initAudio(); FX.engineStart(); audio = true; }
-    if (input.pause && (state === 'race' || state === 'countdown')) { paused = !paused; $('#pause').hidden = !paused; }
+    if (input.pause && (state === 'race' || state === 'countdown')) setPaused(!paused);
+    else if (paused) RaceInput.menu($('#pause'), input);   // arrows or the d-pad, Enter or A
+    else if (state === 'finished' && !$('#results').hidden) RaceInput.menu($('#results'), input);
     // touch: the buttons while racing; a phone held upright pauses the race (and asks to turn it)
     if (TOUCH) {
       const show = state === 'countdown' || state === 'race' || state === 'crash';
       if ($('#touch').hidden === show) $('#touch').hidden = !show;
-      if (upright.matches && (state === 'race' || state === 'countdown') && !paused) { paused = true; $('#pause').hidden = false; }
+      if (upright.matches && (state === 'race' || state === 'countdown') && !paused) setPaused(true);
     }
     if (state === 'replay') updateReplay(dt, input);
     if (state === 'select') updateSelect(input);
@@ -847,6 +863,7 @@ const RaceGame = (() => {
       perf = { lexus: RaceCar.measure(specs.lexus), mustang: RaceCar.measure(specs.mustang) };   // about 0.1 s
       buildSelect(); placeForSelect(); showSelect();
       $('#hud').hidden = true; $('#select').hidden = false;
+      if (q.has('go') && !SCRIPTED) startRace();   // Race again or Restart: straight into the race
     }
     requestAnimationFrame((t) => { last = t; frame(t); });
   }

@@ -55,6 +55,24 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .health.critical .health-bar i { background: linear-gradient(90deg, #d8322a, #ff6a4d); }
 .hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(200, 20, 10, 0) 55%, rgba(200, 20, 10, 0.55) 100%); }
 .chip { position: absolute; bottom: 120px; right: 24px; padding: 6px 12px; border-radius: 8px; background: rgba(242, 178, 51, 0.92); color: #1a1205; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; }
+/* the Race page's ways out: Home and the other game mode on the select screen, the HUD's menu
+   button (the mouse's way to pause; phones have their own), the pause menu, and the highlight that
+   the arrow keys or the d-pad move through the pause and results buttons */
+.game-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.sel-head .game-nav { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); margin: 0; }   /* over the car, clear of the panels */
+.game-nav a { padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(10, 12, 16, 0.72); color: var(--text); text-decoration: none; font-size: 13px; font-weight: 650; text-shadow: none; }
+.game-nav a:hover { background: rgba(40, 46, 56, 0.9); }
+#btn-menu { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); pointer-events: auto; padding: 6px 12px; font-size: 13px; background: rgba(10, 12, 16, 0.72); }
+#btn-menu small { margin-left: 6px; font-weight: 500; opacity: 0.6; }
+body.touch #btn-menu { display: none; }
+body.destruction #btn-menu { left: 16px; transform: none; }   /* the score is at the top in the middle */
+.pause-menu { display: flex; flex-direction: column; gap: 8px; min-width: 280px; margin: 14px 0 10px; }
+.pause-menu .btn { text-align: left; }
+.pause-menu .btn small { margin-left: 8px; font-weight: 500; opacity: 0.7; }
+#pause .btn.focus, #results .btn.focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pause-keys { margin-top: 8px; }
+.pause-keys summary { color: var(--muted); font-size: 14px; cursor: pointer; }
+.pause-keys .keys { margin-top: 6px; }
 /* the run or chain under way (game.js), above the chip; the score breakdown on the results */
 #combo { position: absolute; bottom: 158px; right: 24px; padding: 4px 10px; border-radius: 8px; background: rgba(10, 12, 16, 0.7); color: #f2b233; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 13px; }
 body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
@@ -119,6 +137,7 @@ body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
   .overlay.select { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: rgba(5, 7, 10, 0.55); }
   .sel-head, .sel-garage, .sel-stats, .sel-foot { position: static; width: auto; max-width: 520px; transform: none; }
   .sel-foot { text-align: left; }
+  .sel-head .game-nav { position: static; transform: none; margin: 0 0 10px; }
 }
 .card.wide { max-width: 640px; width: calc(100% - 32px); }
 .results { border-collapse: collapse; width: 100%; margin: 10px 0 4px; }
@@ -315,10 +334,12 @@ body.destruction { font-family: "Barlow", system-ui, -apple-system, "Segoe UI", 
       <div class="speedo"><span id="hud-speed">0</span><span class="unit">km/h</span><span class="gear">gear <b id="hud-gear">1</b></span></div>
     </div>
     <div id="msg" class="msg" hidden></div>
+    <button type="button" id="btn-menu" class="btn" aria-label="Pause menu">☰ Menu <small>Esc</small></button>
   </div>
 
   <div id="select" class="overlay select" hidden>
     <header class="sel-head">
+      <nav class="game-nav" aria-label="Car Crash Simulation"><a href="Car Crash Simulation.html">← Home</a><a href="Race.html">Race mode</a></nav>
       <p class="eyebrow">Car Crash Simulation · Destruction</p>
       <h2 id="sel-title">Crossroads at dusk</h2>
       <p class="muted">Drive into the busiest junction in town and wreck all you can. Cars, buses and gas tankers pay out; tankers and pumps explode. Boost starts full: spend it on speed or save it for a bigger Crashbreaker. The ramp in the right lane flies you over the traffic.</p>
@@ -370,13 +391,23 @@ body.destruction { font-family: "Barlow", system-ui, -apple-system, "Segoe UI", 
       <h2 id="results-title">$0</h2>
       <p id="results-medal" class="d-medal-line"></p>
       <dl id="results-list" class="specs"></dl>
-      <div class="actions"><button id="btn-again" class="btn primary">Retry <small>Enter · A</small></button><button id="btn-car" class="btn">Change car</button><a class="btn" href="Car Crash Simulation.html">Home</a></div>
+      <div class="actions"><button id="btn-again" class="btn primary">Retry <small>Enter · A</small></button><button id="btn-car" class="btn">Change car</button><a class="btn" href="Race.html">Play Race</a><a class="btn" href="Car Crash Simulation.html">Home</a></div>
     </div>
   </div>
 
   <div id="pause" class="overlay" hidden>
     <div class="panel card">
       <h2>Paused</h2>
+      <div class="pause-menu">
+        <button type="button" id="btn-resume" class="btn primary">Resume <small>Esc · Menu</small></button>
+        <button type="button" id="btn-retry" class="btn">Retry</button>
+        <button type="button" id="btn-quit" class="btn">Quit to car and level select</button>
+        <a class="btn" href="Race.html">Play Race</a>
+        <a class="btn" href="Car Crash Simulation.html">Home</a>
+      </div>
+      <p class="muted small">↑ ↓ to choose · Enter or A to pick · Esc or Menu to carry on</p>
+      <details class="pause-keys">
+        <summary>Controls</summary>
       <table class="keys">
         <tr><th></th><th>Keyboard</th><th>Controller</th></tr>
         <tr><td>Steer</td><td>A / D, ← / →</td><td>Left stick</td></tr>
@@ -385,8 +416,7 @@ body.destruction { font-family: "Barlow", system-ui, -apple-system, "Segoe UI", 
         <tr><td>Retry</td><td>R</td><td>View</td></tr>
         <tr><td>Pause</td><td>Esc, P</td><td>Menu</td></tr>
       </table>
-      <p class="muted">Press Esc or Menu to carry on.</p>
-      <button type="button" id="btn-resume" class="btn primary">Resume</button>
+      </details>
     </div>
   </div>
 
@@ -8389,7 +8419,8 @@ gl_Position = projectionMatrix * mvPosition;`);
  * right, gas, brake, boost, drift (handbrake), and camera, back on the road, pause.
  *
  * Keyboard steering eases in and out (a key is all or nothing; a stick isn't). Rumble, where the
- * browser and controller support it, through the gamepad's vibrationActuator.
+ * browser and controller support it, through the gamepad's vibrationActuator. menu() moves a
+ * highlight through an open menu's buttons (a pause menu, the results) and presses the one chosen.
  */
 const RaceInput = (() => {
   'use strict';
@@ -8487,7 +8518,21 @@ const RaceInput = (() => {
     const gp = lastPad, act = gp && gp.vibrationActuator;
     if (act && act.playEffect) act.playEffect('dual-rumble', { duration: ms, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak) }).catch(() => {});
   }
-  return { poll, rumble, bindTouch, get pad() { return lastPad ? lastPad.id : padId; } };
+  // a menu's buttons (.btn, shown) in element el: the menu steps of input inp (arrows, d-pad, a stick
+  // flick) move the highlight (class 'focus'), Enter or A presses the highlighted one; the highlight
+  // starts on the first button each time a menu opens (or after menuReset)
+  let menuEl = null, menuIdx = 0;
+  function menu(el, inp) {
+    const items = [...el.querySelectorAll('.btn')].filter((b) => b.offsetParent !== null);
+    if (!items.length) return;
+    if (menuEl !== el) { menuEl = el; menuIdx = 0; }
+    const step = inp.nav.y || inp.nav.x;
+    if (step) menuIdx = (menuIdx + step + items.length) % items.length;
+    menuIdx = Math.min(menuIdx, items.length - 1);
+    items.forEach((b, i) => b.classList.toggle('focus', i === menuIdx));
+    if (inp.start) items[menuIdx].click();
+  }
+  return { poll, rumble, bindTouch, menu, menuReset() { menuEl = null; }, get pad() { return lastPad ? lastPad.id : padId; } };
 })();
 
 </script>
@@ -10797,6 +10842,8 @@ const DestructionGame = (() => {
     lastMedal = m;
     $('#boost-fill').style.width = Math.round(boost * 100) + '%';
     $('#boost').classList.toggle('on', car.boosting && state === 'run');
+    const canPause = PAUSABLE.includes(state);
+    if ($('#btn-menu').hidden === canPause) $('#btn-menu').hidden = !canPause;
     $('#hud-speed').textContent = Math.round(Math.abs(car.forward) * 3.6);
     $('.hud-br .speedo').hidden = impactAt >= 0;   // (after the crash: the Crashbreaker and boost only)
     $('#hud-gear').textContent = car.reverse ? 'R' : car.gear;
@@ -10981,10 +11028,19 @@ const DestructionGame = (() => {
       });
     }
   }
-  $('#btn-resume').addEventListener('click', () => { if (upright.matches && TOUCH) return; paused = false; $('#pause').hidden = true; });
+  // the pause menu (Esc, P, the controller's Menu button, the HUD's menu button or a phone's II):
+  // carry on, retry, quit to the select screen, or leave for the other game mode or home
+  function setPaused(on) { paused = on; $('#pause').hidden = !on; if (on) RaceInput.menuReset(); }
+  $('#btn-resume').addEventListener('click', () => { if (upright.matches && TOUCH) return; setPaused(false); });
+  $('#btn-retry').addEventListener('click', () => { setPaused(false); retry(); });
+  $('#btn-quit').addEventListener('click', () => { setPaused(false); toSelect(); });
+  $('#btn-menu').addEventListener('click', () => { if (PAUSABLE.includes(state)) setPaused(true); });
+  // a clicked button lets go of the keyboard focus (Enter or Space would press it again)
+  document.querySelectorAll('#pause .btn, #results .btn, #btn-menu').forEach((b) => b.addEventListener('click', () => b.blur()));
 
   // ---------------------------------------------------------------- the loop
   let acc = 0, last = performance.now(), audio = false, prevSpin = 0, paused = false, stepN = 0, boostHeld = false;
+  const PAUSABLE = ['countdown', 'run', 'impact', 'pileup'];
   let input = { steer: 0, throttle: 0, brake: 0 };
   // scripted attempts (?test=): full throttle down the right lane (ramp), the left (plain, tbone),
   // boosting from the start (tanker)
@@ -11007,14 +11063,15 @@ const DestructionGame = (() => {
     if (TEST) testOut.frames.push([state, Math.round(dtReal * 1000)]);
     input = RaceInput.poll(dtReal);
     if (input.any && !audio) { FX.initAudio(); audio = true; }
-    if (input.pause && ['countdown', 'run', 'impact', 'pileup'].includes(state)) { paused = !paused; $('#pause').hidden = !paused; }
+    if (input.pause && PAUSABLE.includes(state)) setPaused(!paused);
+    else if (paused) RaceInput.menu($('#pause'), input);   // arrows or the d-pad, Enter or A
     if (TOUCH) {
       const show = ['countdown', 'run', 'impact', 'pileup'].includes(state);
       if ($('#touch').hidden === show) $('#touch').hidden = !show;
-      if (upright.matches && show && !paused) { paused = true; $('#pause').hidden = false; }
+      if (upright.matches && show && !paused) setPaused(true);
     }
     if (state === 'select') updateSelect(input);
-    if (state === 'results' && (input.start || input.reset)) retry();
+    if (state === 'results') { if (input.reset) retry(); else RaceInput.menu($('#results'), input); }   // Enter or A: the highlighted button (Retry first)
     else if (input.reset && ['countdown', 'run', 'impact', 'pileup', 'tally'].includes(state) && !paused) retry();
     const scale = slowmo > 0 ? 0.35 : 1;
     if (slowmo > 0) slowmo -= dtReal;

@@ -494,6 +494,8 @@ const DestructionGame = (() => {
     lastMedal = m;
     $('#boost-fill').style.width = Math.round(boost * 100) + '%';
     $('#boost').classList.toggle('on', car.boosting && state === 'run');
+    const canPause = PAUSABLE.includes(state);
+    if ($('#btn-menu').hidden === canPause) $('#btn-menu').hidden = !canPause;
     $('#hud-speed').textContent = Math.round(Math.abs(car.forward) * 3.6);
     $('.hud-br .speedo').hidden = impactAt >= 0;   // (after the crash: the Crashbreaker and boost only)
     $('#hud-gear').textContent = car.reverse ? 'R' : car.gear;
@@ -678,10 +680,19 @@ const DestructionGame = (() => {
       });
     }
   }
-  $('#btn-resume').addEventListener('click', () => { if (upright.matches && TOUCH) return; paused = false; $('#pause').hidden = true; });
+  // the pause menu (Esc, P, the controller's Menu button, the HUD's menu button or a phone's II):
+  // carry on, retry, quit to the select screen, or leave for the other game mode or home
+  function setPaused(on) { paused = on; $('#pause').hidden = !on; if (on) RaceInput.menuReset(); }
+  $('#btn-resume').addEventListener('click', () => { if (upright.matches && TOUCH) return; setPaused(false); });
+  $('#btn-retry').addEventListener('click', () => { setPaused(false); retry(); });
+  $('#btn-quit').addEventListener('click', () => { setPaused(false); toSelect(); });
+  $('#btn-menu').addEventListener('click', () => { if (PAUSABLE.includes(state)) setPaused(true); });
+  // a clicked button lets go of the keyboard focus (Enter or Space would press it again)
+  document.querySelectorAll('#pause .btn, #results .btn, #btn-menu').forEach((b) => b.addEventListener('click', () => b.blur()));
 
   // ---------------------------------------------------------------- the loop
   let acc = 0, last = performance.now(), audio = false, prevSpin = 0, paused = false, stepN = 0, boostHeld = false;
+  const PAUSABLE = ['countdown', 'run', 'impact', 'pileup'];
   let input = { steer: 0, throttle: 0, brake: 0 };
   // scripted attempts (?test=): full throttle down the right lane (ramp), the left (plain, tbone),
   // boosting from the start (tanker)
@@ -704,14 +715,15 @@ const DestructionGame = (() => {
     if (TEST) testOut.frames.push([state, Math.round(dtReal * 1000)]);
     input = RaceInput.poll(dtReal);
     if (input.any && !audio) { FX.initAudio(); audio = true; }
-    if (input.pause && ['countdown', 'run', 'impact', 'pileup'].includes(state)) { paused = !paused; $('#pause').hidden = !paused; }
+    if (input.pause && PAUSABLE.includes(state)) setPaused(!paused);
+    else if (paused) RaceInput.menu($('#pause'), input);   // arrows or the d-pad, Enter or A
     if (TOUCH) {
       const show = ['countdown', 'run', 'impact', 'pileup'].includes(state);
       if ($('#touch').hidden === show) $('#touch').hidden = !show;
-      if (upright.matches && show && !paused) { paused = true; $('#pause').hidden = false; }
+      if (upright.matches && show && !paused) setPaused(true);
     }
     if (state === 'select') updateSelect(input);
-    if (state === 'results' && (input.start || input.reset)) retry();
+    if (state === 'results') { if (input.reset) retry(); else RaceInput.menu($('#results'), input); }   // Enter or A: the highlighted button (Retry first)
     else if (input.reset && ['countdown', 'run', 'impact', 'pileup', 'tally'].includes(state) && !paused) retry();
     const scale = slowmo > 0 ? 0.35 : 1;
     if (slowmo > 0) slowmo -= dtReal;

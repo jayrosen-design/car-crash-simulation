@@ -16,7 +16,8 @@
  * right, gas, brake, boost, drift (handbrake), and camera, back on the road, pause.
  *
  * Keyboard steering eases in and out (a key is all or nothing; a stick isn't). Rumble, where the
- * browser and controller support it, through the gamepad's vibrationActuator.
+ * browser and controller support it, through the gamepad's vibrationActuator. menu() moves a
+ * highlight through an open menu's buttons (a pause menu, the results) and presses the one chosen.
  */
 const RaceInput = (() => {
   'use strict';
@@ -114,5 +115,19 @@ const RaceInput = (() => {
     const gp = lastPad, act = gp && gp.vibrationActuator;
     if (act && act.playEffect) act.playEffect('dual-rumble', { duration: ms, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak) }).catch(() => {});
   }
-  return { poll, rumble, bindTouch, get pad() { return lastPad ? lastPad.id : padId; } };
+  // a menu's buttons (.btn, shown) in element el: the menu steps of input inp (arrows, d-pad, a stick
+  // flick) move the highlight (class 'focus'), Enter or A presses the highlighted one; the highlight
+  // starts on the first button each time a menu opens (or after menuReset)
+  let menuEl = null, menuIdx = 0;
+  function menu(el, inp) {
+    const items = [...el.querySelectorAll('.btn')].filter((b) => b.offsetParent !== null);
+    if (!items.length) return;
+    if (menuEl !== el) { menuEl = el; menuIdx = 0; }
+    const step = inp.nav.y || inp.nav.x;
+    if (step) menuIdx = (menuIdx + step + items.length) % items.length;
+    menuIdx = Math.min(menuIdx, items.length - 1);
+    items.forEach((b, i) => b.classList.toggle('focus', i === menuIdx));
+    if (inp.start) items[menuIdx].click();
+  }
+  return { poll, rumble, bindTouch, menu, menuReset() { menuEl = null; }, get pad() { return lastPad ? lastPad.id : padId; } };
 })();

@@ -47,6 +47,24 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .health.critical .health-bar i { background: linear-gradient(90deg, #d8322a, #ff6a4d); }
 .hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(200, 20, 10, 0) 55%, rgba(200, 20, 10, 0.55) 100%); }
 .chip { position: absolute; bottom: 120px; right: 24px; padding: 6px 12px; border-radius: 8px; background: rgba(242, 178, 51, 0.92); color: #1a1205; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 14px; }
+/* the Race page's ways out: Home and the other game mode on the select screen, the HUD's menu
+   button (the mouse's way to pause; phones have their own), the pause menu, and the highlight that
+   the arrow keys or the d-pad move through the pause and results buttons */
+.game-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.sel-head .game-nav { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); margin: 0; }   /* over the car, clear of the panels */
+.game-nav a { padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(10, 12, 16, 0.72); color: var(--text); text-decoration: none; font-size: 13px; font-weight: 650; text-shadow: none; }
+.game-nav a:hover { background: rgba(40, 46, 56, 0.9); }
+#btn-menu { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); pointer-events: auto; padding: 6px 12px; font-size: 13px; background: rgba(10, 12, 16, 0.72); }
+#btn-menu small { margin-left: 6px; font-weight: 500; opacity: 0.6; }
+body.touch #btn-menu { display: none; }
+body.destruction #btn-menu { left: 16px; transform: none; }   /* the score is at the top in the middle */
+.pause-menu { display: flex; flex-direction: column; gap: 8px; min-width: 280px; margin: 14px 0 10px; }
+.pause-menu .btn { text-align: left; }
+.pause-menu .btn small { margin-left: 8px; font-weight: 500; opacity: 0.7; }
+#pause .btn.focus, #results .btn.focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pause-keys { margin-top: 8px; }
+.pause-keys summary { color: var(--muted); font-size: 14px; cursor: pointer; }
+.pause-keys .keys { margin-top: 6px; }
 /* the run or chain under way (game.js), above the chip; the score breakdown on the results */
 #combo { position: absolute; bottom: 158px; right: 24px; padding: 4px 10px; border-radius: 8px; background: rgba(10, 12, 16, 0.7); color: #f2b233; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 13px; }
 body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
@@ -111,6 +129,7 @@ body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
   .overlay.select { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: rgba(5, 7, 10, 0.55); }
   .sel-head, .sel-garage, .sel-stats, .sel-foot { position: static; width: auto; max-width: 520px; transform: none; }
   .sel-foot { text-align: left; }
+  .sel-head .game-nav { position: static; transform: none; margin: 0 0 10px; }
 }
 .card.wide { max-width: 640px; width: calc(100% - 32px); }
 .results { border-collapse: collapse; width: 100%; margin: 10px 0 4px; }

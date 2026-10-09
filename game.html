@@ -37,10 +37,12 @@
     <div id="combo" hidden></div>
     <div id="revenge-tag" class="revenge-tag" hidden>Revenge</div>
     <div id="hud-wrong" class="wrong" hidden>Wrong way</div>
+    <button type="button" id="btn-menu" class="btn" aria-label="Pause menu">☰ Menu <small>Esc</small></button>
   </div>
 
   <div id="select" class="overlay select" hidden>
     <header class="sel-head">
+      <nav class="game-nav" aria-label="Car Crash Simulation"><a href="Car Crash Simulation.html">← Home</a><a href="Destruction.html">Destruction mode</a></nav>
       <p class="eyebrow">Car Crash Simulation · Race</p>
       <h2>Choose your car</h2>
       <p class="muted">Three laps of the city against seven rivals, with traffic both ways. Jump the ramps and knock things over. Near misses, the oncoming lanes, drifts and takedowns fill your boost. Hits wear your health down; when it's gone, the full crash physics plays the crash back in slow motion.</p>
@@ -96,7 +98,7 @@
       <table id="results-table" class="results"></table>
       <p id="results-note" class="muted small" hidden>* still racing: an estimate from their pace so far</p>
       <div id="results-score" class="score-break"></div>
-      <div class="actions"><button id="btn-again" class="btn primary">Race again</button><button id="btn-replay" class="btn">Watch your last crash</button><a class="btn" href="Car Crash Simulation.html">Home</a></div>
+      <div class="actions"><button id="btn-again" class="btn primary">Race again</button><button id="btn-change" class="btn">Change car or track</button><button id="btn-replay" class="btn">Watch your last crash</button><a class="btn" href="Destruction.html">Play Destruction</a><a class="btn" href="Car Crash Simulation.html">Home</a></div>
     </div>
   </div>
   <div id="replay-bar" class="replay-bar" hidden><span class="dot"></span>Crash replay · <span id="replay-clock" class="mono"></span> · Enter to close</div>
@@ -110,6 +112,16 @@
   <div id="pause" class="overlay" hidden>
     <div class="panel card">
       <h2>Paused</h2>
+      <div class="pause-menu">
+        <button type="button" id="btn-resume" class="btn primary">Resume <small>Esc · Menu</small></button>
+        <button type="button" id="btn-restart" class="btn">Restart race</button>
+        <button type="button" id="btn-quit" class="btn">Quit to car and track select</button>
+        <a class="btn" href="Destruction.html">Play Destruction</a>
+        <a class="btn" href="Car Crash Simulation.html">Home</a>
+      </div>
+      <p class="muted small">↑ ↓ to choose · Enter or A to pick · Esc or Menu to carry on</p>
+      <details class="pause-keys">
+        <summary>Controls</summary>
       <table class="keys">
         <tr><th></th><th>Keyboard</th><th>Controller</th></tr>
         <tr><td>Steer</td><td>A / D, ← / →</td><td>Left stick</td></tr>
@@ -122,8 +134,7 @@
         <tr><td>Back on the road</td><td>R</td><td>View</td></tr>
         <tr><td>Pause</td><td>Esc, P</td><td>Menu</td></tr>
       </table>
-      <p class="muted">Press Esc or Menu to carry on.</p>
-      <button type="button" id="btn-resume" class="btn primary">Resume</button>
+      </details>
     </div>
   </div>
 
