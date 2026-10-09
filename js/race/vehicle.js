@@ -19,6 +19,14 @@
  * way, when the wheel is let go with little slide left, below 43 km/h, on a hard hit or in the air.
  * An input { ooc: true } (a rival's full slam) switches the stability control off.
  *
+ * The garage's rigs (spec.rig, js/race/rigs.js) drive here too. A motorcycle ('bike') is the same model
+ * on its centre line (both wheels of an axle in one place, no sideways load transfer), leaning into
+ * the turn as the cornering force asks and lifting its front under hard acceleration (both drawn).
+ * The drone ('hover') has no tyres: thrust along its heading, drag, and little to stop it sliding
+ * sideways; it turns at the rate a car's steering would give; world.js holds it 0.6 m up and the
+ * handbrake makes it hop. The tank ('tracked') is governed to its top speed, grips hard sideways
+ * and turns on the spot.
+ *
  * Conventions (js/physics.js): heading h points along (cos h, sin h); car-local x forward, z right;
  * yaw rate = dh/dt, positive turning right. The pose (x, z) is the car model's origin; the body
  * moves about its centre of gravity, cgX ahead of that origin.
@@ -28,7 +36,10 @@
 const RaceCar = (() => {
   'use strict';
   const G = 9.81, RHO = 1.2;
-  // per model: drive layout and tuning (arcade: brisk, high top speed)
+  // per model: drive layout and tuning (arcade: brisk, high top speed). The garage's other cars carry
+  // theirs in their spec (js/garage.js), with optional cgf (centre of gravity's place along the
+  // wheelbase from the rear axle, 0.52), launch (the drive force's cap, x weight, 0.95), rearGrip and
+  // lean (the drawn body roll, x1)
   const TUNE = {
     lexus: { power: 150e3, cdA: 0.97, drive: [0.45, 0.55], grip: 1.05, hcg: 0.64, steer: 0.52, gears: [3.6, 2.2, 1.55, 1.18, 0.95, 0.78], final: 3.5, redline: 6600 },
     mustang: { power: 158e3, cdA: 0.84, drive: [0, 1], grip: 1.08, hcg: 0.5, steer: 0.55, gears: [3.0, 2.0, 1.5, 1.2, 1.0, 0.8], final: 3.55, redline: 7200 },
@@ -39,9 +50,9 @@ const RaceCar = (() => {
   const MF = { front: { B: 8.5, C: 1.45, E: 0.25, mu: 1 }, rear: { B: 11, C: 1.45, E: 0.25, mu: 1.1 } };
 
   function create(spec, opts = {}) {
-    const tune = TUNE[spec.key] || TUNE.lexus;
+    const tune = spec.tune || TUNE[spec.key] || TUNE.lexus, kind = spec.rig || 'car';
     const hubs = spec.hubs, frontX = hubs.FL[0], rearX = hubs.RL[0], L = frontX - rearX;
-    const cgX = rearX + 0.52 * L, a = frontX - cgX, b = cgX - rearX, track = 2 * Math.abs(hubs.FL[2]);
+    const cgX = rearX + (tune.cgf || 0.52) * L, a = frontX - cgX, b = cgX - rearX, track = 2 * Math.abs(hubs.FL[2]);
     const m = opts.massKg || spec.massKg, Izz = m * (spec.length * spec.length + spec.width * spec.width) / 12 * 0.95;
     const R = spec.wheelRadius;
     // wheels relative to the centre of gravity: [x, z, front?, drive share]
@@ -60,6 +71,9 @@ const RaceCar = (() => {
       // the player's handling (see above): on?, the rate-limited stick, 'grip' or 'drift', the
       // drift's side (+1 right) and time, its blend (0..1), full lock held for, the boost's kick (1..0)
       arcade: false, steerIn: 0, mode: 'grip', driftDir: 0, driftT: 0, dg: 0, lockT: 0, kick: 0, wasAir: false,
+      // a rig's: kind ('car' | 'bike' | 'hover' | 'tracked'); drawn lean and wheelie (bike); hover height
+      // and the hop (world.js keeps the drone up; hop: seconds of it left, cooldown); the tracks' speeds
+      kind, lean: 0, wheelie: 0, hover: kind === 'hover', hoverH: kind === 'hover' ? spec.hover.height : 0, hopT: 0, hopCool: 0, trackL: 0, trackR: 0,
       // height over hills and ramps (world.js keeps these): height of the centre of gravity's
       // ground point, vertical speed, in the air?, put back on the ground next step?, the ground's
       // (or the flight's) pitch and roll for drawing
@@ -89,6 +103,8 @@ const RaceCar = (() => {
 
     // input: { steer -1..1 (right +), throttle 0..1, brake 0..1, handbrake 0..1, boost bool }
     function step(dt, inp) {
+      if (kind === 'hover') return stepHover(dt, inp);
+      if (kind === 'tracked') return stepTracked(dt, inp);
       const c = Math.cos(car.h), s = Math.sin(car.h);
       let vx = car.vx * c + car.vz * s, vz = -car.vx * s + car.vz * c;   // local: forward, right
       const v = Math.hypot(vx, vz);
@@ -113,14 +129,15 @@ const RaceCar = (() => {
       car.boosting = boosting;
       // engine: power-limited drive force, shared between the driven wheels
       const power = tune.power * (car.boosting ? BOOST * (1 + 0.4 * car.kick) : 1);
-      let drive = thr * Math.min(m * G * 0.95, power / Math.max(4, Math.abs(vx)));
+      let drive = thr * Math.min(m * G * (tune.launch || 0.95), power / Math.max(4, Math.abs(vx)));
       // reverse: 0.5 g and 40 kW; the player's car backs up briskly instead (0.8 g, 90 kW, at most 58 km/h)
       if (car.reverse) drive = car.arcade ? -thr * (vx < -16 ? 0 : Math.min(m * G * 0.8, 90e3 / Math.max(3, Math.abs(vx))))
         : -thr * Math.min(m * G * 0.5, 40e3 / Math.max(3, Math.abs(vx)));
       // wheel loads: static plus the transfer from the last step's acceleration
       const hc = tune.hcg, mg = m * G;
       const front = mg * b / car.L - m * car.ax * hc / car.L, rear = mg * a / car.L + m * car.ax * hc / car.L;
-      const latF = m * car.ay * hc / car.track * 0.55, latR = m * car.ay * hc / car.track * 0.45;
+      // (a motorcycle leans instead: no load moves across it)
+      const latF = kind === 'bike' ? 0 : m * car.ay * hc / car.track * 0.55, latR = kind === 'bike' ? 0 : m * car.ay * hc / car.track * 0.45;
       W[0].Fz = Math.max(0, front / 2 - latF); W[1].Fz = Math.max(0, front / 2 + latF);
       W[2].Fz = Math.max(0, rear / 2 - latR); W[3].Fz = Math.max(0, rear / 2 + latR);
       // tyre forces (local frame); in a drift the rear lets go and the brakes only bite lightly
@@ -132,7 +149,7 @@ const RaceCar = (() => {
         const sd = w.front ? sinD : 0, cd = w.front ? cosD : 1;
         const vl = cd * wvx + sd * wvz, vs = -sd * wvx + cd * wvz;      // along and across the wheel
         const tyre = w.front ? MF.front : MF.rear;
-        const mu = tune.grip * tyre.mu * (w.front ? 1 : (car.handbrake > 0.5 ? 0.42 : 1) * (1 - 0.4 * car.dg));
+        const mu = tune.grip * tyre.mu * (w.front ? 1 : (tune.rearGrip || 1) * (car.handbrake > 0.5 ? 0.42 : 1) * (1 - 0.4 * car.dg));
         const Fmax = car.air ? 0 : mu * w.Fz;   // no grip in the air
         // longitudinal: drive, brakes (ABS: up to the grip), rolling resistance, handbrake
         let fl = drive * (w.front ? tune.drive[0] : tune.drive[1]) / 2;
@@ -199,10 +216,16 @@ const RaceCar = (() => {
       car.ax += (axL - car.ax) * k;
       car.ay += (azL - car.ay) * k;
       // body pitch and roll (drawn): a damped spring driven by the accelerations
-      const pt = -car.ax * 0.0045, rt = car.ay * 0.006;
+      const pt = -car.ax * 0.0045 * (tune.lean || 1), rt = car.ay * 0.006 * (tune.lean || 1);
       car.pv += ((pt - car.pitch) * 120 - car.pv * 14) * dt; car.pitch += car.pv * dt;
       car.rv += ((rt - car.roll) * 100 - car.rv * 12) * dt; car.roll += car.rv * dt;
       car.sideSlip = v > 2 ? Math.atan2(vz, Math.abs(vx)) : 0;
+      if (kind === 'bike') {
+        // the lean that balances the cornering force (up to 55 degrees), and a wheelie under hard acceleration
+        car.lean = Math.max(-0.96, Math.min(0.96, Math.atan(car.ay / G)));
+        const wantW = car.air ? 0 : Math.max(0, Math.min(0.35, (car.ax / G - 0.7) * 1.2));
+        car.wheelie += (wantW - car.wheelie) * (1 - Math.exp(-dt * (wantW > car.wheelie ? 3 : 6)));
+      }
       car.drift = Math.min(1, slideSum / 2);
       if (car.mode === 'drift') car.drift = Math.max(car.drift, 0.6 * car.dg);
       // gearbox: revs from the road speed (for the sound)
@@ -234,6 +257,89 @@ const RaceCar = (() => {
       car.wasAir = car.air;
     }
 
+    // the stick (rate-limited for the player) and the yaw rate a car's steering would give at speed v
+    function stick(dt, inp) {
+      let st = inp.steer || 0;
+      if (car.arcade) { car.steerIn += Math.max(-5 * dt, Math.min(5 * dt, st - car.steerIn)); st = car.steerIn; }
+      return st;
+    }
+    // the drone: thrust, drag, a weak hold sideways; the yaw rate eases to what the stick asks
+    function stepHover(dt, inp) {
+      const c = Math.cos(car.h), s = Math.sin(car.h);
+      let vx = car.vx * c + car.vz * s, vz = -car.vx * s + car.vz * c;
+      const v = Math.hypot(vx, vz), st = stick(dt, inp);
+      car.steer = st * 0.4;
+      const want = st * tune.steer / (1 + v / 30);
+      car.yaw += (want - car.yaw) * (1 - Math.exp(-5 * dt));
+      if (vx < (car.arcade ? 0.95 : 0.5) && (inp.brake || 0) > 0.5 && (inp.throttle || 0) < 0.1) car.reverse = true;
+      if ((inp.throttle || 0) > 0.1 || vx > 1) car.reverse = false;
+      const thr = car.reverse ? (inp.brake || 0) : (inp.throttle || 0), brk = car.reverse ? 0 : (inp.brake || 0);
+      car.throttle = thr; car.brake = brk; car.handbrake = inp.handbrake || 0;
+      car.boosting = !!inp.boost && !car.reverse;
+      const power = tune.power * (car.boosting ? BOOST : 1);
+      let fx = thr * Math.min(m * G * tune.thrust, power / Math.max(4, Math.abs(vx))) * (car.reverse ? -0.5 : 1);
+      if (brk > 0 && vx > 0.2) fx -= brk * m * G * 0.7;
+      const drag = 0.5 * RHO * tune.cdA * v;
+      const axL = fx / m - drag * vx / m, azL = -drag * vz / m;
+      vx += axL * dt; vz += azL * dt;
+      vz *= Math.exp(-tune.slide * dt);
+      car.vx = vx * c - vz * s; car.vz = vx * s + vz * c;
+      car.x += car.vx * dt; car.z += car.vz * dt;
+      car.h += car.yaw * dt;
+      car.odometer += v * dt;
+      const k = 1 - Math.exp(-dt / 0.08);
+      car.ax += (axL - car.ax) * k; car.ay += (car.yaw * vx - car.ay) * k;
+      // tilt into the motion (drawn): nose down speeding up, banked into the turn
+      car.pitch += (Math.max(-0.3, Math.min(0.3, -car.ax * 0.035)) - car.pitch) * k;
+      car.roll += (Math.max(-0.35, Math.min(0.35, car.ay * 0.03)) - car.roll) * k;
+      car.sideSlip = v > 2 ? Math.atan2(vz, Math.abs(vx)) : 0;
+      car.drift = v > 10 ? Math.min(1, Math.abs(car.sideSlip) / 0.5) : 0;
+      // the hop: the handbrake, then a pause
+      car.hopCool = Math.max(0, car.hopCool - dt); car.hopT = Math.max(0, car.hopT - dt);
+      if (car.handbrake > 0.5 && car.hopCool === 0) { car.hopT = 0.9; car.hopCool = 1.2; }
+      for (const w of W) w.spin += (40 + 30 * thr) * dt;   // the rotors
+      car.gear = 1; car.rpm = Math.min(tune.redline, 3000 + 6000 * thr);
+    }
+    // the tank: governed, high grip sideways, turns on the spot; the tracks' speeds for drawing
+    function stepTracked(dt, inp) {
+      const c = Math.cos(car.h), s = Math.sin(car.h);
+      let vx = car.vx * c + car.vz * s, vz = -car.vx * s + car.vz * c;
+      const v = Math.hypot(vx, vz), st = stick(dt, inp);
+      car.steer = st * 0.3;
+      if (vx < (car.arcade ? 0.95 : 0.5) && (inp.brake || 0) > 0.5 && (inp.throttle || 0) < 0.1) car.reverse = true;
+      if ((inp.throttle || 0) > 0.1 || vx > 1) car.reverse = false;
+      const thr = car.reverse ? (inp.brake || 0) : (inp.throttle || 0), brk = car.reverse ? 0 : (inp.brake || 0);
+      car.throttle = thr; car.brake = brk; car.handbrake = inp.handbrake || 0;
+      car.boosting = !!inp.boost && !car.reverse;
+      const want = st * tune.steer * (1 - 0.5 * Math.min(1, Math.abs(vx) / 20)) * (vx < -0.5 ? -1 : 1);
+      if (!car.air) car.yaw += (want - car.yaw) * (1 - Math.exp(-4 * dt));
+      const vmax = car.boosting ? tune.vmaxBoost : tune.vmax;
+      let fx = thr * Math.min(m * G * 0.35, tune.power / Math.max(2, Math.abs(vx)));
+      if (car.reverse) fx = vx < -4.2 ? 0 : -fx * 0.6;
+      else if (vx > vmax) fx = 0;
+      const sg = vx > 0.05 ? 1 : vx < -0.05 ? -1 : 0;
+      fx -= sg * (brk * m * G * 0.6 + 0.05 * m * G);
+      const drag = 0.5 * RHO * tune.cdA * v;
+      const axL = car.air ? 0 : fx / m - drag * vx / m;
+      const vx0 = vx;
+      vx += axL * dt;
+      if (sg && Math.sign(vx) !== sg && !(thr > 0)) vx = 0;   // brakes and rolling stop it, not reverse it
+      if (!car.air) { const cut = Math.min(Math.abs(vz), tune.grip * G * dt); vz -= Math.sign(vz) * cut; }
+      car.vx = vx * c - vz * s; car.vz = vx * s + vz * c;
+      car.x += car.vx * dt; car.z += car.vz * dt;
+      car.h += car.yaw * dt;
+      car.odometer += v * dt;
+      const k = 1 - Math.exp(-dt / 0.08);
+      car.ax += ((vx - vx0) / dt - car.ax) * k; car.ay += (car.yaw * vx - car.ay) * k;
+      const pt = -car.ax * 0.003, rt = car.ay * 0.002;
+      car.pv += ((pt - car.pitch) * 60 - car.pv * 10) * dt; car.pitch += car.pv * dt;
+      car.rv += ((rt - car.roll) * 60 - car.rv * 10) * dt; car.roll += car.rv * dt;
+      car.sideSlip = 0; car.drift = 0;
+      car.trackL = vx + car.yaw * car.track / 2; car.trackR = vx - car.yaw * car.track / 2;
+      for (const w of W) w.spin += (w.z < 0 ? car.trackL : car.trackR) / R * dt;
+      car.gear = 1; car.rpm = Math.min(tune.redline, 700 + 1900 * Math.max(thr, Math.abs(vx) / vmax));
+    }
+
     // an impulse J (N s, world) at world point (px, pz); a hard one ends a drift
     function applyImpulse(px, pz, Jx, Jz) {
       car.vx += Jx / m; car.vz += Jz / m;
@@ -259,8 +365,8 @@ const RaceCar = (() => {
     { const car = create(spec); car.place(0, 0, 0, 100 / 3.6); while (car.forward > 0.1) { car.step(DT, { brake: 1 }); stop100 += car.forward * DT; } }
     let ay = 0;
     run(25, 240 * 6, (car, i) => { if (i > 240 * 4) ay = Math.max(ay, Math.abs(car.ay)); return { steer: 0.4, throttle: car.forward < 25 ? 0.6 : 0.05 }; });
-    const tune = TUNE[spec.key] || TUNE.lexus;
-    const drive = tune.drive[0] > 0 && tune.drive[1] > 0 ? 'AWD' : tune.drive[1] > 0 ? 'RWD' : 'FWD';
+    const tune = spec.tune || TUNE[spec.key] || TUNE.lexus;
+    const drive = spec.rig === 'hover' ? 'thrust' : spec.rig === 'tracked' ? 'tracked' : tune.drive[0] > 0 && tune.drive[1] > 0 ? 'AWD' : tune.drive[1] > 0 ? 'RWD' : 'FWD';
     return { t100, top, topBoost, stop100, lateralG: ay / G, powerKW: tune.power / 1000, massKg: spec.massKg, drive, gears: tune.gears.length };
   }
 

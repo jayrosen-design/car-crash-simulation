@@ -114,7 +114,55 @@ body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
 .specs { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0 0 10px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; }
 .specs dt { color: var(--muted); }
 .specs dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.sel-foot { position: absolute; left: 50%; bottom: 20px; width: min(720px, calc(100% - 32px)); transform: translateX(-50%); text-align: center; }
+.sel-foot { position: absolute; left: 50%; bottom: 20px; width: min(1240px, calc(100% - 64px)); transform: translateX(-50%); text-align: center; }
+/* the garage's lineup (the design video's "Select a car"): every vehicle to one scale over a metre
+   ruler, on a blueprint grid; the chosen one lit, with a violet bar under it */
+.sel-lineup-row { margin: 0 0 10px; padding: 6px; text-align: left; }
+.sel-lineup-row h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.sel-lineup { height: 96px; padding: 6px 10px 2px; border-radius: 8px; background-color: rgba(7, 8, 11, 0.88);
+  background-image: linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px); background-size: 22px 22px; }
+.lineup-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.lineup-car { cursor: pointer; opacity: 0.5; transition: opacity 0.2s; }
+.lineup-car:hover, .lineup-car[aria-checked="true"] { opacity: 1; }
+.lineup-car .hit { fill: transparent; }
+.lineup-car .tyre { fill: #2b2c30; }
+.lineup-car .rim { fill: #e6e6ea; }
+.lineup-svg .ground { stroke: #8f949e; stroke-width: 0.03; }
+.lineup-svg .tick { stroke: #5d616a; stroke-width: 0.025; }
+.lineup-svg .tick.major { stroke: #8f949e; }
+.lineup-svg text { font-family: var(--mono); font-size: 0.42px; fill: #8f949e; }
+.lineup-svg .pick { fill: #8c64f4; }
+/* the spec card: the name big, the class line, the figures in orange mono, a violet rule */
+.sel-card { margin-bottom: 12px; }
+.sel-card .card-name { margin: 0 0 4px; font-size: 30px; font-weight: 800; line-height: 1.05; text-transform: none; letter-spacing: 0; color: var(--text); }
+.sel-card .card-line { margin: 0 0 8px; color: #c7ced8; font-size: 14px; }
+.sel-card .card-mono { margin: 2px 0; font-family: var(--mono); font-size: 12.5px; color: #f28c2c; }
+.sel-card .card-cam { margin: 0; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.sel-card .card-cam i { display: block; width: 72px; height: 3px; margin: 9px 0 6px; background: #8c64f4; }
+/* the tracks or junctions side by side (they ran off a 720 px screen as a list) */
+.sel-levels { grid-template-columns: repeat(3, 1fr); }
+.sel-levels .sel-car { padding: 7px 9px; }
+.sel-levels .sel-car b { font-size: 14px; }
+.sel-levels .sel-car span { font-size: 11.5px; line-height: 1.3; }
+/* a short desktop screen (1280 x 720): the select screen tightened so nothing overlaps */
+@media (max-height: 820px) and (min-width: 1101px) {
+  .sel-head .muted { display: none; }
+  .sel-garage { top: 118px; }
+  .sel-stats { padding: 12px 16px; }
+  .sel-card { margin-bottom: 8px; }
+  .sel-card .card-name { font-size: 24px; }
+  .sel-card .card-line { margin-bottom: 4px; }
+  .sel-card .card-cam i { margin: 6px 0 4px; }
+  .bars { gap: 5px; margin-bottom: 8px; }
+  .specs { gap: 1px 12px; padding-top: 6px; font-size: 13px; }
+  .sel-stats .small.muted { display: none; }
+  .sel-lineup { height: 74px; }
+  .sel-lineup-row { margin-bottom: 6px; }
+  .btn.big { padding: 9px 26px; font-size: 16px; }
+  .sel-keys { margin-top: 6px; }
+  .sel-foot { bottom: 12px; }
+  .sel-foot .credits { margin-top: 6px; padding: 4px 10px; font-size: 11px; }
+}
 .btn.big { padding: 12px 30px; font-size: 18px; }
 .btn:disabled { opacity: 0.5; cursor: wait; }
 .btn.big small { margin-left: 8px; font-size: 13px; font-weight: 500; opacity: 0.7; }

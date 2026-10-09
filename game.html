@@ -49,10 +49,6 @@
     </header>
 
     <section class="panel sel-garage" aria-label="Car and paint">
-      <div class="sel-row" data-row="0">
-        <h3>Car</h3>
-        <div id="sel-cars" class="sel-cars" role="radiogroup" aria-label="Car"></div>
-      </div>
       <div class="sel-row" data-row="1">
         <h3>Paint · <span id="sel-paint-name"></span></h3>
         <div id="sel-swatches" class="swatches" role="radiogroup" aria-label="Paint"></div>
@@ -65,13 +61,17 @@
     </section>
 
     <section class="panel sel-stats" aria-label="Performance">
-      <h3 id="sel-name"></h3>
+      <div id="sel-card" class="sel-card"></div>
       <div id="sel-bars" class="bars"></div>
       <dl id="sel-specs" class="specs"></dl>
       <p class="small muted">Measured by driving each car on an empty road in the game's physics.</p>
     </section>
 
     <footer class="sel-foot">
+      <div class="sel-row sel-lineup-row" data-row="0">
+        <h3>Select a car</h3>
+        <div id="sel-lineup" class="sel-lineup" role="radiogroup" aria-label="Car"></div>
+      </div>
       <button type="button" id="btn-start" class="btn primary big">Start race <small>Enter · A</small></button>
       <button type="button" id="btn-solver" class="btn solver">Crash physics: <b>CPU</b></button>
       <details class="sel-keys">
@@ -86,7 +86,7 @@
           <tr><td>Back on the road · pause</td><td>R · Esc</td><td>View · Menu</td></tr>
         </table>
       </details>
-      <p class="credits">3D car models: “<a href="https://sketchfab.com/3d-models/lexus-rx-350-rigged-rigged-driver-human-6b9a1994b2dd445c8248270c81eead6b" target="_blank" rel="noopener">Lexus RX 350 + rigged (+ rigged driver (human))</a>” by menarzuw and “<a href="https://sketchfab.com/3d-models/ford-mustang-gt-500-with-pro-rig-for-free-f26a29f766844f46910547d6d2cc291d" target="_blank" rel="noopener">Ford Mustang Gt 500 With pro Rig FOR FREE!</a>” by NoOb StUfFs, both CC BY 4.0, split into parts and simplified. Street textures and sky: <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (CC0). 3D graphics by three.js.</p>
+      <p class="credits">3D car models: “<a href="https://sketchfab.com/3d-models/lexus-rx-350-rigged-rigged-driver-human-6b9a1994b2dd445c8248270c81eead6b" target="_blank" rel="noopener">Lexus RX 350 + rigged (+ rigged driver (human))</a>” by menarzuw and “<a href="https://sketchfab.com/3d-models/ford-mustang-gt-500-with-pro-rig-for-free-f26a29f766844f46910547d6d2cc291d" target="_blank" rel="noopener">Ford Mustang Gt 500 With pro Rig FOR FREE!</a>” by NoOb StUfFs, both CC BY 4.0, split into parts and simplified. The other ten vehicles are original designs for this game. Street textures and sky: <a href="https://polyhaven.com" target="_blank" rel="noopener">Poly Haven</a> (CC0). 3D graphics by three.js.</p>
     </footer>
   </div>
 
@@ -163,16 +163,40 @@
   <div id="loading">Loading 3D engine…</div>
 </div>
 
+<script src="js/garage.js"></script>
+<script src="js/garageui.js"></script>
 <script src="models/lexus.phys.js"></script>
 <script src="models/mustang.phys.js"></script>
+<script src="models/halcyon.phys.js"></script>
+<script src="models/wren.phys.js"></script>
+<script src="models/bastion.phys.js"></script>
+<script src="models/quasar.phys.js"></script>
+<script src="models/ridgeback.phys.js"></script>
+<script src="models/ember.phys.js"></script>
+<script src="models/cadence.phys.js"></script>
+<script src="models/kestrel.phys.js"></script>
+<script src="models/osprey.phys.js"></script>
+<script src="models/rampart.phys.js"></script>
 <script src="models/lexus.glb.js"></script>
 <script src="models/mustang.glb.js"></script>
+<script src="models/halcyon.glb.js"></script>
+<script src="models/wren.glb.js"></script>
+<script src="models/bastion.glb.js"></script>
+<script src="models/quasar.glb.js"></script>
+<script src="models/ridgeback.glb.js"></script>
+<script src="models/ember.glb.js"></script>
+<script src="models/cadence.glb.js"></script>
+<script src="models/kestrel.glb.js"></script>
+<script src="models/osprey.glb.js"></script>
+<script src="models/rampart.glb.js"></script>
 <script src="js/occupant.js"></script>
 <script src="js/vehicles.js"></script>
 <script src="js/physics.js"></script>
 <script src="js/gpu-lattice.js"></script>
 <script src="js/race/level.js"></script>
 <script src="js/race/vehicle.js"></script>
+<script src="js/race/rigs.js"></script>
+<script src="js/destruction/wrecks.js"></script>
 <script src="js/race/world.js"></script>
 <script src="js/race/ai.js"></script>
 <script src="js/race/props.js"></script>
@@ -185,7 +209,7 @@
   // three.js is an ES module from the CDN; the game's scripts are classic scripts so the page also
   // works when opened straight from disk (file://). The standalone build embeds them as
   // text/x-inline blocks.
-  const APP_SCRIPTS = ['js/fx.js', 'js/cinematic.js', 'js/carmodel.js', 'js/race/input.js', 'js/race/crash.js', 'js/race/render.js', 'js/race/game.js'];
+  const APP_SCRIPTS = ['js/fx.js', 'js/cinematic.js', 'js/carmodel.js', 'js/rigmodel.js', 'js/race/input.js', 'js/race/crash.js', 'js/race/render.js', 'js/race/game.js'];
   try {
     const THREE = await import('three');
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');

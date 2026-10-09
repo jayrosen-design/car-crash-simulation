@@ -1,0 +1,402 @@
+{
+ "key": "rampart",
+ "title": "Rampart tank",
+ "kind": "Light tank \u00b7 tracked \u00b7 11.8 t",
+ "source": "Measured from the side view in the garage design video (car-crash-simulation-new-garage.mp4), 147 px/m.",
+ "type": "tracked",
+ "length": 7.2,
+ "width": 3.1,
+ "height": 2.4,
+ "massKg": 11800,
+ "paint": {
+  "name": "rust",
+  "hex": "#6c3c14"
+ },
+ "materials": {
+  "paint": "#6c3c14",
+  "paint_dark": "#4e2a0e",
+  "dark": "#2d2e31",
+  "metal": "#7c7e84",
+  "gun": "#4a4b50",
+  "track": "#3a3b3f",
+  "lamp_head": "#ec8c34",
+  "lamp_tail": "#ac6725",
+  "tire": "#3a3b3f",
+  "rim": "#e6e6ea",
+  "hub": "#86868c"
+ },
+ "nodes": [
+  {
+   "name": "BODY",
+   "pivot": [0, 0, 0],
+   "mass": 8800,
+   "shapes": [
+    {
+     "kind": "prism",
+     "mat": "paint",
+     "side": [
+      [-3.6, 1.22],
+      [1.36, 1.22],
+      [2.55, 0.93],
+      [2.59, 0.66],
+      [-3.6, 0.66]
+     ],
+     "w": 3.04
+    },
+    {
+     "kind": "box",
+     "mat": "paint_dark",
+     "c": [-0.5, 0.74, 1.53],
+     "s": [6.1, 0.18, 0.03]
+    },
+    {
+     "kind": "box",
+     "mat": "paint_dark",
+     "c": [-0.5, 0.74, -1.53],
+     "s": [6.1, 0.18, 0.03]
+    },
+    {
+     "kind": "box",
+     "mat": "dark",
+     "c": [-3.15, 1.28, 0.9],
+     "s": [0.3, 0.12, 0.6]
+    },
+    {
+     "kind": "box",
+     "mat": "lamp_tail",
+     "c": [-3.59, 0.99, 1.2],
+     "s": [0.03, 0.12, 0.16]
+    },
+    {
+     "kind": "box",
+     "mat": "lamp_tail",
+     "c": [-3.59, 0.99, -1.2],
+     "s": [0.03, 0.12, 0.16]
+    },
+    {
+     "kind": "box",
+     "mat": "lamp_head",
+     "c": [2.35, 1.08, 1.2],
+     "s": [0.16, 0.1, 0.18],
+     "rot": [0, 0, -0.24]
+    },
+    {
+     "kind": "box",
+     "mat": "lamp_head",
+     "c": [2.35, 1.08, -1.2],
+     "s": [0.16, 0.1, 0.18],
+     "rot": [0, 0, -0.24]
+    },
+    {
+     "kind": "prism",
+     "mat": "track",
+     "side": [
+      [-3.6, 0.31],
+      [-3.5, 0.54],
+      [-3.25, 0.63],
+      [2.15, 0.63],
+      [2.4, 0.54],
+      [2.46, 0.31],
+      [2.25, 0.06],
+      [2.0, 0.0],
+      [-3.15, 0.0],
+      [-3.4, 0.06]
+     ],
+     "w": 0.5,
+     "zc": 1.27
+    },
+    {
+     "kind": "prism",
+     "mat": "track",
+     "side": [
+      [-3.6, 0.31],
+      [-3.5, 0.54],
+      [-3.25, 0.63],
+      [2.15, 0.63],
+      [2.4, 0.54],
+      [2.46, 0.31],
+      [2.25, 0.06],
+      [2.0, 0.0],
+      [-3.15, 0.0],
+      [-3.4, 0.06]
+     ],
+     "w": 0.5,
+     "zc": -1.27
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_R0",
+   "parent": "BODY",
+   "pivot": [-2.99, 0.32, 1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [-2.99, 0.32, 1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": 1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_L0",
+   "parent": "BODY",
+   "pivot": [-2.99, 0.32, -1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [-2.99, 0.32, -1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": -1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_R1",
+   "parent": "BODY",
+   "pivot": [-1.97, 0.32, 1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [-1.97, 0.32, 1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": 1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_L1",
+   "parent": "BODY",
+   "pivot": [-1.97, 0.32, -1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [-1.97, 0.32, -1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": -1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_R2",
+   "parent": "BODY",
+   "pivot": [-0.95, 0.32, 1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [-0.95, 0.32, 1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": 1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_L2",
+   "parent": "BODY",
+   "pivot": [-0.95, 0.32, -1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [-0.95, 0.32, -1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": -1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_R3",
+   "parent": "BODY",
+   "pivot": [0.07, 0.32, 1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [0.07, 0.32, 1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": 1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_L3",
+   "parent": "BODY",
+   "pivot": [0.07, 0.32, -1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [0.07, 0.32, -1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": -1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_R4",
+   "parent": "BODY",
+   "pivot": [1.1, 0.32, 1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [1.1, 0.32, 1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": 1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_L4",
+   "parent": "BODY",
+   "pivot": [1.1, 0.32, -1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [1.1, 0.32, -1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": -1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_R5",
+   "parent": "BODY",
+   "pivot": [2.12, 0.32, 1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [2.12, 0.32, 1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": 1
+    }
+   ]
+  },
+  {
+   "name": "WHEEL_L5",
+   "parent": "BODY",
+   "pivot": [2.12, 0.32, -1.27],
+   "mass": 60,
+   "shapes": [
+    {
+     "kind": "wheel",
+     "c": [2.12, 0.32, -1.27],
+     "r": 0.25,
+     "rim": 0.14,
+     "w": 0.58,
+     "outboard": -1
+    }
+   ]
+  },
+  {
+   "name": "TURRET_Main",
+   "parent": "BODY",
+   "pivot": [-0.35, 1.22, 0],
+   "axis": [0, 1, 0],
+   "mass": 1800,
+   "shapes": [
+    {
+     "kind": "prism",
+     "mat": "paint",
+     "side": [
+      [-1.66, 1.22],
+      [-1.5, 1.78],
+      [0.03, 1.93],
+      [0.78, 1.84],
+      [0.99, 1.22]
+     ],
+     "w": 2.1
+    },
+    {
+     "kind": "box",
+     "mat": "metal",
+     "c": [-0.4, 1.97, 0.3],
+     "s": [0.44, 0.07, 0.34]
+    },
+    {
+     "kind": "box",
+     "mat": "paint_dark",
+     "c": [0.9, 1.6, 0],
+     "s": [0.22, 0.42, 0.62]
+    }
+   ]
+  },
+  {
+   "name": "GUN_Main",
+   "parent": "TURRET_Main",
+   "pivot": [0.9, 1.6, 0],
+   "axis": [0, 0, 1],
+   "mass": 400,
+   "shapes": [
+    {
+     "kind": "tube",
+     "mat": "gun",
+     "a": [0.9, 1.6, 0],
+     "b": [3.32, 1.6, 0],
+     "r": 0.075
+    },
+    {
+     "kind": "box",
+     "mat": "gun",
+     "c": [3.45, 1.6, 0],
+     "s": [0.3, 0.2, 0.2]
+    }
+   ]
+  },
+  {
+   "name": "BREAK_Antenna",
+   "parent": "TURRET_Main",
+   "pivot": [-1.54, 1.84, -0.7],
+   "mass": 2,
+   "breakDv": 5,
+   "shapes": [
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [-1.54, 1.82, -0.7],
+     "b": [-1.52, 2.4, -0.7],
+     "r": 0.012
+    }
+   ]
+  }
+ ],
+ "lamps": {
+  "head": [
+   [2.35, 1.08, 1.2],
+   [2.35, 1.08, -1.2]
+  ],
+  "tail": [
+   [-3.59, 0.99, 1.2],
+   [-3.59, 0.99, -1.2]
+  ]
+ }
+}

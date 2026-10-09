@@ -18,7 +18,8 @@
  */
 const RaceCrash = (() => {
   'use strict';
-  const SOURCES = ['models/lexus.phys.js', 'models/mustang.phys.js', 'js/occupant.js', 'js/vehicles.js', 'js/physics.js'];
+  // the worker's scripts: the garage list, every road car this page loaded, then the solver
+  const SOURCES = () => ['js/garage.js', ...CrashGarage.latticeKeys.filter((k) => (self.CAR_PHYS || {})[k]).map((k) => `models/${k}.phys.js`), 'js/occupant.js', 'js/vehicles.js', 'js/physics.js'];
   let workerUrl = null, spare = null, mode = 'none', gpuDev = null;
   // the GPU device for crashes asked for on the GPU (null: none)
   function useGPU(g) { gpuDev = g || null; }
@@ -34,7 +35,7 @@ const RaceCrash = (() => {
   async function prepare() {
     if (new URLSearchParams(location.search).get('worker') === '0') { mode = 'main'; return mode; }   // test hook: the fallback
     try {
-      const texts = await Promise.all(SOURCES.map(sourceOf));
+      const texts = await Promise.all(SOURCES().map(sourceOf));
       const body = texts.join('\n;\n') + '\n;(' + workerMain.toString() + ')();';
       workerUrl = URL.createObjectURL(new Blob([body], { type: 'text/javascript' }));
       spare = new Worker(workerUrl);

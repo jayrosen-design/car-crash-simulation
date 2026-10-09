@@ -5,8 +5,10 @@
  * level:   the circuit's length and smallest radius are in range, no collider reaches into the
  *          road, the same seed gives the same city
  * car:     the car-select screen's figures (RaceCar.measure): 0-100 km/h, top speed, braking from
- *          100 and cornering grip in plausible bands, boost faster, for both cars; a crash is
- *          detected head-on into a wall and not in a shallow scrape
+ *          100 and cornering grip in plausible bands, boost faster, for the Lexus and Mustang; a crash
+ *          is detected head-on into a wall and not in a shallow scrape
+ * car-<key>: the garage's own cars (js/garage.js) against their design: top speed within 4%, 0-100
+ *          km/h within 10% and cornering within 0.04 g where the design gives them, boost faster
  * nearmiss: passing traffic within 1.2 m counts (0.8 and 1.1 m), 1.5 m doesn't, oncoming is told apart
  * props:   each kind, driven into: knocked over (or away), no crash, the car only a little slower,
  *          settled again
@@ -45,6 +47,18 @@
  *          no faster than 60 km/h (both cars); a rival's car still takes over 2 s
  * shove:   steering into a car alongside pushes it away harder than holding the wheel straight, and
  *          faster than the contacts alone would (6.3 m/s sideways at most without world.js's shove)
+ * rig-kestrel: the motorcycle: 0-100 km/h in 2.8-3.2 s, top 255-270 km/h, leaning by atan(ay/g) in a
+ *          steady turn, a wheelie that comes and settles, nothing NaN after a hard slalom
+ * rig-osprey: the drone hovers at 0.60 m (within 2 cm), follows the hills (within 0.1 m), never counts
+ *          as airborne over the ramps, slides more than the Lexus, top 135-145 km/h
+ * rig-hop: the drone hopping clears a stopped Lexus and a 1.1 m barrier, still hits a post, and
+ *          can't hop again within its cooldown
+ * rig-rampart: the tank's top 70-74 km/h, a 90 degree turn on the spot in 1.5-4 s, a stopped Lexus
+ *          shoved over 3 m with over 70% of the tank's speed kept, and its reach after a respec
+ * rig-armour: the tank takes no damage from cars and a quarter from walls
+ * rig-crash: the motorcycle at 100 km/h into a parked car: the rider and parts come off, it stays
+ *          above the ground, the same twice, worked out in under 40 ms (after a first run); at 262
+ *          km/h it isn't slowed by a speed cap; the drone loses all six arms
  * Exits non-zero on any failure.
  */
 'use strict';
@@ -53,6 +67,7 @@ global.CAR_PHYS = {};
 require(path.join(__dirname, '../models/lexus.phys.js'));
 require(path.join(__dirname, '../models/mustang.phys.js'));
 const Veh = require(path.join(__dirname, '../js/vehicles.js'));
+const Garage = require(path.join(__dirname, '../js/garage.js'));
 global.CrashLevel = require(path.join(__dirname, '../js/race/level.js'));
 global.RaceCar = require(path.join(__dirname, '../js/race/vehicle.js'));
 const RaceWorld = require(path.join(__dirname, '../js/race/world.js'));
@@ -60,6 +75,8 @@ const RaceAI = require(path.join(__dirname, '../js/race/ai.js'));
 const RaceProps = require(path.join(__dirname, '../js/race/props.js'));
 const RaceRules = require(path.join(__dirname, '../js/race/rules.js'));
 const RaceScore = require(path.join(__dirname, '../js/race/score.js'));
+const RaceRigs = require(path.join(__dirname, '../js/race/rigs.js'));
+const Wrecks = require(path.join(__dirname, '../js/destruction/wrecks.js'));
 const filter = process.argv[2];
 let failures = 0;
 const check = (name, ok, detail) => { console.log(`=== ${name}: ${detail} ${ok ? 'OK' : 'PROBLEM'}`); if (!ok) failures++; };
@@ -95,6 +112,11 @@ if (want('car')) {
     const { t100, top, topBoost, stop100: stop, lateralG } = RaceCar.measure(Veh.get(key));
     check(`car-${key}`, t100 > 3.5 && t100 < 8 && top > 190 && top < 260 && topBoost > top && stop > 30 && stop < 45 && lateralG > 0.8 && lateralG < 1.3,
       `0-100 km/h ${t100.toFixed(1)} s (3.5-8), top ${top.toFixed(0)} km/h (190-260), ${topBoost.toFixed(0)} with boost (faster), 100-0 in ${stop.toFixed(1)} m (30-45), cornering ${lateralG.toFixed(2)} g (0.8-1.3)`);
+  }
+  for (const v of Garage.LIST.filter((g) => g.type === 'car' && g.targets)) {
+    const { t100, top, topBoost, lateralG } = RaceCar.measure(Veh.get(v.key)), T = v.targets;
+    const ok = Math.abs(top / T.top - 1) <= 0.04 && (!T.t100 || Math.abs(t100 / T.t100 - 1) <= 0.1) && (!T.lateralG || Math.abs(lateralG - T.lateralG) <= 0.04) && topBoost > top;
+    check(`car-${v.key}`, ok, `top ${top.toFixed(0)} km/h (${T.top} ±4%), 0-100 km/h ${t100.toFixed(1)} s${T.t100 ? ` (${T.t100} ±10%)` : ''}, cornering ${lateralG.toFixed(2)} g${T.lateralG ? ` (${T.lateralG} ±0.04)` : ''}, ${topBoost.toFixed(0)} km/h with boost (faster)`);
   }
   // crash detection: square into a wall at 120 km/h crashes, a 10 degree scrape at 200 km/h doesn't
   const W1 = RaceWorld.create(level), c1 = RaceCar.create(Veh.get('lexus')), b0 = level.buildings.find(b => b.front === 1), f0 = level.nearest(b0.x, b0.z), p0 = level.poseAt(f0.s, 0);
@@ -454,6 +476,100 @@ if (want('score')) {
   log.push(['the breakdown sums to the score', sum === S.score && S.breakdown().some(r => r.kind === 'air')]);
   const bad = log.filter(([, ok]) => !ok).map(([k]) => k);
   check('score', !bad.length, `${log.length - bad.length}/${log.length} hold${bad.length ? '; failing: ' + bad.join(', ') : ''} (final score ${S.score})`);
+}
+
+// ---------------------------------------------------------------- the rigs (rigs.js)
+const FLATL = { groundAt: (x, z, o = {}) => { o.h = 0; o.gx = 0; o.gz = 0; return o; }, terrain: () => 0, collidersNear: () => [] };
+if (want('rig-kestrel')) {
+  const S = RaceRigs.spec('kestrel'), m = RaceCar.measure(S);
+  const b = RaceCar.create(S); b.place(0, 0, 0, 25);
+  for (let i = 0; i < 240 * 4; i++) b.step(1 / 240, { steer: 0.4, throttle: b.forward < 25 ? 0.6 : 0.05 });
+  const lean = b.lean, want2 = Math.atan(b.ay / 9.81);
+  const w = RaceCar.create(S); w.place(0, 0, 0, 0);
+  let wMax = 0; for (let i = 0; i < 240 * 1.5; i++) { w.step(1 / 240, { throttle: 1 }); wMax = Math.max(wMax, w.wheelie); }
+  for (let i = 0; i < 240 * 2; i++) w.step(1 / 240, { throttle: 0 });
+  const sl = RaceCar.create(S); sl.place(0, 0, 0, 40); let nan = false;
+  for (let i = 0; i < 240 * 8; i++) { sl.step(1 / 240, { steer: Math.sin(i / 60) > 0 ? 1 : -1, throttle: 1, brake: i % 480 < 30 ? 1 : 0 }); if (![sl.x, sl.z, sl.h, sl.lean, sl.wheelie].every(Number.isFinite)) nan = true; }
+  check('rig-kestrel', m.t100 >= 2.8 && m.t100 <= 3.2 && m.top >= 255 && m.top <= 270 && Math.abs(lean - want2) < 0.02 && wMax > 0.05 && w.wheelie < 0.01 && !nan,
+    `0-100 km/h ${m.t100.toFixed(2)} s (2.8-3.2), top ${m.top.toFixed(0)} km/h (255-270); lean ${(lean * 180 / Math.PI).toFixed(1)} deg at ${(b.ay / 9.81).toFixed(2)} g (atan: ${(want2 * 180 / Math.PI).toFixed(1)}); wheelie up to ${(wMax * 180 / Math.PI).toFixed(1)} deg, ${(w.wheelie * 180 / Math.PI).toFixed(1)} after (settled); slalom NaN: ${nan}`);
+}
+if (want('rig-osprey')) {
+  const S = RaceRigs.spec('osprey'), m = RaceCar.measure(S);
+  const W = RaceWorld.create(level), d = RaceCar.create(S), p = level.poseAt(200, 1.75);
+  d.place(p.x, p.z, p.h, 0); W.add(d, { kind: 'player' });
+  for (let i = 0; i < 240 * 2; i++) W.step(1 / 240, () => ({}));
+  const hover = d.y - level.groundAt(d.x, d.z, {}).h;
+  // along the circuit at 25 m/s over hills and the ramps: its height over the ground, airborne ever?
+  // (on a ramp the ground steps up a metre at once: the hover catches up; measured away from them)
+  let worst = 0, air = false, rampT = -9, ramps = 0;
+  for (let i = 0; i < 240 * 40; i++) {
+    const f = level.nearest(d.x, d.z), q = level.poseAt(f.s + 12, 1.75), err = Math.atan2(q.z - d.z, q.x - d.x) - d.h;
+    W.step(1 / 240, () => ({ steer: Math.max(-1, Math.min(1, Math.atan2(Math.sin(err), Math.cos(err)) * 2)), throttle: d.forward < 25 ? 0.7 : 0 }));
+    if (d.air) air = true;
+    const g = level.groundAt(d.x, d.z, {}).h;
+    if (g - level.terrain(d.x, d.z) > 0.05) { if (i / 240 - rampT > 1.5) ramps++; rampT = i / 240; }
+    if (i > 240 * 2 && i / 240 - rampT > 1.5) worst = Math.max(worst, Math.abs(d.y - g - 0.6));
+  }
+  const slip = (spec) => { const c = RaceCar.create(spec); c.place(0, 0, 0, 30); let mx = 0; for (let i = 0; i < 240 * 3; i++) { c.step(1 / 240, { steer: 1, throttle: 0.5 }); mx = Math.max(mx, Math.abs(c.sideSlip)); } return mx; };
+  const sD = slip(S), sL = slip(Veh.get('lexus'));
+  check('rig-osprey', Math.abs(hover - 0.6) < 0.02 && worst < 0.1 && ramps > 0 && !air && sD > sL && m.top >= 135 && m.top <= 145,
+    `hovers ${hover.toFixed(3)} m up (0.60 ± 0.02); along the circuit at 90 km/h its height over the hills off 0.6 m by ${worst.toFixed(2)} m at most (under 0.1), ${ramps} ramps crossed, airborne: ${air} (never); slides to ${(sD * 180 / Math.PI).toFixed(0)} deg (the Lexus ${(sL * 180 / Math.PI).toFixed(0)}); top ${m.top.toFixed(0)} km/h (135-145)`);
+}
+if (want('rig-hop')) {
+  const S = RaceRigs.spec('osprey');
+  const run = (obstacle, hopAt) => {
+    const lvl = Object.assign({}, FLATL, { collidersNear: () => obstacle.wall ? [obstacle.wall] : [] });
+    const W = RaceWorld.create(lvl), d = RaceCar.create(S); d.place(0, 0, 0, 15); const db = W.add(d, { kind: 'player' });
+    if (obstacle.car) { const L = RaceCar.create(Veh.get('lexus')); L.place(12, 0, 0, 0); W.add(L, { kind: 'traffic' }); }
+    let hits = 0;
+    for (let i = 0; i < 240 * 2; i++) hits += W.step(1 / 240, (b) => b === db ? { throttle: 0.3, handbrake: hopAt >= 0 && i >= hopAt && i < hopAt + 8 ? 1 : 0 } : {}).filter(e => e.kind !== 'land').length;
+    return { hits, d };
+  };
+  const car0 = run({ car: true }, -1), car1 = run({ car: true }, 60);
+  const barrier = { box: true, x: 12, z: 0, hx: 0.3, hz: 4, angle: 0, height: 1.1 }, post = { box: false, x: 12, z: 0, r: 0.3, height: 6 };
+  const bar0 = run({ wall: barrier }, -1), bar1 = run({ wall: barrier }, 60), post1 = run({ wall: post }, 60);
+  const c = RaceCar.create(S); c.place(0, 0, 0, 0); c.step(1 / 240, { handbrake: 1 }); const first = c.hopT > 0; c.hopT = 0; c.step(1 / 240, { handbrake: 0 }); c.step(1 / 240, { handbrake: 1 }); const again = c.hopT > 0;
+  check('rig-hop', car0.hits > 0 && car1.hits === 0 && bar0.hits > 0 && bar1.hits === 0 && post1.hits > 0 && first && !again,
+    `into a stopped Lexus: ${car0.hits} contacts, hopping ${car1.hits} (must be 0); a 1.1 m barrier: ${bar0.hits}, hopping ${bar1.hits} (must be 0); a post, hopping: ${post1.hits} (must hit); hops: ${first}, again within the cooldown: ${again} (must not)`);
+}
+if (want('rig-rampart')) {
+  const S = RaceRigs.spec('rampart'), m = RaceCar.measure(S);
+  const c = RaceCar.create(S); c.place(0, 0, 0, 0); let t = 0;
+  while (c.h < Math.PI / 2 && t < 10) { c.step(1 / 240, { steer: 1 }); t += 1 / 240; }
+  const moved = Math.hypot(c.x - c.cgX, c.z);
+  const W = RaceWorld.create(FLATL), k = RaceCar.create(S); k.place(0, 0, 0, 15); const kb = W.add(k, { kind: 'player' });
+  const L = RaceCar.create(Veh.get('lexus')); L.place(8, 0.0, 0, 0); W.add(L, { kind: 'traffic' });
+  const x0 = L.x; for (let i = 0; i < 240 * 1.5; i++) W.step(1 / 240, (b) => b === kb ? { throttle: 1 } : {});
+  const shoved = L.x - x0, kept = k.forward / 15;
+  const W2 = RaceWorld.create(FLATL), a = RaceCar.create(Veh.get('lexus')), b2 = W2.add(a, { kind: 'player' }), reach0 = b2.reach;
+  b2.car = RaceCar.create(S); W2.respec(b2);
+  check('rig-rampart', m.top >= 70 && m.top <= 74 && t >= 1.5 && t <= 4 && shoved > 3 && kept > 0.7 && b2.reach > reach0 + 0.5 && b2.top === S.height,
+    `top ${m.top.toFixed(1)} km/h (70-74); 90 degrees on the spot in ${t.toFixed(2)} s (1.5-4), drifting ${moved.toFixed(2)} m; a stopped Lexus shoved ${shoved.toFixed(1)} m (over 3) keeping ${(kept * 100).toFixed(0)}% of 54 km/h (over 70%); respec: reach ${reach0.toFixed(2)} -> ${b2.reach.toFixed(2)} m, height ${b2.top} m`);
+}
+if (want('rig-armour')) {
+  const S = RaceRigs.spec('rampart'), tank = { car: RaceCar.create(S) }, lexus = { car: RaceCar.create(Veh.get('lexus')) };
+  const carHit = { kind: 'car', vn: 15, a: tank, b: lexus }, wall = { kind: 'wall', vn: 15, sq: 1 };
+  const dCar = RaceWorld.hitDamage(carHit, tank), dWall = RaceWorld.hitDamage(wall, tank), dWallL = RaceWorld.hitDamage(wall, lexus), dCarL = RaceWorld.hitDamage(Object.assign({}, carHit, { a: lexus, b: tank }), lexus);
+  check('rig-armour', dCar === 0 && Math.abs(dWall - 0.25 * dWallL) < 1e-12 && dCarL > 0,
+    `a 15 m/s car hit: the tank ${dCar.toFixed(3)} (must be 0), the Lexus it hit ${dCarL.toFixed(3)}; a 15 m/s wall: the tank ${dWall.toFixed(3)}, a quarter of the Lexus's ${dWallL.toFixed(3)}`);
+}
+if (want('rig-crash')) {
+  const mk = (key, kmh) => {
+    const c = RaceCar.create(RaceRigs.spec(key)), p = level.poseAt(300, 1.75);
+    c.place(p.x, p.z, p.h, kmh / 3.6); c.y = level.groundAt(c.x, c.z, {}).h + (key === 'osprey' ? 0.6 : 0);
+    const other = { x: p.x + Math.cos(p.h) * 4, z: p.z + Math.sin(p.h) * 4, hx: 2.4, hz: 0.95, angle: p.h + Math.PI / 2, height: 1.6 };
+    const t0 = process.hrtime.bigint(), cr = RaceRigs.crash({ level, car: c, other, W: Wrecks });
+    return { cr, ms: Number(process.hrtime.bigint() - t0) / 1e6 };
+  };
+  mk('kestrel', 100);   // (warm up)
+  const a = mk('kestrel', 100), b = mk('kestrel', 100), fast = mk('kestrel', 262), drone = mk('osprey', 100);
+  const V = a.cr.unitView(0), off = a.cr.debris.map(d => d.name);
+  const lowest = Math.min(...V.frames.poses.flatMap(ps => ps.filter(Boolean).map(q => q[1] - level.groundAt(q[0], q[2], {}).h)));
+  const same = JSON.stringify(V.frames.poses) === JSON.stringify(b.cr.unitView(0).frames.poses);
+  const v0 = Math.hypot(...[0, 1].map(i => (fast.cr.F.axes[2][i * 2] - fast.cr.F.axes[1][i * 2]) / (fast.cr.F.t[2] - fast.cr.F.t[1])));
+  const arms = drone.cr.debris.filter(d => d.name.startsWith('BREAK_Arm')).length;
+  check('rig-crash', off.includes('RIDER_Dummy') && off.length >= 3 && lowest > -0.2 && same && a.ms < 40 && v0 * 3.6 > 255 && arms === 6,
+    `motorcycle at 100 km/h into a parked car: off ${off.map(n => n.replace(/^[A-Z]+_/, '')).join(', ')}; lowest point ${lowest.toFixed(2)} m (above -0.2); the same twice: ${same}; ${a.ms.toFixed(1)} ms (under 40); at 262 km/h it moves at ${(v0 * 3.6).toFixed(0)} km/h before the hit (no cap under it); the drone lost ${arms} of 6 arms`);
 }
 
 console.log(failures ? `\n${failures} check(s) with problems` : '\nall race checks passed');

@@ -172,8 +172,9 @@ const RaceRender = (() => {
     async function preparePlayer(key, spec, paint) {
       wanted = key;
       making[key] = making[key] || (async () => {
-        const lat = CrashPhysics.buildCar(spec.massKg, 'standard', spec);
-        const m = await CarModels.create(key, spec, lat, renderer);
+        // (a rig, the motorcycle, drone or tank: a rigid model, no crash lattice)
+        const lat = spec.rig ? null : CrashPhysics.buildCar(spec.massKg, 'standard', spec);
+        const m = spec.rig ? await RigModels.create(key, spec, renderer) : await CarModels.create(key, spec, lat, renderer);
         m.lat = lat;
         useEnv(m.group, env);
         m.group.visible = false;
@@ -193,7 +194,7 @@ const RaceRender = (() => {
     function drawPlayer(st, spinDelta) {
       if (!player) return;
       carMatrix(PM, st.x, st.z, st.h, st.pitch, st.roll, st.lift);
-      player.setRigid(PM, st.steer || 0, spinDelta || 0, UP, ZAXIS);
+      player.setRigid(PM, st.steer || 0, spinDelta || 0, UP, ZAXIS, st);
     }
     // a hidden deformable copy of a model, for the other car in a crash (made at load, so a crash
     // doesn't wait for the model to be decoded and skinned)
@@ -212,6 +213,7 @@ const RaceRender = (() => {
     // strain of frame k, the cabin axes (o, forward, up) for the wheels
     const BF = new T.Vector3(), BU = new T.Vector3(), BL = new T.Vector3(), BM = new T.Matrix4(), BQ = new T.Quaternion();
     function deform(model, view, k, k2, s, t) {
+      if (model.rig) { model.play(view, k, k2, s); return; }   // a rig's rigid crash
       const F = view.frames, ax = F.axes[k];
       BF.set(ax[3], ax[4], ax[5]).normalize(); BU.set(ax[6], ax[7], ax[8]).normalize(); BL.crossVectors(BF, BU).normalize();
       BQ.setFromRotationMatrix(BM.makeBasis(BF, BU, BL));
@@ -402,7 +404,7 @@ const RaceRender = (() => {
       }
     }
 
-    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift,
+    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, hasModel: (key) => !!made[key], drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift,
       carMeshes, hemi, crashRoot, sunDir: SUN_DIR, renderBloom, carLights };
   }
 

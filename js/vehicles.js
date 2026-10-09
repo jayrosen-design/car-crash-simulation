@@ -75,8 +75,12 @@ const MDB = {
 };
 
 // Lattice and zones for an imported car. The zones keep the lab car's positions relative to the
-// H-point (cabin, dash, seat, firewall, engine) and the rear axle (rear zone).
-function fromPhys(key, d, extra) {
+// H-point (cabin, dash, seat, firewall, engine) and the rear axle (rear zone). extra.engine 'mid'
+// puts the engine behind the seats instead of ahead of the firewall; extra.stiffness scales the
+// springs (a light car's structure is softer); extra.bedTop [u0, u1, y] fills the lattice up to y
+// over an open pickup bed (else the tailgate is a lattice wall one column thick).
+function fromPhys(key, d, extraIn) {
+  const { engine: engineAt, stiffness, bedTop, ...extra } = extraIn || {};
   const r = NODE_R;
   const xMin = d.xMin, xMax = d.xMin + d.length;
   const hubF = d.hubs.FL, hubR = d.hubs.RL;
@@ -113,20 +117,20 @@ function fromPhys(key, d, extra) {
     nodeRadius: r,
     bodyClearance: 0.10,
     hPoint: H.slice(),
-    profile: d.profileTop.map(p => [p[0], p[1]]),
+    profile: d.profileTop.map(p => [p[0], bedTop && p[0] >= bedTop[0] && p[0] <= bedTop[1] ? Math.max(p[1], bedTop[2]) : p[1]]),
     firewallU: uH + 1.25, rearU: uR - 0.089,
-    engine: { u0: uH + 1.30, u1: uH + 1.95, yMax: H[1] + 0.35, zHalf: 0.55 },
+    engine: engineAt === 'mid' ? { u0: uH - 1.45, u1: uH - 0.80, yMax: H[1] + 0.35, zHalf: 0.55 } : { u0: uH + 1.30, u1: uH + 1.95, yMax: H[1] + 0.35, zHalf: 0.55 },
     cabin: { u0: uH - 0.75, u1: uH + 1.05, frontU: uH + 0.55, rearU: uH - 0.25, topJ: ny - 2 },
     dash: { u0: uH + 0.95, u1: uH + 1.30, yMax: H[1] + 0.40 },
     seat: { u0: uH - 0.30, u1: uH + 0.30, yMax: H[1] + 0.30 },
-    kScale: s,               // springs scale with spacing, so the material stays as stiff
+    kScale: s * (stiffness || 1),   // springs scale with spacing, so the material stays as stiff
     wheelCornerMass: 20,     // wheel, tyre, brake and hub per corner, carried by the wheel nodes
     duration: { rigid: 2.0, brick: 2.4 },
     interior: interiorFrom(d, H),
     parts: d.parts,
     materials: d.materials,
     credit: d.credit,
-  }, extra || {});
+  }, extra);
 }
 
 // Occupant interior lines in the H-point frame (x forward, y up), from the windshield pane and
@@ -146,25 +150,30 @@ function interiorFrom(d, H) {
   return { wsA, wsB, roofY: roof - H[1] - 0.06 };
 }
 
+// the road cars of the garage (js/garage.js): those whose models are loaded get a spec; a page loads
+// only the ones it uses (the simulator: the Lexus and Mustang)
+const node = typeof module === 'object' && module.exports && typeof require === 'function';
+const Garage = root.CrashGarage || (node ? require('./garage.js') : { latticeKeys: ['lexus', 'mustang'], get: () => null });
 const specs = { lab: LAB };
-const order = ['lexus', 'mustang', 'lab'];
-const extras = {
-  lexus: { massKg: 1950, short: 'Lexus RX 350', note: 'midsize SUV', addEngine: true },   // the model has no engine
-  mustang: { massKg: 1890, short: 'Ford Mustang GT500', note: 'coupe' },
-};
+const order = [...Garage.latticeKeys, 'lab'];
 let physData = root.CAR_PHYS || {};
-if (typeof module === 'object' && module.exports && typeof require === 'function') {
+if (node) {
   const path = require('path');
-  for (const key of ['lexus', 'mustang']) {
+  for (const key of Garage.latticeKeys) {
     try { physData[key] = require(path.join(__dirname, '..', 'models', key + '.phys.js')); } catch (e) { /* model not exported */ }
   }
 }
-for (const key of order) if (key !== 'lab' && physData[key]) specs[key] = fromPhys(key, physData[key], extras[key]);
+for (const key of order) if (key !== 'lab' && physData[key]) specs[key] = fromPhys(key, physData[key], (Garage.get(key) || {}).lattice);
 
 const api = {
   LAB, MDB, specs,
   keys: order.filter(k => specs[k]),
-  get(key) { return specs[key] || LAB; },
+  // a garage car whose model isn't loaded is a mistake, not the lab sedan
+  get(key) {
+    if (specs[key]) return specs[key];
+    if (Garage.get(key)) throw new Error(`vehicle ${key}: its model (models/${key}.phys.js) is not loaded`);
+    return LAB;
+  },
   defaultKey: specs.lexus ? 'lexus' : 'lab',
 };
 root.CrashVehicles = api;

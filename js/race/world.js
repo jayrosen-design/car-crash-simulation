@@ -20,7 +20,11 @@
  * can fly off them (vertical()); a car in the air clears low colliders and other cars.
  *
  * Rivals still crash at the CRASH limits; the player has a health bar instead (game.js), and
- * damage() turns a hit's change of speed into a share of it.
+ * damage() turns a hit's change of speed into a share of it (a tank's armour takes some or all of it).
+ *
+ * The drone (car.hover) never flies off: it holds its hover height over whatever is under it (the
+ * ground, a car's roof, a barrier), and while hopping clears the low colliders and the cars it's
+ * over. A tank steering into a car shoves it no harder than a car three times that car's mass would.
  *
  * DOM-free: global RaceWorld in the browser, module.exports in Node.
  */
@@ -45,7 +49,8 @@ const RaceWorld = (() => {
     let dv = e.vn * (e.kind === 'car' ? 1 + E_CAR : 1 + E_WALL);
     if (e.kind === 'car') { const o = e.a === b ? e.b : e.a; dv *= o.car.m / (o.car.m + b.car.m); }
     if (e.kind === 'wall') dv *= 0.4 + 0.6 * Math.min(1, e.sq / SQUARE);
-    return damage(dv);
+    const armour = b.car.spec.armour;
+    return armour && armour[e.kind] !== undefined ? damage(dv) * armour[e.kind] : damage(dv);
   }
 
   function create(level) {
@@ -59,11 +64,17 @@ const RaceWorld = (() => {
     function add(car, opts = {}) {
       const b = { car, kind: opts.kind || 'racer', kinematic: !!opts.kinematic, id: bodies.length, ghost: 0, wrecked: false, user: opts.user || null };
       // how far its box reaches from its centre of gravity (for the broad phase)
-      const s = car.spec;
-      b.reach = Math.abs(s.xMin + s.length / 2 - car.cgX) + Math.hypot(s.length / 2, s.width / 2);
+      respec(b);
       if (opts.height) b.top = opts.height;
       bodies.push(b);
       return b;
+    }
+    // after the body's car is swapped for another (the select screen): its reach, and a rig's height
+    function respec(b) {
+      const car = b.car, s = car.spec;
+      b.reach = Math.abs(s.xMin + s.length / 2 - car.cgX) + Math.hypot(s.length / 2, s.width / 2);
+      if (s.rig) b.top = s.height; else if (b.top && b.rigTop) delete b.top;
+      b.rigTop = !!s.rig;
     }
     // the car's box: centre, axes, half sizes
     function box(b, out) {
@@ -171,8 +182,10 @@ const RaceWorld = (() => {
       B.x -= hit.nx * (hit.depth + 0.002) * sb; B.z -= hit.nz * (hit.depth + 0.002) * sb;
       // a driver steering into the other car shoves it, for as long as it presses on it
       const fa = wb && !a.wrecked ? steerToward(A, B.x, B.z) : 0, fb = wa && !b.wrecked ? steerToward(B, A.x, A.z) : 0;
-      if (fa > 0) B.applyImpulse(hit.px, hit.pz, -hit.nx * SHOVE * fa * A.m * dt, -hit.nz * SHOVE * fa * A.m * dt);
-      if (fb > 0) A.applyImpulse(hit.px, hit.pz, hit.nx * SHOVE * fb * B.m * dt, hit.nz * SHOVE * fb * B.m * dt);
+      // (a tank shoves as a car of at most three times the other's mass would)
+      const sma = A.kind === 'tracked' ? Math.min(A.m, 3 * B.m) : A.m, smb = B.kind === 'tracked' ? Math.min(B.m, 3 * A.m) : B.m;
+      if (fa > 0) B.applyImpulse(hit.px, hit.pz, -hit.nx * SHOVE * fa * sma * dt, -hit.nz * SHOVE * fa * sma * dt);
+      if (fb > 0) A.applyImpulse(hit.px, hit.pz, hit.nx * SHOVE * fb * smb * dt, hit.nz * SHOVE * fb * smb * dt);
       const rax = hit.px - A.x, raz = hit.pz - A.z, rbx = hit.px - B.x, rbz = hit.pz - B.z;
       const vax = A.vx - A.yaw * raz, vaz = A.vz + A.yaw * rax, vbx = B.vx - B.yaw * rbz, vbz = B.vz + B.yaw * rbx;
       const rvx = vax - vbx, rvz = vaz - vbz, vn = rvx * hit.nx + rvz * hit.nz;
@@ -198,9 +211,38 @@ const RaceWorld = (() => {
     // gravity can pull it down (a ramp's lip, a crest taken fast); then it flies, without grip
     // (vehicle.js), and lands. On the ground gravity pulls it along the slope. Kinematic traffic
     // keeps to the ground.
-    const GR = {};
+    const GR = {}, HB = {};
+    // the floor under a hovering drone: the ground, or the top of the collider or car it's over
+    function floorUnder(b, g) {
+      const c = b.car;
+      let f = g.h;
+      const base = level.terrain ? level.terrain(c.x, c.z) : 0;
+      for (const o of level.collidersNear(c.x, c.z, 0.5)) {
+        const inside = o.box ? (() => { const ca = Math.cos(o.angle), sa = Math.sin(o.angle), dx = c.x - o.x, dz = c.z - o.z; return Math.abs(dx * ca + dz * sa) < o.hx && Math.abs(-dx * sa + dz * ca) < o.hz; })() : Math.hypot(c.x - o.x, c.z - o.z) < o.r;
+        if (inside) f = Math.max(f, base + o.height);
+      }
+      for (const o of bodies) {
+        if (o === b || o.frozen) continue;
+        const B = box(o, HB), dx = c.x - B.x, dz = c.z - B.z;
+        if (Math.abs(dx * B.ux + dz * B.uz) < B.hx && Math.abs(-dx * B.uz + dz * B.ux) < B.hz && c.y > o.car.y + 0.3) f = Math.max(f, o.car.y + (o.top || 1.2));
+      }
+      return f;
+    }
     function vertical(b, dt) {
       const c = b.car, g = level.groundAt ? level.groundAt(c.x, c.z, GR) : FLAT;
+      if (c.hover && !b.kinematic) {
+        // the drone: a spring toward its hover height over the floor (higher while hopping), never airborne
+        const want = Math.max((c.snap ? g.h : floorUnder(b, g)) + c.hoverH, g.h + c.hoverH + (c.hopT > 0 ? 1.9 : 0));
+        if (c.snap) { c.y = want; c.vy = 0; c.snap = false; }
+        const vyG = g.gx * c.vx + g.gz * c.vz;   // the ground's own rise under it (a hill)
+        const a = Math.max(-G, Math.min(2.2 * G, 40 * (want - c.y) - 9 * (c.vy - vyG)));
+        c.vy += a * dt; c.y += c.vy * dt;
+        if (c.y < g.h) { c.y = g.h; c.vy = Math.max(0, c.vy); }
+        c.air = false;
+        const k = 1 - Math.exp(-dt * 6);
+        c.gPitch += (0 - c.gPitch) * k; c.gRoll += (0 - c.gRoll) * k;
+        return;
+      }
       if (c.snap || b.kinematic) { c.y = g.h; c.vy = 0; c.air = false; c.snap = false; }
       else if (!c.air) {
         c.vx -= G * g.gx * dt; c.vz -= G * g.gz * dt;
@@ -248,6 +290,7 @@ const RaceWorld = (() => {
           const A = box(b, BA);
           for (const o of level.collidersNear(A.x, A.z, A.hx + 1)) {
             if (b.car.air && above(b.car) > o.height - 0.3) continue;
+            if (b.car.hover && above(b.car) > o.height - 0.05) continue;   // a drone over it
             const hit = o.box ? vsBox(b, A, o) : vsCyl(b, A, o);
             if (hit) { resolveStatic(b, hit, o.box ? 'wall' : 'post'); box(b, A); }
           }
@@ -296,7 +339,7 @@ const RaceWorld = (() => {
       return true;
     }
 
-    return { bodies, add, step, events, box: (b) => box(b, {}), history, restore, CRASH, get tick() { return tick; } };
+    return { bodies, add, respec, step, events, box: (b) => box(b, {}), history, restore, CRASH, get tick() { return tick; } };
   }
 
   // the box of a car spec at a pose (for spawning clear of other cars)

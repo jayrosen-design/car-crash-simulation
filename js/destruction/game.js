@@ -12,9 +12,15 @@
  * saved. When nothing has paid out for four seconds (or 25 s after the crash) the total is counted
  * up against the bronze, silver and gold targets, and the best is kept in this browser.
  *
+ * The garage's rigs (rigs.js) skip the crash solver: the motorcycle and drone crash as rigid bodies
+ * (thrown rider, arms off) in the same slow motion, then their hull is your wreck in the pile-up; the
+ * tank's crash starts at its first real contact (2 m/s into a vehicle, 4 m/s into a wall): a car it
+ * hits goes through the solver with the tank as a moving box, and anything heavier sends the tank
+ * straight into the pile-up.
+ *
  * The world steps at 240 Hz (the wrecks at 120 Hz); the traffic is the same every attempt.
  *
- * URL: ?car=lexus|mustang, ?damage=dramatic, ?touch=1|0, ?worker=0, ?test=tbone|tanker|ramp|plain
+ * URL: ?car=<key> (lexus, mustang, halcyon ...: the garage's cars, js/garage.js), ?damage=dramatic, ?touch=1|0, ?worker=0, ?test=tbone|tanker|ramp|plain
  * (a scripted attempt at once; results in window.__destruction).
  */
 const DestructionGame = (() => {
@@ -43,7 +49,10 @@ const DestructionGame = (() => {
   const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: level.look === 'dusk' ? DestructionLook.DUSK : level.look === 'night' ? RaceRender.NIGHT : {}, propParts });
   const world = RaceWorld.create(level);
   const props = RaceProps.create(level);
-  const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
+  // the garage's road cars this page loaded (the traffic drives the Lexus and Mustang)
+  const specs = {};
+  for (const k of CrashGarage.latticeKeys) if (Veh.specs[k]) specs[k] = Veh.get(k);
+  for (const v of CrashGarage.LIST) if (v.type !== 'car' && RaceRigs.spec(v.key)) specs[v.key] = RaceRigs.spec(v.key);
   const traffic = DestructionTraffic.create(level, world, { specs });
   for (const k of ['bus', 'truck', 'tanker']) specs[k] = traffic.spec(k);
   const look = DestructionLook.create(R, level, { touch: TOUCH });
@@ -81,15 +90,19 @@ const DestructionGame = (() => {
   }
 
   // ---------------------------------------------------------------- the player's car and paint
-  const CARS = { lexus: { name: 'Lexus RX 350', kind: 'SUV' }, mustang: { name: 'Ford Mustang GT500', kind: 'Coupe' } };
+  const CARS = {};
+  for (const v of CrashGarage.LIST) if (v.destruction && specs[v.key]) CARS[v.key] = v;
   const PAINTS = [
     { name: 'Crimson red', hex: 0xa3161f }, { name: 'Cobalt blue', hex: 0x1d4fa3 }, { name: 'Pearl white', hex: 0xe9e9e6 }, { name: 'Jet black', hex: 0x121315 },
     { name: 'Liquid silver', hex: 0x9ea3a8 }, { name: 'Sunset orange', hex: 0xd9581c }, { name: 'Signal yellow', hex: 0xe6b81e }, { name: 'Racing green', hex: 0x1f6b43 },
   ];
   // the Race game's last choice is the default here (read only); this mode keeps its own
   const saved = (() => { if (TEST) return null; try { return JSON.parse(localStorage.getItem('destruction-choice')) || JSON.parse(localStorage.getItem('race-choice')); } catch (e) { return null; } })() || {};
-  let carKey = specs[q.get('car')] && CARS[q.get('car')] ? q.get('car') : CARS[saved.car] ? saved.car : 'lexus';
-  let paintIdx = PAINTS[saved.paint] ? +saved.paint : 0;
+  let carKey = CARS[q.get('car')] ? q.get('car') : CARS[saved.car] ? saved.car : 'lexus';
+  // a car's paints: its signature paint (if it has one) first, then the eight
+  const paintsOf = (key) => CARS[key].paint ? [{ name: CARS[key].paint.name[0].toUpperCase() + CARS[key].paint.name.slice(1), hex: CARS[key].paint.hex }, ...PAINTS] : PAINTS;
+  let paintIdx = paintsOf(carKey)[saved.paint] ? +saved.paint : 0;
+  const paintNow = () => paintsOf(carKey)[paintIdx];
   let car = RaceCar.create(specs[carKey]);
   const me = world.add(car, { kind: 'player' });
   const P0 = level.player;
@@ -169,7 +182,8 @@ const DestructionGame = (() => {
     return out.multiply(M5.makeTranslation(-ox - (b.lo[0] + b.hi[0]) / 2, -H / 2 - (b.lo[1] + b.hi[1]) / 2, -(b.lo[2] + b.hi[2]) / 2));
   }
   function drawVehicles() {
-    const slots = { lexus: 0, mustang: 0, bus: 0, truck: 0, tanker: 0 };
+    const slots = { bus: 0, truck: 0, tanker: 0 };
+    for (const k in specs) slots[k] = 0;
     const heavyPaint = (v) => v.type === 'bus' ? DestructionLook.BUS_PAINTS[v.paint % 4] : paintOf(v);
     const driving = traffic.vehicles.concat(parked.filter(p => world.bodies.includes(p.body)));
     for (const v of driving) {
@@ -221,6 +235,8 @@ const DestructionGame = (() => {
     const otherB = e.b && e.b !== me ? e.b : (e.a !== me ? e.a : null), other = otherB && otherB.traffic;
     world.restore(me, 1);
     if (otherB) world.restore(otherB, 1);
+    if (car.kind === 'tracked') { tankCrash(e, otherB, other); return; }
+    if (car.spec.rig) { rigCrash(e, otherB, other); return; }
     const ground = level.terrain(car.x, car.z);
     const lattice = other && !traffic.HEAVY[other.type];   // a car: both in the crash solver
     const unit = (b, u) => {
@@ -240,7 +256,7 @@ const DestructionGame = (() => {
     crash = RaceCrash.start({ units, world: { boxes, cyls }, duration: 0.9, damage: DAMAGE, solver: solverPick.solver });
     crash.impactKmh = e.vn * 3.6; crash.lift = ground;
     R.setCrashLift(ground); PT.y = ground;
-    crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: u === 0 ? PAINTS[paintIdx].hex : paintOf(other), spec: specs[b.car.key], v: b === me ? null : other }));
+    crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: u === 0 ? paintNow().hex : paintOf(other), spec: specs[b.car.key], v: b === me ? null : other }));
     for (const U of crashUnits) if (U.model !== R.player) { U.model.group.visible = true; U.model.setPaint(U.paint); }
     me.frozen = true;
     // the other car leaves the traffic (the solver has it now); a heavy one becomes a wreck moving on
@@ -265,6 +281,63 @@ const DestructionGame = (() => {
     callout('Crash!', '', 1300);
     if (TEST) testOut.crashAt = performance.now(), testOut.impactKmh = crash.impactKmh, testOut.partner = other ? other.type : 'static', testOut.air = units[0].lift !== undefined;
   }
+  // the start of any impact's slow motion
+  function beginImpact(e, other) {
+    crash.impactKmh = e.vn * 3.6;
+    boostAtImpact = boost;
+    state = 'impact'; crashT = 0; tPlay = 0; kCur = 0; evPending = []; impactAt = simT;
+    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62;
+    FX.engineStop(); FX.setTimeScale(0.25);
+    RaceInput.rumble(1, 1, 450);
+    callout('Crash!', '', 1300);
+    if (TEST) testOut.crashAt = performance.now(), testOut.impactKmh = e.vn * 3.6, testOut.partner = other ? other.type : 'static', testOut.air = false;
+  }
+  // the motorcycle or drone: its own crash as rigid bodies; what it hit is a wreck at once (a 285 kg
+  // bike hardly moves a car: that car's share of the hit is small)
+  function rigCrash(e, otherB, other) {
+    const B = otherB && world.box(otherB);
+    crash = RaceRigs.crash({ level, car, W, seed: 7, other: B ? { x: B.x, z: B.z, hx: B.hx, hz: B.hz, angle: Math.atan2(B.uz, B.ux), height: other ? heightOf(other.spec) : 1.4 } : null });
+    R.setCrashLift(0); PT.y = 0;
+    crashUnits = [{ body: me, model: R.player, view: crash.unitView(0), paint: paintNow().hex, spec: car.spec, v: null, proxy: null }];
+    me.frozen = true;
+    if (other) wreckVehicle(other, e.vn * 1.2 * car.m / (car.m + otherB.car.m), [e.x, car.y + 0.6, e.z]);
+    beginImpact(e, other);
+  }
+  // the tank: a wreck at once (yours). Into a car: held at its speed while the solver crushes that
+  // car against it (a moving box with a roof); into anything heavier or a wall: straight to the pile-up
+  function tankCrash(e, otherB, other) {
+    const S = car.spec, pose = car.pose, ground = level.terrain(car.x, car.z);
+    const tb = wrecks.add({ kind: 'player', key: S.key, p: [pose.x, car.y, pose.z], q: W.yawQ(car.h), v: [car.vx, 0, car.vz], w: [0, -car.yaw, 0], m: car.m, lo: S.lo, hi: S.hi, value: 0 });
+    tb.model = R.player; tb.hand = { p: [0, 0, 0], q: [0, 0, 0, 1] };
+    playerWreck = tb; me.frozen = true;
+    if (other && !traffic.HEAVY[other.type]) {
+      wrecks.hold(tb);
+      const c = otherB.car, B = world.box(me);
+      const u = { key: c.key, massKg: c.m, pose: c.pose, velocity: c.originVelocity(), yawRate: c.yaw };
+      const near = level.collidersNear(e.x, e.z, 32);
+      const boxes = near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height }));
+      const cyls = near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height }));
+      boxes.push({ x: B.x, z: B.z, hx: B.hx, hz: B.hz, angle: car.h, height: S.height, vx: car.vx, vz: car.vz, top: true });
+      for (const v of traffic.vehicles.concat(parked).filter(v => v !== other && Math.hypot(v.body.car.x - e.x, v.body.car.z - e.z) < 20)) { const d = driverBox(v); boxes.push({ x: d.x, z: d.z, hx: d.hl, hz: d.hw, angle: d.h, height: d.height, vx: d.vx, vz: d.vz, top: true }); }
+      crash = RaceCrash.start({ units: [u], world: { boxes, cyls }, duration: 0.9, damage: DAMAGE, solver: solverPick.solver });
+      crash.lift = ground; crash.held = [tb];
+      R.setCrashLift(ground); PT.y = ground;
+      crashUnits = [{ body: otherB, model: R.wrecks[c.key], view: crash.unitView(0), paint: paintOf(other), spec: specs[c.key], v: other }];
+      const U = crashUnits[0];
+      U.model.group.visible = true; U.model.setPaint(U.paint);
+      U.proxy = wrecks.add({ kind: 'proxy', key: c.key, p: [0, -50, 0], m: c.m, size: [U.spec.length, heightOf(U.spec), U.spec.width], kinematic: true });
+      if (other.parked) { const i = world.bodies.indexOf(otherB); world.bodies.splice(i, 1); world.bodies.forEach((x, k) => { x.id = k; }); parked.splice(parked.indexOf(other), 1); } else traffic.release(other);
+      beginImpact(e, other);
+    } else {
+      if (other) wreckVehicle(other, e.vn * 1.2 * car.m / (car.m + otherB.car.m), [e.x, car.y + 1, e.z]);
+      crash = null; crashUnits = [];
+      boostAtImpact = boost; impactAt = simT; tPlayEnd = 0; handT = 0;
+      state = 'pileup';
+      RaceInput.rumble(1, 1, 450);
+      callout('Crash!', '', 1300);
+      if (TEST) testOut.crashAt = performance.now(), testOut.impactKmh = e.vn * 3.6, testOut.partner = other ? other.type : 'static', testOut.air = false;
+    }
+  }
   function showCrashFrame(t) {
     const F = crash.F, n = F.t.length;
     let k = Math.min(kCur, n - 2); while (k > 0 && F.t[k] > t) k--; while (k < n - 2 && F.t[k + 1] <= t) k++; kCur = k;
@@ -273,6 +346,7 @@ const DestructionGame = (() => {
     for (const U of crashUnits) {
       R.deform(U.model, U.view, k, k2, s, t);
       const ax = U.view.frames.axes[k]; PT.x += ax[0] / crashUnits.length; PT.z += ax[2] / crashUnits.length;
+      if (!U.proxy) continue;   // (a rig's crash: none)
       // its stand-in among the wrecks: at the cabin, turned as the cabin
       const f = [ax[3], ax[4], ax[5]], u = [ax[6], ax[7], ax[8]], z = [f[1] * u[2] - f[2] * u[1], f[2] * u[0] - f[0] * u[2], f[0] * u[1] - f[1] * u[0]];
       const P = U.proxy, np = [ax[0], ax[1] + crash.lift, ax[2]];
@@ -328,6 +402,7 @@ const DestructionGame = (() => {
 
   // the solver is done: its cars become wrecks keeping their shape, their loose parts small wrecks
   function handOff() {
+    if (crash.mode === 'rigid') { handOffRig(); return; }
     if (!crash.done) crash.stop();
     const F = crash.F, kL = F.t.length - 1, k0 = Math.max(0, kL - 5), dtF = Math.max(1e-4, F.t[kL] - F.t[k0]), lift = crash.lift;
     for (const U of crashUnits) {
@@ -364,6 +439,27 @@ const DestructionGame = (() => {
     }
     if (crash.held) for (const b of crash.held) wrecks.release(b);
     if (TEST) testOut.hand = crashUnits.map(U => ({ b: U.wreck, p: U.wreck.p.slice(), v: U.wreck.v.slice(), t: simT }));
+    tPlayEnd = tPlay; handT = 0;
+    state = 'pileup';
+    FX.setTimeScale(1);
+  }
+  // a rig's crash is done: its hull is your wreck, the pieces that came off small wrecks, each moving
+  // on as in the crash's last frames
+  function handOffRig() {
+    const U = crashUnits[0], V = U.view.frames, P = V.poses, kL = P.length - 1, k0 = Math.max(0, kL - 5), dtF = Math.max(1e-4, V.t[kL] - V.t[k0]), S = U.spec;
+    const vel = (i) => { const a = P[k0][i], b = P[kL][i]; return a && b ? [(b[0] - a[0]) / dtF, (b[1] - a[1]) / dtF, (b[2] - a[2]) / dtF] : [0, 0, 0]; };
+    const h = P[kL][0];
+    const b = wrecks.add({ kind: 'player', key: S.key, p: h.slice(0, 3), q: h.slice(3), v: vel(0), w: [0, 0, 0], m: S.massKg, lo: S.lo, hi: S.hi, value: 0 });
+    b.model = U.model; b.hand = { p: [0, 0, 0], q: [0, 0, 0, 1] };
+    U.wreck = b; playerWreck = b;
+    U.view.pieces.forEach((n, i) => {
+      const g = U.model.nodes[n];
+      if (!P[kL][i + 1] || !g) return;
+      g.matrix.decompose(g.position, g.quaternion, g.scale); g.matrixAutoUpdate = true;
+      const part = S.parts.find(p => p.name === n);
+      addChunk(g, null, Math.max(1, part.mass), U).b.v = vel(i + 1);
+    });
+    if (TEST) testOut.hand = [{ b, p: b.p.slice(), v: b.v.slice(), t: simT }];
     tPlayEnd = tPlay; handT = 0;
     state = 'pileup';
     FX.setTimeScale(1);
@@ -557,27 +653,32 @@ const DestructionGame = (() => {
   }
 
   // ---------------------------------------------------------------- the select screen
-  let selRow = 0, selToken = 0, selBusy = false, selT = 0;
+  let selRow = 0, selToken = 0, selBusy = false, selT = 0, lineup = null;
   function buildSelect() {
-    $('#sel-cars').innerHTML = Object.keys(CARS).map((k) => `<button type="button" class="sel-car" role="radio" data-car="${k}"><b>${CARS[k].name}</b><span>${CARS[k].kind} · ${Math.round(specs[k].massKg).toLocaleString('en-US')} kg</span></button>`).join('');
-    $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
+    // the garage lineup (garageui.js): each car's side view, all to one scale, in its signature paint
+    lineup = GarageUI.lineup($('#sel-lineup'), Object.keys(CARS).map((k) => ({ key: k, name: CARS[k].name, paint: CARS[k].paint ? CARS[k].paint.hex : PAINTS[0].hex, phys: (window.CAR_PHYS || {})[k] || (window.RIG_PHYS || {})[k] })),
+      (k) => { selRow = 0; chooseCar(k); });
+    buildSwatches();
     const M = level.medals;
     $('#sel-goals').innerHTML = [['Bronze', M.bronze, 'var(--bronze)'], ['Silver', M.silver, 'var(--silver)'], ['Gold', M.gold, 'var(--gold)']].map(([k, v, c]) => `<dt style="--c:${c}">${k}</dt><dd>${money(v)}</dd>`).join('');
-    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
     $('#sel-levels').innerHTML = Object.entries(DestructionLevel.LEVELS).map(([k, D]) => `<button type="button" class="sel-car sel-level" role="radio" data-level="${k}"><b>${D.name}</b><span>${LEVEL_NOTES[k]}</span></button>`).join('');
     document.querySelectorAll('.sel-level').forEach((b) => b.addEventListener('click', () => { b.blur(); pickLevel(b.dataset.level); }));
     $('#sel-title').textContent = level.name;
-    document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
     $('#btn-start').addEventListener('click', () => { $('#btn-start').blur(); startAttempt(); });
-    $('#btn-again').addEventListener('click', () => { $('#btn-again').blur(); retry(); });
-    $('#btn-car').addEventListener('click', () => { $('#btn-car').blur(); toSelect(); });
+  }
+  // the paint swatches: the car's own paints (rebuilt when the car changes)
+  function buildSwatches() {
+    $('#sel-swatches').innerHTML = paintsOf(carKey).map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
+    $('#sel-swatches').style.gridTemplateColumns = `repeat(${paintsOf(carKey).length}, 1fr)`;
+    document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
   }
   function showSelect() {
-    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    lineup.select(carKey);
+    GarageUI.card($('#sel-card'), CARS[carKey]);
     document.querySelectorAll('.sel-level').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.level === LEVEL)));
     document.querySelectorAll('.swatch').forEach((b, i) => b.setAttribute('aria-checked', String(i === paintIdx)));
     document.querySelectorAll('.sel-row').forEach((r) => r.classList.toggle('focus', +r.dataset.row === selRow));
-    $('#sel-paint-name').textContent = PAINTS[paintIdx].name;
+    $('#sel-paint-name').textContent = paintNow().name;
     $('#sel-best').textContent = best ? `Your best: ${money(best.total)}${best.medal ? ' (' + best.medal + ')' : ''}` : 'No attempt yet.';
     $('#btn-start').disabled = selBusy;
   }
@@ -585,15 +686,19 @@ const DestructionGame = (() => {
     if (!CARS[key] || (key === carKey && !selBusy)) return;
     const token = ++selToken;
     carKey = key;
+    paintIdx = 0; buildSwatches();   // a car starts in its signature paint
     car = RaceCar.create(specs[key]); me.car = car;
+    world.respec(me);
     placeCar(SHOW);
     selBusy = true; showSelect();
-    await R.preparePlayer(key, specs[key], PAINTS[paintIdx].hex);
+    // a model not made yet waits for the pick to settle (stepping through the lineup doesn't decode each)
+    if (!R.hasModel(key)) { await new Promise((r) => setTimeout(r, 250)); if (token !== selToken) return; }
+    await R.preparePlayer(key, specs[key], paintNow().hex);
     if (token !== selToken) return;
-    R.player.setPaint(PAINTS[paintIdx].hex);
+    R.player.setPaint(paintNow().hex);
     selBusy = false; showSelect();
   }
-  function pickPaint(i) { paintIdx = (i + PAINTS.length) % PAINTS.length; if (!selBusy) R.player.setPaint(PAINTS[paintIdx].hex); showSelect(); }
+  function pickPaint(i) { const n = paintsOf(carKey).length; paintIdx = (i + n) % n; if (!selBusy) R.player.setPaint(paintNow().hex); showSelect(); }
   // another junction: the page again with ?level= (the car and paint kept), once the music has faded out
   // (the menu song picks up where it was)
   function pickLevel(key) {
@@ -631,6 +736,7 @@ const DestructionGame = (() => {
       return;
     }
     if (state !== 'run') return;
+    if (car.kind === 'tracked') { if (e.vn > (e.kind === 'car' ? 2 : 4)) triggerCrash(e); return; }   // the tank: its first real contact
     let d = RaceWorld.hitDamage(e, me);
     if (simT - hurtAt < 0.15) { const x = Math.max(0, d - hurtD); hurtD = Math.max(hurtD, d); d = x; } else if (d > 0) { hurtAt = simT; hurtD = d; }
     if (d > 0) health = Math.max(0, health - d);
@@ -755,7 +861,7 @@ const DestructionGame = (() => {
         }
         stepN++; acc -= STEP; simT += STEP;
         const obstacles = wrecks.bodies.filter(b => b.kind !== 'chunk' && b.kind !== 'proxy').map(b => ({ x: b.p[0], z: b.p[2], r: Math.max(b.hi[0] - b.lo[0], b.hi[2] - b.lo[2]) * 0.45 }))
-          .concat(state === 'impact' ? crashUnits.map(U => ({ x: U.proxy.p[0], z: U.proxy.p[2], r: 2.2 })) : []);
+          .concat(state === 'impact' ? crashUnits.filter(U => U.proxy).map(U => ({ x: U.proxy.p[0], z: U.proxy.p[2], r: 2.2 })) : []);
         traffic.step(STEP, simT - STEP, obstacles);
         const ev = world.step(STEP, (b) => b === me ? playerInput() : (b.traffic && !b.kinematic ? { brake: 0.6 } : null));
         for (const e of ev) handleContact(e);
@@ -810,9 +916,9 @@ const DestructionGame = (() => {
     // the player's car before the crash, and the camera
     if (state === 'select' || state === 'countdown' || state === 'run') {
       const p = car.pose, spinNow = car.wheels[2].spin;
-      R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: car.roll + car.gRoll, lift: car.y, steer: car.steer }, spinNow - prevSpin);
+      R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll, lift: car.y, steer: car.steer, wheelie: car.wheelie, car }, spinNow - prevSpin);
       prevSpin = spinNow;
-      if (state === 'select') { selT += dtReal; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
+      if (state === 'select') { selT += dtReal; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4 * Math.max(1, specs[carKey].length / 4.86), 1.5, level); }
       else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dtReal);
     } else if (state === 'pileup') pileupCamera(dtReal);
     drawVehicles();
@@ -916,7 +1022,7 @@ const DestructionGame = (() => {
   async function start() {
     $('#loading').textContent = 'Building the junction…';
     const workerMode = RaceCrash.prepare();
-    await R.preparePlayer(carKey, specs[carKey], PAINTS[paintIdx].hex);
+    await R.preparePlayer(carKey, specs[carKey], paintNow().hex);
     await R.prepareCars(['lexus', 'mustang'], 72);
     look.prepareHeavy(traffic.HEAVY, 16);
     look.patchCars(specs);
@@ -929,6 +1035,9 @@ const DestructionGame = (() => {
     look.warm();
     await workerMode;
     $('#loading').hidden = true;
+    // the results' buttons (also after a scripted ?test attempt, which has no select screen)
+    $('#btn-again').addEventListener('click', () => { $('#btn-again').blur(); retry(); });
+    $('#btn-car').addEventListener('click', () => { $('#btn-car').blur(); toSelect(); });
     setupHud();
     if (TEST) { $('#hud').hidden = false; state = 'countdown'; }
     else { buildSelect(); showSelect(); placeCar(SHOW); $('#hud').hidden = true; $('#select').hidden = false; state = 'select'; }

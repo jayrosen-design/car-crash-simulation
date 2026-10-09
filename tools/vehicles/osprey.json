@@ -1,0 +1,495 @@
+{
+ "key": "osprey",
+ "title": "Osprey drone",
+ "kind": "Hexacopter cargo drone \u00b7 hovers 0.6 m up",
+ "source": "Drawn after the side view in the garage design video (car-crash-simulation-new-garage.mp4): six arms, a peach cargo pod on skids; 0.70 m tall and 2.60 m across the rotors as the video gives them.",
+ "type": "hover",
+ "length": 2.33,
+ "width": 2.6,
+ "height": 0.7,
+ "massKg": 180,
+ "paint": {
+  "name": "peach",
+  "hex": "#ecccac"
+ },
+ "materials": {
+  "paint": "#ecccac",
+  "dark": "#2d2e31",
+  "metal": "#6c6e74",
+  "glass": "#382a61",
+  "blade": "#b9bcc4",
+  "lamp_head": "#ec8c34",
+  "lamp_tail": "#ac6725"
+ },
+ "nodes": [
+  {
+   "name": "BODY",
+   "pivot": [0, 0, 0],
+   "mass": 120,
+   "shapes": [
+    {
+     "kind": "box",
+     "mat": "paint",
+     "c": [0, 0.42, 0],
+     "s": [0.9, 0.2, 0.6],
+     "bevel": 0.07
+    },
+    {
+     "kind": "box",
+     "mat": "dark",
+     "c": [0, 0.3, 0],
+     "s": [0.78, 0.06, 0.5]
+    },
+    {
+     "kind": "box",
+     "mat": "glass",
+     "c": [0.22, 0.535, 0],
+     "s": [0.26, 0.05, 0.3],
+     "bevel": 0.02
+    },
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [-0.5, 0.025, 0.35],
+     "b": [0.5, 0.025, 0.35],
+     "r": 0.025
+    },
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [-0.5, 0.025, -0.35],
+     "b": [0.5, 0.025, -0.35],
+     "r": 0.025
+    },
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [-0.28, 0.03, 0.35],
+     "b": [-0.22, 0.3, 0.22],
+     "r": 0.018
+    },
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [0.28, 0.03, 0.35],
+     "b": [0.22, 0.3, 0.22],
+     "r": 0.018
+    },
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [-0.28, 0.03, -0.35],
+     "b": [-0.22, 0.3, -0.22],
+     "r": 0.018
+    },
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [0.28, 0.03, -0.35],
+     "b": [0.22, 0.3, -0.22],
+     "r": 0.018
+    },
+    {
+     "kind": "cyl",
+     "mat": "dark",
+     "c": [0, 0.54, 0],
+     "r": 0.12,
+     "len": 0.04,
+     "axis": "y"
+    }
+   ]
+  },
+  {
+   "name": "BREAK_Arm0",
+   "parent": "BODY",
+   "pivot": [0.2598, 0.5, 0.11],
+   "mass": 8,
+   "breakDv": 7,
+   "shapes": [
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [0.2598, 0.5, 0.11],
+     "b": [0.866, 0.56, 0.5],
+     "r": 0.03
+    },
+    {
+     "kind": "cyl",
+     "mat": "dark",
+     "c": [0.866, 0.6, 0.5],
+     "r": 0.06,
+     "len": 0.1,
+     "axis": "y"
+    },
+    {
+     "kind": "sphere",
+     "mat": "lamp_head",
+     "c": [0.9007, 0.54, 0.52],
+     "r": 0.025
+    }
+   ]
+  },
+  {
+   "name": "ROTOR_0",
+   "parent": "BREAK_Arm0",
+   "pivot": [0.866, 0.67, 0.5],
+   "axis": [0, 1, 0],
+   "mass": 2,
+   "shapes": [
+    {
+     "kind": "cyl",
+     "mat": "blade",
+     "c": [0.866, 0.665, 0.5],
+     "r": 0.3,
+     "len": 0.012,
+     "axis": "y",
+     "segments": 40
+    },
+    {
+     "kind": "box",
+     "mat": "dark",
+     "c": [0.866, 0.68, 0.5],
+     "s": [0.58, 0.012, 0.045],
+     "rot": [0, 0.0, 0]
+    },
+    {
+     "kind": "cyl",
+     "mat": "metal",
+     "c": [0.866, 0.685, 0.5],
+     "r": 0.03,
+     "len": 0.03,
+     "axis": "y"
+    }
+   ]
+  },
+  {
+   "name": "BREAK_Arm1",
+   "parent": "BODY",
+   "pivot": [0.0, 0.5, 0.22],
+   "mass": 8,
+   "breakDv": 7,
+   "shapes": [
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [0.0, 0.5, 0.22],
+     "b": [0.0, 0.56, 1.0],
+     "r": 0.03
+    },
+    {
+     "kind": "cyl",
+     "mat": "dark",
+     "c": [0.0, 0.6, 1.0],
+     "r": 0.06,
+     "len": 0.1,
+     "axis": "y"
+    },
+    {
+     "kind": "sphere",
+     "mat": "lamp_head",
+     "c": [0.0, 0.54, 1.04],
+     "r": 0.025
+    }
+   ]
+  },
+  {
+   "name": "ROTOR_1",
+   "parent": "BREAK_Arm1",
+   "pivot": [0.0, 0.67, 1.0],
+   "axis": [0, 1, 0],
+   "mass": 2,
+   "shapes": [
+    {
+     "kind": "cyl",
+     "mat": "blade",
+     "c": [0.0, 0.665, 1.0],
+     "r": 0.3,
+     "len": 0.012,
+     "axis": "y",
+     "segments": 40
+    },
+    {
+     "kind": "box",
+     "mat": "dark",
+     "c": [0.0, 0.68, 1.0],
+     "s": [0.58, 0.012, 0.045],
+     "rot": [0, 0.5, 0]
+    },
+    {
+     "kind": "cyl",
+     "mat": "metal",
+     "c": [0.0, 0.685, 1.0],
+     "r": 0.03,
+     "len": 0.03,
+     "axis": "y"
+    }
+   ]
+  },
+  {
+   "name": "BREAK_Arm2",
+   "parent": "BODY",
+   "pivot": [-0.2598, 0.5, 0.11],
+   "mass": 8,
+   "breakDv": 7,
+   "shapes": [
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [-0.2598, 0.5, 0.11],
+     "b": [-0.866, 0.56, 0.5],
+     "r": 0.03
+    },
+    {
+     "kind": "cyl",
+     "mat": "dark",
+     "c": [-0.866, 0.6, 0.5],
+     "r": 0.06,
+     "len": 0.1,
+     "axis": "y"
+    },
+    {
+     "kind": "sphere",
+     "mat": "lamp_tail",
+     "c": [-0.9007, 0.54, 0.52],
+     "r": 0.025
+    }
+   ]
+  },
+  {
+   "name": "ROTOR_2",
+   "parent": "BREAK_Arm2",
+   "pivot": [-0.866, 0.67, 0.5],
+   "axis": [0, 1, 0],
+   "mass": 2,
+   "shapes": [
+    {
+     "kind": "cyl",
+     "mat": "blade",
+     "c": [-0.866, 0.665, 0.5],
+     "r": 0.3,
+     "len": 0.012,
+     "axis": "y",
+     "segments": 40
+    },
+    {
+     "kind": "box",
+     "mat": "dark",
+     "c": [-0.866, 0.68, 0.5],
+     "s": [0.58, 0.012, 0.045],
+     "rot": [0, 1.0, 0]
+    },
+    {
+     "kind": "cyl",
+     "mat": "metal",
+     "c": [-0.866, 0.685, 0.5],
+     "r": 0.03,
+     "len": 0.03,
+     "axis": "y"
+    }
+   ]
+  },
+  {
+   "name": "BREAK_Arm3",
+   "parent": "BODY",
+   "pivot": [-0.2598, 0.5, -0.11],
+   "mass": 8,
+   "breakDv": 7,
+   "shapes": [
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [-0.2598, 0.5, -0.11],
+     "b": [-0.866, 0.56, -0.5],
+     "r": 0.03
+    },
+    {
+     "kind": "cyl",
+     "mat": "dark",
+     "c": [-0.866, 0.6, -0.5],
+     "r": 0.06,
+     "len": 0.1,
+     "axis": "y"
+    },
+    {
+     "kind": "sphere",
+     "mat": "lamp_tail",
+     "c": [-0.9007, 0.54, -0.52],
+     "r": 0.025
+    }
+   ]
+  },
+  {
+   "name": "ROTOR_3",
+   "parent": "BREAK_Arm3",
+   "pivot": [-0.866, 0.67, -0.5],
+   "axis": [0, 1, 0],
+   "mass": 2,
+   "shapes": [
+    {
+     "kind": "cyl",
+     "mat": "blade",
+     "c": [-0.866, 0.665, -0.5],
+     "r": 0.3,
+     "len": 0.012,
+     "axis": "y",
+     "segments": 40
+    },
+    {
+     "kind": "box",
+     "mat": "dark",
+     "c": [-0.866, 0.68, -0.5],
+     "s": [0.58, 0.012, 0.045],
+     "rot": [0, 1.5, 0]
+    },
+    {
+     "kind": "cyl",
+     "mat": "metal",
+     "c": [-0.866, 0.685, -0.5],
+     "r": 0.03,
+     "len": 0.03,
+     "axis": "y"
+    }
+   ]
+  },
+  {
+   "name": "BREAK_Arm4",
+   "parent": "BODY",
+   "pivot": [-0.0, 0.5, -0.22],
+   "mass": 8,
+   "breakDv": 7,
+   "shapes": [
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [-0.0, 0.5, -0.22],
+     "b": [-0.0, 0.56, -1.0],
+     "r": 0.03
+    },
+    {
+     "kind": "cyl",
+     "mat": "dark",
+     "c": [-0.0, 0.6, -1.0],
+     "r": 0.06,
+     "len": 0.1,
+     "axis": "y"
+    },
+    {
+     "kind": "sphere",
+     "mat": "lamp_tail",
+     "c": [-0.0, 0.54, -1.04],
+     "r": 0.025
+    }
+   ]
+  },
+  {
+   "name": "ROTOR_4",
+   "parent": "BREAK_Arm4",
+   "pivot": [-0.0, 0.67, -1.0],
+   "axis": [0, 1, 0],
+   "mass": 2,
+   "shapes": [
+    {
+     "kind": "cyl",
+     "mat": "blade",
+     "c": [-0.0, 0.665, -1.0],
+     "r": 0.3,
+     "len": 0.012,
+     "axis": "y",
+     "segments": 40
+    },
+    {
+     "kind": "box",
+     "mat": "dark",
+     "c": [-0.0, 0.68, -1.0],
+     "s": [0.58, 0.012, 0.045],
+     "rot": [0, 2.0, 0]
+    },
+    {
+     "kind": "cyl",
+     "mat": "metal",
+     "c": [-0.0, 0.685, -1.0],
+     "r": 0.03,
+     "len": 0.03,
+     "axis": "y"
+    }
+   ]
+  },
+  {
+   "name": "BREAK_Arm5",
+   "parent": "BODY",
+   "pivot": [0.2598, 0.5, -0.11],
+   "mass": 8,
+   "breakDv": 7,
+   "shapes": [
+    {
+     "kind": "tube",
+     "mat": "metal",
+     "a": [0.2598, 0.5, -0.11],
+     "b": [0.866, 0.56, -0.5],
+     "r": 0.03
+    },
+    {
+     "kind": "cyl",
+     "mat": "dark",
+     "c": [0.866, 0.6, -0.5],
+     "r": 0.06,
+     "len": 0.1,
+     "axis": "y"
+    },
+    {
+     "kind": "sphere",
+     "mat": "lamp_head",
+     "c": [0.9007, 0.54, -0.52],
+     "r": 0.025
+    }
+   ]
+  },
+  {
+   "name": "ROTOR_5",
+   "parent": "BREAK_Arm5",
+   "pivot": [0.866, 0.67, -0.5],
+   "axis": [0, 1, 0],
+   "mass": 2,
+   "shapes": [
+    {
+     "kind": "cyl",
+     "mat": "blade",
+     "c": [0.866, 0.665, -0.5],
+     "r": 0.3,
+     "len": 0.012,
+     "axis": "y",
+     "segments": 40
+    },
+    {
+     "kind": "box",
+     "mat": "dark",
+     "c": [0.866, 0.68, -0.5],
+     "s": [0.58, 0.012, 0.045],
+     "rot": [0, 2.5, 0]
+    },
+    {
+     "kind": "cyl",
+     "mat": "metal",
+     "c": [0.866, 0.685, -0.5],
+     "r": 0.03,
+     "len": 0.03,
+     "axis": "y"
+    }
+   ]
+  }
+ ],
+ "lamps": {
+  "head": [
+   [0.9, 0.54, 0.52],
+   [0.9, 0.54, -0.52]
+  ],
+  "tail": [
+   [-0.9, 0.54, 0.52],
+   [-0.9, 0.54, -0.52]
+  ]
+ },
+ "hover": {
+  "height": 0.6,
+  "hop": 2.5
+ }
+}

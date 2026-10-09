@@ -25,6 +25,9 @@
  *
  * Deterministic (a seeded random number generator), at a fixed step.
  *
+ * opts.vmax raises the speed cap (the Race game's rig crashes: a motorcycle at 73 m/s); bodies with
+ * the same `clan` don't touch each other (a rider and the bike they're thrown from, at first).
+ *
  * DOM-free: global DestructionWrecks in the browser, module.exports in Node.
  */
 const DestructionWrecks = (() => {
@@ -209,9 +212,10 @@ const DestructionWrecks = (() => {
         if (b.value || b.kind === 'player') settle(b, b.damage + 1.3 * f, b.p);
       }
     }
+    const vmax = opts.vmax || VMAX;
     function clamp(b) {
       const s = Math.hypot(...b.v), ws = Math.hypot(...b.w);
-      if (s > VMAX) for (let i = 0; i < 3; i++) b.v[i] *= VMAX / s;
+      if (s > vmax) for (let i = 0; i < 3; i++) b.v[i] *= vmax / s;
       if (ws > WMAX) for (let i = 0; i < 3; i++) b.w[i] *= WMAX / ws;
     }
 
@@ -363,6 +367,7 @@ const DestructionWrecks = (() => {
       for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
         const a = bodies[i], b = bodies[j];
         if ((a.kinematic && b.kinematic) || (!a.awake && !b.awake)) continue;
+        if (a.clan && a.clan === b.clan) continue;
         const n0 = contacts.length;
         pairContacts(a, b);
         // a sleeper hit hard enough wakes

@@ -23,11 +23,13 @@
  * (the rivals gain time); the camera shows the street as it was. Then the car is put back on the
  * road. Rivals that crash on their own spin out as rigid bodies and rejoin.
  *
- * Before the race, a car-select screen: the Lexus or the Mustang, one of eight paints, and each
- * car's performance as measured by driving it (RaceCar.measure). The choice is remembered for the
- * next race in this browser.
+ * Before the race, a car-select screen: the garage's cars (js/garage.js), each in its signature paint
+ * or one of eight others, and each car's performance as measured by driving it (RaceCar.measure).
+ * The choice is remembered for the next race in this browser. The motorcycle and the drone crash as
+ * rigid bodies (rigs.js) instead of on the crash solver; the drone hops on the handbrake; the tank
+ * doesn't crash (it stalls) and races unranked: no place, no best, done when the last rival is.
  *
- * URL: ?car=lexus|mustang (the car the select screen starts on), ?seed=<n> (another city),
+ * URL: ?car=<key> (the car the select screen starts on: lexus, mustang, halcyon ...), ?seed=<n> (another city),
  * ?damage=dramatic, ?traffic=0,
  * ?test=wall150|headon|takedown (a scripted crash or takedown at once, results in
  * window.__race.test), ?worker=0, ?touch=1|0 (on-screen buttons on or off; by default on touch screens).
@@ -58,11 +60,15 @@ const RaceGame = (() => {
   const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048, look: RaceRender.lookFor(level.look), bloom: !TOUCH && level.look !== 'day' });   // the level's time of day
   const world = RaceWorld.create(level);
   const props = RaceProps.create(level);   // street lights, signals, cones, bins ... to knock over
-  const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
+  // the garage's road cars this page loaded (the rivals and traffic drive the Lexus and Mustang)
+  const specs = {};
+  for (const k of CrashGarage.latticeKeys) if (Veh.specs[k]) specs[k] = Veh.get(k);
+  for (const v of CrashGarage.LIST) if (v.type !== 'car' && RaceRigs.spec(v.key)) specs[v.key] = RaceRigs.spec(v.key);
   const DAMAGE = q.get('damage') === 'dramatic' ? 'dramatic' : 'realistic';
   // the car-select screen's cars and paints (sRGB). Scripted runs (?test, ?director: the trailer
   // recorder) always start in the URL's car in red; a player's last choice is remembered.
-  const CARS = { lexus: { name: 'Lexus RX 350', kind: 'SUV' }, mustang: { name: 'Ford Mustang GT500', kind: 'Coupe' } };
+  const CARS = {};
+  for (const v of CrashGarage.LIST) if (v.race && specs[v.key]) CARS[v.key] = v;
   const PAINTS = [
     { name: 'Crimson red', hex: 0xa3161f }, { name: 'Cobalt blue', hex: 0x1d4fa3 }, { name: 'Pearl white', hex: 0xe9e9e6 }, { name: 'Jet black', hex: 0x121315 },
     { name: 'Liquid silver', hex: 0x9ea3a8 }, { name: 'Sunset orange', hex: 0xd9581c }, { name: 'Signal yellow', hex: 0xe6b81e }, { name: 'Racing green', hex: 0x1f6b43 },
@@ -70,17 +76,20 @@ const RaceGame = (() => {
   const SCRIPTED = !!TEST || q.has('director');
   const LEVEL_NOTES = { downtown: 'Towers, hills and three jumps', harbour: 'Flat out past the docks, after dark', hillside: 'Big hills and fast bends at midday' };
   const saved = (() => { if (SCRIPTED) return null; try { return JSON.parse(localStorage.getItem('race-choice')); } catch (e) { return null; } })() || {};
-  let carKey = specs[q.get('car')] ? q.get('car') : specs[saved.car] ? saved.car : 'lexus';
-  let paintIdx = PAINTS[saved.paint] ? +saved.paint : 0;
+  let carKey = CARS[q.get('car')] ? q.get('car') : CARS[saved.car] ? saved.car : 'lexus';
+  // a car's paints: its signature paint (if it has one) first, then the eight
+  const paintsOf = (key) => CARS[key].paint ? [{ name: CARS[key].paint.name[0].toUpperCase() + CARS[key].paint.name.slice(1), hex: CARS[key].paint.hex }, ...PAINTS] : PAINTS;
+  let paintIdx = paintsOf(carKey)[saved.paint] ? +saved.paint : 0;
+  const paintNow = () => paintsOf(carKey)[paintIdx];
 
   // ---------------------------------------------------------------- the grid
   // aggr: how readily a rival picks a fight (ai.js), 0 to 1
   const RIVALS = [
-    { name: 'Ava Lindqvist', key: 'mustang', paint: 0x2b5fa8, skill: 1.0, aggr: 0.5 },
+    { name: 'Ava Lindqvist', key: 'halcyon', paint: 0x2b5fa8, skill: 1.0, aggr: 0.5 },
     { name: 'Marco Reyes', key: 'lexus', paint: 0xe0b022, skill: 0.985, aggr: 0.25 },
     { name: 'Kenji Tanaka', key: 'mustang', paint: 0x1f7a4a, skill: 0.975, aggr: 0.8 },
-    { name: 'Léa Moreau', key: 'lexus', paint: 0xe8e8e6, skill: 0.965, aggr: 0.35 },
-    { name: 'Sam Okafor', key: 'mustang', paint: 0xd2541e, skill: 0.955, aggr: 0.9 },
+    { name: 'Léa Moreau', key: 'cadence', paint: 0xe8e8e6, skill: 0.965, aggr: 0.35 },
+    { name: 'Sam Okafor', key: 'bastion', paint: 0xd2541e, skill: 0.955, aggr: 0.9 },
     { name: 'Nina Novak', key: 'lexus', paint: 0x111214, skill: 0.945, aggr: 0.45 },
     { name: 'Ravi Mehta', key: 'mustang', paint: 0x6b2c8f, skill: 0.935, aggr: 0.65 },
   ];
@@ -197,6 +206,7 @@ const RaceGame = (() => {
   const testOut = (window.__race = { test: null }).test = { frames: [], aheadOfStream: 0 };
   function triggerCrash(e) {
     if (state !== 'race') return;
+    if (car.kind === 'tracked') { stall(); return; }   // a tank isn't wrecked by a hit: it stalls
     // a takedown not yet counted is lost; a rival that drove into the player just before took them down
     const by = rules.playerCrashed(simT);
     ooc = null;
@@ -214,14 +224,21 @@ const RaceGame = (() => {
       if (c.air || c.y - ground > 0.05) Object.assign(u, { lift: c.y - ground, vy: c.vy, pitch: c.pitch + c.gPitch, roll: c.roll + c.gRoll });
       return u;
     });
-    const near = level.collidersNear(e.x, e.z, 32);
-    const shapes = { boxes: near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height })), cyls: near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height })) };
-    crash = RaceCrash.start({ units, world: shapes, duration: 1.6, damage: DAMAGE, solver: solverPick.solver });
+    if (car.spec.rig) {
+      // the motorcycle or drone: rigid bodies against the street and the car it hit (held still)
+      const B = other && world.box(other);
+      crash = RaceRigs.crash({ level, car, W: DestructionWrecks, seed: crashes.length + 3, other: B ? { x: B.x, z: B.z, hx: B.hx, hz: B.hz, angle: Math.atan2(B.uz, B.ux), height: other.top || 1.4 } : null });
+      crashUnits = [{ body: me, model: R.player, view: crash.unitView(0), paint: paintNow().hex }];
+    } else {
+      const near = level.collidersNear(e.x, e.z, 32);
+      const shapes = { boxes: near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height })), cyls: near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height })) };
+      crash = RaceCrash.start({ units, world: shapes, duration: 1.6, damage: DAMAGE, solver: solverPick.solver });
+      // the solver's ground is flat at 0: the crash is drawn at the ground's height here
+      crash.lift = ground;
+      crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: paintOf(b) }));
+    }
     crash.impactKmh = e.vn * 3.6;
-    // the solver's ground is flat at 0: the crash is drawn at the ground's height here
-    crash.lift = ground;
     R.setCrashLift(crash.lift); PT.y = crash.lift;
-    crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: paintOf(b) }));
     for (const U of crashUnits) { U.body.frozen = true; if (U.model !== R.player) { U.model.group.visible = true; if (U.paint !== undefined) U.model.setPaint(U.paint); } }
     frozenDraw = drawStates();   // the street as it was, for the crash camera
     state = 'crash'; crashT = 0; tPlay = 0; kCur = 0; evPending = [];
@@ -234,6 +251,16 @@ const RaceGame = (() => {
     if (TEST) testOut.crashAt = performance.now();
   }
   const PT = { x: 0, z: 0, y: 0 };   // the crash camera's target (y: the ground's height there)
+  // slow motion through the impact, back to real time as the wreck settles (since: s after first contact)
+  const slowmoAt = (since) => since < 0 ? 0.25 : since < 0.12 ? 0.08 : since < 0.3 ? 0.08 + (since - 0.12) / 0.18 * 0.22 : since < 0.8 ? 0.3 + (since - 0.3) / 0.5 * 0.7 : 1;
+  // the tank, worn out: it stops dead for a moment (brakes on), then carries on repaired, a ghost for 2 s
+  let stallT = 0;
+  function stall() {
+    stallT = 1.5; health = 1; me.ghost = 3.5;
+    score.crashed();
+    toast('Stalled', 1500);
+    RaceInput.rumble(0.8, 0.8, 300);
+  }
   // play crash frames on the crash's models at time t (frame cursor kept in kCur)
   function showCrashFrame(cr, units, t) {
     const F = cr.F, n = F.t.length;
@@ -253,7 +280,7 @@ const RaceGame = (() => {
       if (TEST && testOut.firstFrameMs === undefined) testOut.firstFrameMs = performance.now() - testOut.crashAt;
       const T0 = crash.T0 >= 0 ? crash.T0 : F.t[n - 1], since = tPlay - T0;
       // slow motion through the impact, back to real time as the wreck settles
-      const speed = since < 0 ? 0.25 : since < 0.12 ? 0.08 : since < 0.3 ? 0.08 + (since - 0.12) / 0.18 * 0.22 : since < 0.8 ? 0.3 + (since - 0.3) / 0.5 * 0.7 : 1;
+      const speed = slowmoAt(since);
       const limit = crash.done ? F.t[n - 1] : F.t[n - 3];   // never ahead of the stream (two frames behind)
       const want = tPlay + dt * speed;
       if (want > limit) testOut.aheadOfStream++;
@@ -317,12 +344,13 @@ const RaceGame = (() => {
   let replay = null;
   function startReplay(idx) {
     const c = crashes[idx];
-    if (!c || !c.crash.done || !c.crash.result) { toast('The crash is still being worked out', 1500); return; }
-    const cr = c.crash, res = cr.result;
+    const rigid = c && c.crash.mode === 'rigid';
+    if (!c || !c.crash.done || (!rigid && !c.crash.result)) { toast('The crash is still being worked out', 1500); return; }
+    const cr = c.crash, res = cr.result, T0 = rigid ? cr.T0 : res.T0;
     const units = c.units.map(u => ({ model: u.model === 'player' ? R.player : R.wrecks[u.key], view: cr.unitView(u.u), paint: u.paint }));
     for (const U of units) { U.model.group.visible = true; if (U.model !== R.player && U.paint !== undefined) U.model.setPaint(U.paint); U.model.prepareDestruction(U.view); }
-    const cin = Cinematic.fromCrash({ units: res.units.map((u, i) => Object.assign({}, u, { axes: cr.F.unitAxes[i] })), frames: cr.F, T0: res.T0, contact: res.contact }, cr.events);
-    replay = { cr, units, cin, t: Math.max(0, res.T0 - 0.15), end: cr.F.t[cr.F.t.length - 1], prevState: state };
+    const cin = rigid ? { speed: (t) => slowmoAt(t - T0) } : Cinematic.fromCrash({ units: res.units.map((u, i) => Object.assign({}, u, { axes: cr.F.unitAxes[i] })), frames: cr.F, T0: res.T0, contact: res.contact }, cr.events);
+    replay = { cr, units, cin, T0, t: Math.max(0, T0 - 0.15), end: cr.F.t[cr.F.t.length - 1], prevState: state };
     evPending = []; kCur = 0; camAngle = 0.4;
     R.setCrashLift(cr.lift); PT.y = cr.lift || 0;
     state = 'replay';
@@ -336,7 +364,7 @@ const RaceGame = (() => {
     fireEvents(rp.cr, rp.t);
     camAngle += dt * 0.25;
     R.orbit(PT, camAngle, 7, 1.7, level);
-    $('#replay-clock').textContent = `+${Math.round((rp.t - rp.cr.result.T0) * 1000)} ms · ${sp >= 0.995 ? '1×' : '1/' + Math.round(1 / sp) + '×'}`;
+    $('#replay-clock').textContent = `+${Math.round((rp.t - rp.T0) * 1000)} ms · ${sp >= 0.995 ? '1×' : '1/' + Math.round(1 / sp) + '×'}`;
     if (rp.t >= rp.end || input.pause || input.start) endReplay();
   }
   function endReplay() {
@@ -365,10 +393,11 @@ const RaceGame = (() => {
     // unfinished rivals: an estimate from their remaining distance at their average pace
     const rows = st.map((e, i) => {
       let time = e.prog.done ? e.prog.time : now + (level.laps * L - progress(e.prog)) / Math.max(20, progress(e.prog) / Math.max(1, now));
-      return { pos: i + 1, name: e.name, you: e.you, car: e.key === 'lexus' ? 'Lexus RX 350' : 'Ford Mustang GT500', time, est: !e.prog.done };
+      return { pos: i + 1, name: e.name, you: e.you, car: CARS[e.key].name, time, est: !e.prog.done };
     }).sort((a, b) => a.time - b.time).map((r, i) => Object.assign(r, { pos: i + 1 }));
     const mine = rows.find(r => r.you);
-    $('#results-title').textContent = `${ord(mine.pos)} place`;
+    $('#results-title').textContent = unranked() ? 'Unranked' : `${ord(mine.pos)} place`;
+    if (unranked()) { mine.pos = '–'; rows.forEach((r, i) => { if (!r.you) r.pos = rows.filter(q => !q.you).indexOf(r) + 1; }); }
     $('#results-sub').textContent = `${fmtTime(prog.time)} · best lap ${fmtTime(prog.best)} · ${takedowns} takedown${takedowns === 1 ? '' : 's'}`;
     $('#results-table').innerHTML = '<tr><th></th><th>Driver</th><th>Car</th><th>Time</th></tr>' + rows.map(r =>
       `<tr class="${r.you ? 'you' : ''}"><td>${r.pos}</td><td>${r.name}</td><td>${r.car}</td><td class="mono">${fmtTime(r.time)}${r.est ? ' *' : ''}</td></tr>`).join('');
@@ -377,7 +406,7 @@ const RaceGame = (() => {
     let best = null;
     // each track keeps its own best (downtown under the original key)
     const bestKey = LEVEL === 'downtown' ? 'race-best' : 'race-best-' + LEVEL;
-    if (!SCRIPTED) try { best = +localStorage.getItem(bestKey) || 0; if (score.score > best) localStorage.setItem(bestKey, String(score.score)); } catch (e) { best = null; }
+    if (!SCRIPTED && !unranked()) try { best = +localStorage.getItem(bestKey) || 0; if (score.score > best) localStorage.setItem(bestKey, String(score.score)); } catch (e) { best = null; }
     const fmt = (n) => n.toLocaleString('en-US');
     $('#results-score').innerHTML = `<h3>Score ${fmt(score.score)}${best === null ? '' : score.score > best ? ' · a new best' : ` · best ${fmt(best)}`}</h3>` +
       `<table>${score.breakdown().map(b => `<tr><td>${b.label}</td><td class="n">×${b.n}</td><td class="p">${fmt(b.pts)}</td></tr>`).join('')}</table>`;
@@ -417,7 +446,7 @@ const RaceGame = (() => {
     $('#hud-gear').textContent = car.reverse ? 'R' : car.gear;
     $('#hud-lap').textContent = `${Math.min(prog.lap, level.laps)} / ${level.laps}`;
     const st = standings(), pos = st.findIndex(e => e.you) + 1;
-    $('#hud-pos').innerHTML = `${pos}<small>/${st.length}</small>`;
+    $('#hud-pos').innerHTML = unranked() ? '–' : `${pos}<small>/${st.length}</small>`;
     $('#hud-time').textContent = fmtTime(prog.done ? prog.time : t);
     $('#hud-best').textContent = fmtTime(prog.best);
     $('#boost-fill').style.width = `${Math.round(boost * 100)}%`;
@@ -463,55 +492,73 @@ const RaceGame = (() => {
   // recorder it stays on the grid). A model is made the first time its car is picked; until
   // it's ready the start button waits.
   const show = level.poseAt(level.start.s + 10, 3.5);
-  const DRIVE = { AWD: 'all-wheel', RWD: 'rear-wheel', FWD: 'front-wheel' };
+  const DRIVE = { AWD: 'all-wheel', RWD: 'rear-wheel', FWD: 'front-wheel', thrust: 'rotor', tracked: 'tracked' };
   const BARS = [   // [label, fill 0-1 from the measured figures, value]
-    ['Top speed', (p) => (p.top - 150) / 150, (p) => `${Math.round(p.top)} km/h`],
-    ['0–100 km/h', (p) => (10 - p.t100) / 7, (p) => `${p.t100.toFixed(1)} s`],
+    ['Top speed', (p) => (p.top - 60) / 240, (p) => `${Math.round(p.top)} km/h`],
+    ['0–100 km/h', (p) => p.t100 < 0 ? 0 : (10 - p.t100) / 7, (p) => p.t100 < 0 ? '–' : `${p.t100.toFixed(1)} s`],
     ['100–0 km/h', (p) => (50 - p.stop100) / 20, (p) => `${p.stop100.toFixed(1)} m`],
     ['Cornering', (p) => (p.lateralG - 0.6) / 0.6, (p) => `${p.lateralG.toFixed(2)} g`],
   ];
-  let perf = null, selRow = 0, selToken = 0, selBusy = false, selT = 0;
+  let selRow = 0, selToken = 0, selBusy = false, selT = 0, lineup = null;
+  const perfs = {};   // measured when a car is first shown (about 0.1 s each)
+  const perfOf = (key) => perfs[key] || (perfs[key] = RaceCar.measure(specs[key]));
+  const driveOf = (key) => { const S = specs[key], t = S.tune || RaceCar.TUNE[key]; return S.rig === 'hover' ? 'thrust' : S.rig === 'tracked' ? 'tracked' : t.drive[0] > 0 && t.drive[1] > 0 ? 'AWD' : t.drive[1] > 0 ? 'RWD' : 'FWD'; };
+  const unranked = () => CARS[carKey].race === 'unranked';
   function placeForSelect() { const p = q.has('director') ? ps : show; car.place(p.x, p.z, p.h, 0); }
   function buildSelect() {
-    $('#sel-cars').innerHTML = Object.keys(CARS).map((k) => `<button type="button" class="sel-car" role="radio" data-car="${k}"><b>${CARS[k].name}</b><span>${CARS[k].kind} · ${DRIVE[perf[k].drive]} drive</span></button>`).join('');
-    $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
+    // the garage lineup (garageui.js): each car's side view, all to one scale, in its signature paint
+    lineup = GarageUI.lineup($('#sel-lineup'), Object.keys(CARS).map((k) => ({ key: k, name: CARS[k].name, paint: CARS[k].paint ? CARS[k].paint.hex : PAINTS[0].hex, phys: (window.CAR_PHYS || {})[k] || (window.RIG_PHYS || {})[k] })),
+      (k) => { selRow = 0; chooseCar(k); });
+    buildSwatches();
     $('#sel-bars').innerHTML = BARS.map(([k], i) => `<div class="bar"><span class="k">${k}</span><span class="track"><i id="bar-${i}"></i></span><span class="val" id="bar-v${i}"></span></div>`).join('');
-    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 0; chooseCar(b.dataset.car); }));
-    document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
     $('#sel-levels').innerHTML = Object.entries(CrashLevel.LEVELS).map(([k, D]) => `<button type="button" class="sel-car sel-level" role="radio" data-level="${k}"><b>${D.name}</b><span>${LEVEL_NOTES[k]}</span></button>`).join('');
     document.querySelectorAll('.sel-level').forEach((b) => b.addEventListener('click', () => { b.blur(); pickLevel(b.dataset.level); }));
     $('#btn-start').addEventListener('click', () => { $('#btn-start').blur(); startRace(); });
   }
+  // the touch screen's handbrake button: the drone hops with it
+  function hopLabel() { const b = document.querySelector('#touch .t-hand'); if (b) b.textContent = car.kind === 'hover' ? 'Hop' : 'Drift'; }
+  // the paint swatches: the car's own paints (rebuilt when the car changes)
+  function buildSwatches() {
+    $('#sel-swatches').innerHTML = paintsOf(carKey).map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
+    $('#sel-swatches').style.gridTemplateColumns = `repeat(${paintsOf(carKey).length}, 1fr)`;
+    document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
+  }
   function showSelect() {
-    document.querySelectorAll('.sel-car:not(.sel-level)').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.car === carKey)));
+    lineup.select(carKey);
     document.querySelectorAll('.sel-level').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.level === LEVEL)));
     document.querySelectorAll('.swatch').forEach((b, i) => b.setAttribute('aria-checked', String(i === paintIdx)));
     document.querySelectorAll('.sel-row').forEach((r) => r.classList.toggle('focus', +r.dataset.row === selRow));
-    $('#sel-paint-name').textContent = PAINTS[paintIdx].name;
-    const p = perf[carKey];
-    $('#sel-name').textContent = CARS[carKey].name;
+    $('#sel-paint-name').textContent = paintNow().name;
+    const p = perfOf(carKey);
+    GarageUI.card($('#sel-card'), CARS[carKey], p);
     BARS.forEach(([, fill, value], i) => { $('#bar-' + i).style.width = `${Math.round(100 * Math.max(0.04, Math.min(1, fill(p))))}%`; $('#bar-v' + i).textContent = value(p); });
     $('#sel-specs').innerHTML = [['Power', `${Math.round(p.powerKW)} kW · ${Math.round(p.powerKW * 1.341)} hp`], ['Weight', `${Math.round(p.massKg).toLocaleString('en-US')} kg`],
-      ['Drive', DRIVE[p.drive]], ['Gearbox', `${p.gears}-speed automatic`], ['Top speed with boost', `${Math.round(p.topBoost)} km/h`]].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+      ['Drive', DRIVE[p.drive]], ['Gearbox', p.gears > 1 ? `${p.gears}-speed automatic` : 'single speed'], ['Top speed with boost', `${Math.round(p.topBoost)} km/h`]].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
     $('#btn-start').disabled = selBusy;
   }
   async function chooseCar(key) {
     if (!specs[key] || (key === carKey && !selBusy)) return;
     const token = ++selToken;
     carKey = key;
+    paintIdx = 0; buildSwatches();   // a car starts in its signature paint
     car = RaceCar.create(specs[key]);
     car.arcade = true;
     me.car = car;
+    world.respec(me);
+    hopLabel();
     placeForSelect();
     selBusy = true; showSelect();
-    await R.preparePlayer(key, specs[key], PAINTS[paintIdx].hex);
+    // a model not made yet waits for the pick to settle (stepping through the lineup doesn't decode each)
+    if (!R.hasModel(key)) { await new Promise((r) => setTimeout(r, 250)); if (token !== selToken) return; }
+    await R.preparePlayer(key, specs[key], paintNow().hex);
     if (token !== selToken) return;   // another car was picked meanwhile
-    R.player.setPaint(PAINTS[paintIdx].hex);
+    R.player.setPaint(paintNow().hex);
     selBusy = false; showSelect();
   }
   function pickPaint(i) {
-    paintIdx = (i + PAINTS.length) % PAINTS.length;
-    if (!selBusy) R.player.setPaint(PAINTS[paintIdx].hex);   // else chooseCar paints the new model
+    const n = paintsOf(carKey).length;
+    paintIdx = (i + n) % n;
+    if (!selBusy) R.player.setPaint(paintNow().hex);   // else chooseCar paints the new model
     showSelect();
   }
   // another track: the page again with ?level= (the car and paint kept), once the music has faded out
@@ -578,6 +625,7 @@ const RaceGame = (() => {
     if (TEST === 'takedown') return { throttle: 1, steer: simT < 1.2 ? 0.5 : -0.5 };   // shove, then pull away
     if (TEST) return testDrive;
     if (state === 'finished' && autopilot) return ai.drive(autopilot, STEP, ctxAI);
+    if (stallT > 0) { stallT -= STEP; return { brake: 1 }; }
     const want = !!input.boost && boost > 0.01, inp = Object.assign({}, input, { boost: want });
     // fully slammed by a rival: the wheel turns away from the hit, all of it for 0.3 s, then handed back
     if (ooc) {
@@ -646,6 +694,8 @@ const RaceGame = (() => {
           if (r.wreck > 0) { r.wreck -= STEP; if (r.wreck <= 0) ai.respawn(r, r.body.track ? r.body.track.s - 10 : level.start.s); }
           else if (r.stuck > 3) ai.respawn(r, r.body.track ? r.body.track.s : level.start.s);
         }
+        // the tank's race is over when the last rival's is (three laps at 72 km/h would take minutes)
+        if (state === 'race' && unranked() && ai.rivals.length && ai.rivals.every(r => r.prog.done)) finish(simT);
         // boost: spent while held, filled by runs in the oncoming lanes, drifting and in the air (by
         // the metre, once each is long enough: score.js), which score when they end
         if (state === 'race') {
@@ -674,10 +724,10 @@ const RaceGame = (() => {
     if (state === 'crash') updateCrash(dt, input);
     else if (state !== 'replay') {
       const p = car.pose, spinNow = car.wheels[2].spin;
-      R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: car.roll + car.gRoll, lift: car.y, steer: car.steer }, spinNow - prevSpin);
+      R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll, lift: car.y, steer: car.steer, wheelie: car.wheelie, car }, spinNow - prevSpin);
       prevSpin = spinNow;
       // the car faces the camera: a front three-quarter view, swaying 3-37 degrees off the nose
-      if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
+      if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4 * Math.max(1, specs[carKey].length / 4.86), 1.5, level); }
       else {
         R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dt);
         // the boost's first surge widens the view a little more (the camera keeps its own smoothed
@@ -687,16 +737,16 @@ const RaceGame = (() => {
     }
     // everyone else (instanced): the street as it was during a crash or replay
     const draws = (state === 'crash' || state === 'replay') && frozenDraw ? frozenDraw : drawStates();
-    const slots = { lexus: 0, mustang: 0 };
-    for (const d of draws) R.drawCar(d.key, slots[d.key]++, d);
+    const slots = {};
+    for (const d of draws) { slots[d.key] = slots[d.key] || 0; R.drawCar(d.key, slots[d.key]++, d); }
     R.endCars();
     // head and tail lights glowing at dusk and at night (everyone's, the player's too, but not in a crash)
     const glow = [];
     const lamps = (key, x, z, h, y) => {
-      const S = specs[key], c = Math.cos(h), s = Math.sin(h), f = S.xMin + S.length + 0.02, b = S.xMin - 0.02, w = S.width / 2 - 0.32;
+      const S = specs[key], L = lampsOf(key), c = Math.cos(h), s = Math.sin(h), f = S.xMin + S.length + 0.02, b = S.xMin - 0.02;
       for (const sd of [-1, 1]) {
-        glow.push({ x: x + c * f - s * sd * w, y: y + 0.7, z: z + s * f + c * sd * w, r: 1, g: 0.9, b: 0.72 });
-        glow.push({ x: x + c * b - s * sd * w, y: y + 0.86, z: z + s * b + c * sd * w, r: 0.95, g: 0.08, b: 0.04 });
+        glow.push({ x: x + c * f - s * sd * L.wh, y: y + L.yh, z: z + s * f + c * sd * L.wh, r: 1, g: 0.9, b: 0.72 });
+        glow.push({ x: x + c * b - s * sd * L.wt, y: y + L.yt, z: z + s * b + c * sd * L.wt, r: 0.95, g: 0.08, b: 0.04 });
       }
     };
     if (level.look !== 'day') {
@@ -720,6 +770,18 @@ const RaceGame = (() => {
     FX.listen(R.camera.position, R.camera.getWorldDirection(earDir), R.camera.up);   // positioned sounds are heard from the camera
     R.render();
     requestAnimationFrame(frame);
+  }
+  // where a car's head and tail lamps glow: the Lexus and Mustang as before, the garage's own cars
+  // at their lamp parts (height and spread from the model)
+  const lampCache = {};
+  function lampsOf(key) {
+    if (lampCache[key]) return lampCache[key];
+    const S = specs[key], part = (n) => S.parts.find((p) => p.name === n);
+    if (S.rig) { const h = S.lamps.head[0], t = S.lamps.tail[0]; return (lampCache[key] = { yh: h[1], yt: t[1], wh: Math.abs(h[2]), wt: Math.abs(t[2]) }); }
+    const H = part('BRITTLE_LightHR'), T = part('BRITTLE_LightTR');
+    const mid = (p, i) => (p.lo[i] + p.hi[i]) / 2;
+    return (lampCache[key] = key === 'lexus' || key === 'mustang' || !H || !T ? { yh: 0.7, yt: 0.86, wh: S.width / 2 - 0.32, wt: S.width / 2 - 0.32 }
+      : { yh: mid(H, 1), yt: mid(T, 1), wh: Math.min(S.width / 2 - 0.12, mid(H, 2)), wt: Math.min(S.width / 2 - 0.12, mid(T, 2)) });
   }
   // what to draw for the other cars
   function drawStates() {
@@ -848,12 +910,14 @@ const RaceGame = (() => {
   async function start() {
     $('#loading').textContent = 'Building the city…';
     const workerMode = RaceCrash.prepare();
-    await R.preparePlayer(carKey, specs[carKey], PAINTS[paintIdx].hex);   // warmed for a crash there
+    await R.preparePlayer(carKey, specs[carKey], paintNow().hex);   // warmed for a crash there
+    // the traffic's two cars, and the rivals' (one each); a wreck model of each for a crash with it
+    const others = [...new Set(RIVALS.map(r => r.key))].filter(k => k !== 'lexus' && k !== 'mustang');
     await R.prepareCars(['lexus', 'mustang'], 48);
+    await R.prepareCars(others, 4);
     R.prepareProps(props);
-    await R.prepareWreck('lexus', specs.lexus);
-    await R.prepareWreck('mustang', specs.mustang);
-    for (const m of [R.wrecks.lexus, R.wrecks.mustang]) m.warm(R.renderer, R.camera);
+    for (const k of ['lexus', 'mustang', ...others]) await R.prepareWreck(k, specs[k]);
+    for (const k of ['lexus', 'mustang', ...others]) R.wrecks[k].warm(R.renderer, R.camera);
     R.renderer.compile(R.scene, R.camera);
     // draw the particles once too (they draw nothing until the first crash), and everything else with
     // the frustum culling off: some drivers finish a shader only at its first draw, and the crash
@@ -867,7 +931,6 @@ const RaceGame = (() => {
     $('#loading').hidden = true;
     if (TEST) setupTest();
     else {
-      perf = { lexus: RaceCar.measure(specs.lexus), mustang: RaceCar.measure(specs.mustang) };   // about 0.1 s
       buildSelect(); placeForSelect(); showSelect();
       $('#hud').hidden = true; $('#select').hidden = false;
       if (q.has('go') && !SCRIPTED) startRace();   // Race again or Restart: straight into the race
@@ -876,5 +939,5 @@ const RaceGame = (() => {
   }
   start().catch((err) => { $('#loading').textContent = 'Could not start: ' + err.message; console.error(err); });
 
-  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return PAINTS[paintIdx]; }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, get health() { return health; }, props, standings };
+  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return paintNow(); }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, get health() { return health; }, props, standings };
 })();

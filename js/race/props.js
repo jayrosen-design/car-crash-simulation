@@ -224,9 +224,9 @@ const RaceProps = (() => {
     }
     function vsCar(b, pr, hits) {
       const c = b.car, A = carBox(c), T = pr.T;
-      // heights: the car's body from a little off the ground to 1.5 m up
-      const ey = extent3y(pr);
-      if (pr.p[1] - ey > c.y + 1.5 || pr.p[1] + ey < c.y + 0.12) return;
+      // heights: the car's body from a little off the ground to 1.5 m up (a rig's own band: rigs.js)
+      const ey = extent3y(pr), lo = c.spec.bodyLo === undefined ? 0.12 : c.spec.bodyLo, hi = c.spec.bodyHi === undefined ? 1.5 : c.spec.bodyHi;
+      if (pr.p[1] - ey > c.y + hi || pr.p[1] + ey < c.y + lo) return;
       const [mx, mz] = mainAxis(pr);
       const axes = [[A.ux, A.uz], [-A.uz, A.ux], [mx, mz], [-mz, mx]], dx = pr.p[0] - A.x, dz = pr.p[2] - A.z;
       let best = Infinity, nx = 0, nz = 0;

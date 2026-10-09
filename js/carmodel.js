@@ -515,12 +515,17 @@ gl_Position = projectionMatrix * mvPosition;`);
     // A plain engine block and radiator for a model that has none, so an open engine bay isn't
     // empty; they sit in the lattice's engine zone and crush with it.
     if (spec.addEngine) {
-      const E = spec.engine, x0 = spec.xMin + E.u0, x1 = spec.xMin + E.u1, yb = spec.yBottom + 0.08, yt = Math.min(E.yMax, spec.yBottom + 0.62);
+      // (under the hood: a low car's bonnet sits below the block's usual height)
+      const E = spec.engine, hood = Math.min(...[0, 0.25, 0.5, 0.75, 1].map(f => P.topHeight(E.u0 + f * (E.u1 - E.u0), spec)));
+      const x0 = spec.xMin + E.u0, x1 = spec.xMin + E.u1, yb = spec.yBottom + 0.08, yt = Math.min(E.yMax, spec.yBottom + 0.62, hood - 0.07);
       const box = (sx, sy, sz, x, y, z, name) => { const g = new T.BoxGeometry(sx, sy, sz); g.translate(x, y, z); addSkinned(g, name, 'RIGID_Mech_Engine'); };
       box(x1 - x0, yt - yb, 0.62, 0.5 * (x0 + x1), 0.5 * (yb + yt), 0, 'mech:engine');
       box(0.75 * (x1 - x0), 0.06, 0.5, 0.5 * (x0 + x1), yt + 0.03, 0, 'mech:cover');
-      // the radiator: behind the grille, no wider than it (a wider one showed through the bumper's curved corners)
-      box(0.06, 0.42, 0.84, x1 + 0.02, spec.yBottom + 0.3, 0, 'mech:engine');
+      // the radiator: behind the grille, no wider than it (a wider one showed through the bumper's curved
+      // corners), below the nose; none for an engine behind the seats
+      const nose = P.topHeight(Math.min(E.u1 + 0.02, spec.length - 0.05), spec) - 0.05, rBot = spec.yBottom + 0.09;
+      const [rH, rY] = nose < spec.yBottom + 0.51 ? [nose - rBot, 0.5 * (nose + rBot)] : [0.42, spec.yBottom + 0.3];
+      if (E.u1 > spec.hPoint[0] - spec.xMin) box(0.06, rH, 0.84, x1 + 0.02, rY, 0, 'mech:engine');
     }
 
     // wheels: hub at the origin, axle along +z (outboard on the right); mirrored for the left
@@ -875,5 +880,5 @@ gl_Position = projectionMatrix * mvPosition;`);
   // position), aStrain (plastic strain, 1 = 50%) and aComp (cell compression); uniforms: uStrainMode, uCrumple
   // a page with its own sky (the simulator's) hands its reflection map to the models made after
   const useEnvironment = (tex) => { envTex = tex; };
-  return { create, environment, useEnvironment, crumpleMaterial: patchFrozen, CRUMPLE_DEPTH };
+  return { create, environment, useEnvironment, crumpleMaterial: patchFrozen, CRUMPLE_DEPTH, parseGLB };
 })();
