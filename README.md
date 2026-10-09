@@ -23,6 +23,8 @@ There are also two game modes, with crashes worked out by the same solver:
 - **[Race](#race-game-mode):** drive it yourself, three laps of a city street circuit against seven rivals through two-way traffic, on three tracks.
 - **[Destruction](#destruction-game-mode):** drive into a busy junction (three of them) and cause as much damage as you can, Burnout-style, with gas tankers that explode.
 
+And a game of another kind, with no cars: **[Hurricane Brawl](#hurricane-brawl-game-mode)**. You play a storm (a hurricane, tornado, blizzard, sandstorm, supercell or wildfire) on a 3D globe, brawling rival storms and wrecking as much of the world as you can before the time runs out. It plays with a keyboard, a mouse or a controller.
+
 > **A teaching model.** It is not validated against physical crash tests. Use it to compare settings and see trends, not to predict real injuries.
 
 ---
@@ -34,26 +36,27 @@ There are also two game modes, with crashes worked out by the same solver:
 3. [Using the simulator](#using-the-simulator)
 4. [Race (game mode)](#race-game-mode)
 5. [Destruction (game mode)](#destruction-game-mode)
-6. [Technical architecture](#technical-architecture)
-7. [How the physics works](#how-the-physics-works)
-8. [Occupant and injury models](#occupant-and-injury-models)
-9. [How each crash lab works](#how-each-crash-lab-works)
-10. [Simulation diagrams](#simulation-diagrams): [rigid barrier](#rigid-barrier), [brick wall](#brick-wall), [frontal overlap](#frontal-overlap-lab), [two vehicles](#two-vehicle-collision-lab), [side impact](#side-impact-lab), [whiplash](#whiplash-sled-lab), [restraints](#occupant-restraint-lab), [pedestrian](#pedestrian-and-emergency-braking-lab)
-11. [Rendering the damage](#rendering-the-damage)
-12. [Equations and sources](#equations-and-sources)
-13. [Verification](#verification)
-14. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
-15. [Design decisions](#design-decisions)
-16. [Limitations](#limitations)
-17. [Project structure](#project-structure)
-18. [Credits](#credits)
-19. [References](#references)
+6. [Hurricane Brawl (game mode)](#hurricane-brawl-game-mode)
+7. [Technical architecture](#technical-architecture)
+8. [How the physics works](#how-the-physics-works)
+9. [Occupant and injury models](#occupant-and-injury-models)
+10. [How each crash lab works](#how-each-crash-lab-works)
+11. [Simulation diagrams](#simulation-diagrams): [rigid barrier](#rigid-barrier), [brick wall](#brick-wall), [frontal overlap](#frontal-overlap-lab), [two vehicles](#two-vehicle-collision-lab), [side impact](#side-impact-lab), [whiplash](#whiplash-sled-lab), [restraints](#occupant-restraint-lab), [pedestrian](#pedestrian-and-emergency-braking-lab)
+12. [Rendering the damage](#rendering-the-damage)
+13. [Equations and sources](#equations-and-sources)
+14. [Verification](#verification)
+15. [Tools: building, recording, exporting models](#tools-building-recording-exporting-models)
+16. [Design decisions](#design-decisions)
+17. [Limitations](#limitations)
+18. [Project structure](#project-structure)
+19. [Credits](#credits)
+20. [References](#references)
 
 ---
 
 ## Getting started
 
-**Open `Car Crash Simulation.html`** (the home page), **`Simulator.html`** (the simulator), **`Race.html`** (the Race game) or **`Destruction.html`** (the Destruction mode) in Chrome, Edge, Firefox or Safari. Each is a single self-contained file, so they work straight from disk (`file://`) or from any static web host, such as GitHub Pages.
+**Open `Car Crash Simulation.html`** (the home page), **`Simulator.html`** (the simulator), **`Race.html`** (the Race game), **`Destruction.html`** (the Destruction mode) or **`HurricaneBrawl.html`** (Hurricane Brawl) in Chrome, Edge, Firefox or Safari. Each is a single self-contained file, so they work straight from disk (`file://`) or from any static web host, such as GitHub Pages.
 
 Requirements:
 - **WebGL 2.** Any desktop or laptop GPU from the last decade works; phones work but the layout is cramped.
@@ -71,10 +74,10 @@ Simulator.html?lab=side&impactor=pole&steel=mild
 Simulator.html?solver=gpu                      the crash computed on the GPU (WebGPU); also with ?lab=
 ```
 
-For development, open `index.html` (or `game.html` for Race, `junction.html` for Destruction) instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`. Opened from disk, `game.html` and `junction.html` run their crashes on the main thread, because the browser won't let them read their own scripts for the worker; `Race.html`, `Destruction.html` and any web server don't have that limit.
+For development, open `index.html` (or `game.html` for Race, `junction.html` for Destruction, `globe.html` for Hurricane Brawl) instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`. Opened from disk, `game.html` and `junction.html` run their crashes on the main thread, because the browser won't let them read their own scripts for the worker; `Race.html`, `Destruction.html` and any web server don't have that limit.
 
 **Hosting.** The site is static and needs no build step.
-- **Vercel:** import the repository with the framework preset *Other*. `vercel.json` serves `home.html` at `/`; it loads the video and pictures from `media/` instead of embedding them, so it opens faster than the single-file home page. `.vercelignore` keeps the docs and tools off the site. It also leaves out `index.html` (the developer page), because Vercel serves a real file at `/` before it applies any rewrite, `game.html` with `media/race/`, which `Race.html` embeds, and `junction.html`. `/race` serves `Race.html`, and `/destruction` serves `Destruction.html`.
+- **Vercel:** import the repository with the framework preset *Other*. `vercel.json` serves `home.html` at `/`; it loads the video and pictures from `media/` instead of embedding them, so it opens faster than the single-file home page. `.vercelignore` keeps the docs and tools off the site. It also leaves out `index.html` (the developer page), because Vercel serves a real file at `/` before it applies any rewrite, `game.html` with `media/race/`, which `Race.html` embeds, `junction.html` and `globe.html`. `/race` serves `Race.html`, `/destruction` serves `Destruction.html`, and `/brawl` serves `HurricaneBrawl.html`.
 - **Other static hosts** (GitHub Pages, Netlify and others) work too: open `home.html` or `Car Crash Simulation.html`.
 
 ---
@@ -442,6 +445,141 @@ node tools/headless-check.js world      includes the solver's moving boxes, roof
 - **Not verified:**
   - **Hardware:** a real Xbox controller, and a real phone. The touch buttons were tested with simulated taps at phone size.
   - **The pile-up's physics:** it is a game's rigid-body model, not the crash solver. Wrecks dent by shader, not by deforming.
+
+## Hurricane Brawl (game mode)
+
+<img src="media/readme/brawl.jpg" width="640" alt="Hurricane Brawl: a category 3 hurricane over southern Japan, with damage popping up over Nagoya and Tokyo, a tornado brawling with it, the standings at the top left, the storm's energy and special at the bottom left and the world map at the bottom right">
+
+`HurricaneBrawl.html` is a game of another kind, with no cars. You play a storm on a 3D globe against one to five rival storms, each a different natural disaster. Whoever does the most damage to the world before the time runs out wins (two, three or five minutes).
+- **Feed.** Each storm gains energy over the terrain that suits it and loses it elsewhere: a hurricane feeds on warm ocean and falls apart over land, a tornado the other way round.
+- **Wreck.** Every city and every 1° cell of countryside under a storm loses a share of what is left of it each second, credited to that storm in US dollars.
+- **Brawl.** Storms that meet lock together and orbit each other (the Fujiwhara effect), draining each other's energy. Each type beats one other and loses to one. A storm at zero energy is gone for 4 s.
+- **Specials.** Each type has its own move: a storm surge, a dash, a whiteout, a dust wall, lightning or a firestorm.
+
+Open `HurricaneBrawl.html`, or `/brawl` on the website. For development, open `globe.html`.
+
+| | Keyboard | Mouse | Controller (Xbox layout) |
+|---|---|---|---|
+| Move | W A S D, arrows | Hold the left button: toward the cursor | Left stick |
+| Boost (x1.9 speed, costs energy) | Shift | Double-click and hold | A, right trigger |
+| Special | Space | Right button (lightning aims at the cursor) | X, B, left trigger |
+| Turn the camera · zoom | Q / E · Z / X | Middle-drag · wheel | Right stick |
+| North up, or free | C | | Y |
+| Big map | Tab | | View |
+| Pause | Esc, P | | Menu |
+| Sound on and off | M | | |
+| Menus | arrows or WASD, Enter | click | d-pad or left stick, A; B back |
+
+**Other controllers.** Any controller the browser gives the Gamepad API's standard mapping works the same way, by button position, and the on-screen hints use its own button names:
+- **Nintendo Switch Pro Controller:** B or ZR boosts, Y or ZL fires the special, X turns north up, − opens the big map and + pauses. In menus A picks and B goes back, as on the Switch.
+- **PlayStation:** ✕ or R2, □ or L2, △, Create and Options.
+- **Joy-Cons:** a pair works where the browser presents them as one standard controller; a single Joy-Con doesn't have the standard mapping.
+
+Rumble works where the browser and controller support it. On a touch screen, holding a finger on the globe steers; there are no on-screen buttons for boost or the special.
+
+### A match
+
+- **Select.** Pick your storm, how many rivals (1–5), the time and the rivals' skill (Breeze, Gale or Tempest). The panel on the right shows the storm's size, speed and wrecking power, what feeds it and what kills it, its special and its matchups. Your best damage with each storm is kept in this browser. A match between four AI storms plays on the globe behind the menu.
+- **Start.** Every storm starts at 60 energy, at a place that feeds it near a lot of cities: a 2° point within 61° of the equator where its type gains 3/s or more, among the 35% of them with the most city value within 2,500 km. It is at least 3,500 km from the others where that can be found. The rivals are other types, picked at random.
+- **The storms** (`js/brawl/storms.js`). Energy goes from 0 to 100; the radius grows with its square root. The category on the HUD is the type's own scale (hurricane Cat 1–5, tornado EF0–EF5, blizzard RSI 1–5), from the energy: 20, 40, 58, 75 and 90.
+
+  | Storm | Feeds on (energy/s) | Dies over (energy/s) | Radius (km) | Speed (km/s) | Hits harder | Special |
+  |---|---|---|---|---|---|---|
+  | Hurricane | warm ocean +6 | desert and ice −7, tundra −6, temperate land and cold ocean −5, tropical land −4 | 280–760 | 380 | coastal cities x1.7 (inland x0.55) | Storm surge, 10 s |
+  | Tornado | temperate land +6, tropical land +3 | cold ocean −6, ocean −5, ice −5, warm ocean −4 | 110–240 | 560 | temperate land x1.2 | Twister dash, 6 s |
+  | Blizzard | ice +6, tundra +5, cold ocean +4 (temperate land +2.5) | warm ocean, tropical land −6; desert −4 | 300–700 | 350 | tundra x1.3, temperate land x1.2 | Whiteout, 12 s |
+  | Sandstorm | desert +7 | the seas −5 to −6, ice −5, lakes −4 | 230–580 | 440 | desert x1.4 | Dust wall, 8 s |
+  | Supercell | tropical and temperate land +4, warm ocean +3 | ice −5 (nowhere else worse than −3) | 170–430 | 470 | | Lightning, 6 s |
+  | Wildfire | temperate land +5, tropical land and tundra +3 | every sea −7, ice −7, lakes −5 | 170–470 | 360 | deserts x0.6, coasts x0.8 | Firestorm, 11 s |
+
+- **The specials.**
+  - **Storm surge:** a ring from 0.6 to 2.4 radii in a second. A rival it reaches loses 20 x energy/100 (x the matchup) and is flung back up to 700 km/s. Every city it passes is flooded, coastal ones most.
+  - **Twister dash:** 0.9 s at 3.2 times the speed, wrecking 2.5 times as hard; a rival it rams takes 2.2 times a ram's hit, and the tornado takes half the brawl drain while dashing.
+  - **Whiteout:** for 5 s everything within 2.4 radii crawls at x0.45 speed and loses 5 energy a second; the blizzard gains 1 a second for each, and the cities inside freeze a little.
+  - **Dust wall:** a wall 3.6 radii wide rolls out ahead at 1,500 km/s for 1.4 s (about 2,100 km). A rival in its way loses 16 x energy/100, is pushed on and slowed for 1.5 s; each city it passes is hit once.
+  - **Lightning:** three bolts where you aim (the mouse) up to 2,600 km away, or at the nearest rival in range, at 0.15, 0.4 and 0.65 s. Each takes 9 x energy/100 from a rival within about 320 km and wrecks the cities within 240 km.
+  - **Firestorm:** seven patches of fire (one under the wildfire, six round it at 1.4 radii) burn for 7 s. A rival in them loses 6 energy a second, and the cities and countryside in them burn.
+- **Who beats whom.** Sandstorm > hurricane > wildfire > blizzard > tornado > supercell > sandstorm: each does 1.5 times the drain to the next one round and 0.7 times to the one before. The select screen gives the reasons (dry dust starves a hurricane, rain drowns a fire, fire melts snow, cold stable air kills a tornado's updraft, a tornado tears a storm's updraft apart, rain washes dust out of the air).
+- **Brawls** (`js/brawl/sim.js`).
+  - **Contact.** Two storms closer than 0.7 times the sum of their radii orbit their midpoint, counter-clockwise in the north and clockwise in the south.
+  - **The drain.** Each drains the other at 12 x its energy/100 x the matchup x (its radius / the other's)^0.5 (within 0.6–1.6) x how deep the overlap is, per second. The one draining faster takes in 40% of what the other loses.
+  - **Rams.** Boosting or dashing in at more than 250 km/s hits for 10 x energy/100 and knocks the other back at 700 km/s; then not again between the same two for 0.7 s.
+  - **KOs.** A storm at zero energy is gone. If a rival hit it in the last 4 s, that rival is credited with the KO and takes in 25 energy; otherwise it fell apart on its own (a hurricane stranded inland, say). It comes back 4 s later at a place that suits it, with 50 energy and 2.5 s of shield.
+- **Moving on the globe.** Storms steer toward the direction they are given, with their own acceleration, and the prevailing winds carry them: the trade winds westward in the tropics, the westerlies eastward further out. The wind is −60 cos 3φ km/s toward the east at latitude φ, scaled by how much each type drifts (a wildfire 0.3, a hurricane 1).
+- **Damage.** Within a storm's radius r, a city at distance d loses power x energy/100 x (1 − (d/r)²) x the multiplier above of what is left of it per second (power: hurricane 0.12, tornado 0.36, blizzard 0.15, sandstorm 0.13, supercell 0.14, wildfire 0.12), and the countryside 80% of that. So a city hit again pays less. A city that falls below 30% of its value is "devastated".
+- **Rebuilding.** Everything damaged gets back 0.8% of what it lost each second (half in about 90 s), so the cities wrecked early are worth hitting again later.
+- **Energy surges.** An orb appears every 18 s from 10 s (two at most, away from the storms): the first storm to reach it gets 35 energy and 5 s at x1.3 speed.
+- **The end.** When the time runs out, the storms are ranked by damage. The results show each storm's damage, the cities it devastated, its KOs and losses, its peak category and the city it hit hardest.
+
+**The Earth** (`js/brawl/earth.js`, data in `js/brawl/earth-data.js`).
+- **Land and lakes.** Natural Earth's 1:50m land with its lakes cut out, rasterised to 2048 x 1024 cells (about 20 km).
+- **Climate.** Every half-degree cell is sea, lake or land, with a terrain worked out from its latitude and a few boxes:
+  - **Warm ocean:** within 26° of the equator, but not the cold currents off the oceans' eastern sides (California, Humboldt, Canary, Benguela, West Australia); plus the Gulf of Mexico, the Gulf Stream and the Kuroshio. Beyond 45° (40° in the south) it is cold ocean, and past 78° N or 68° S sea ice.
+  - **Desert:** the Sahara, Arabia, Iran to the Thar, Central Asia, the Taklamakan and Gobi, the US Southwest, the Namib and Kalahari, the Atacama, Patagonia, the Horn of Africa, and inland Australia.
+  - **Land:** tropical within 18° of the equator, tundra and taiga beyond 55° (and Tibet), ice in Antarctica, Greenland and past 72° N, temperate elsewhere.
+- **Cities.** Natural Earth's populated places with a metro population of 200,000 or more (826).
+  - **Value:** the population x ($15,000 + 0.6 x the country's GDP per person), from Natural Earth's country table. A rich city is worth more, but not in proportion. The cities add up to $38.3 trillion.
+  - **The countryside:** worth 30% of that, $11.5 trillion, spread over the 1° land cells by area and by the value of the cities within 1,200 km. Deserts, tundra and ice are worth less.
+- **These are a game's numbers.** The climate is a rough sketch, and the values are a rough measure of what is built in a place, not economic data.
+
+**The rivals** (`js/brawl/ai.js`) give the same inputs a player would. Every think (0.3–0.9 s by skill) each one does, in order of need:
+- **Flee** a rival that would beat it, if it's close;
+- **Refuel** on terrain that feeds it, when it's below 30 energy;
+- **Hunt** a rival it would beat (Tempest hunts even matches);
+- **Grab** an energy surge nearby;
+- **Raid** otherwise: it goes for the city worth most to it, by what is left of it over (1 + (d/1,200 km)²). It only goes if the terrain on the way leaves it 15 energy or more, and less gladly if another storm is already there.
+
+On the way it steers round terrain that would drain it, and eases off over the city it's wrecking. Each type has its rule for when its special pays, used with the skill's probability (45%, 80% or 100%).
+
+### How it works
+
+- **No physics engine.** The storms are points on a unit sphere with tangent velocities, moved along great circles at 60 steps a second, so the poles and the date line are nothing special. Every rule above is in `sim.js`; the same seed and inputs always give the same match.
+- **Neighbours.** `citiesNear` and `ruralNear` look only at the 5° buckets and 1° cells a circle can reach (its rows, and in each the longitudes of its widest part).
+- **The globe** (`js/brawl/render.js`, three.js).
+  - **Texture.** One sphere, with a 2048 x 1024 texture built at load from the mask and the climate. The land's colours blend from one terrain to the next along borders warped by noise. The sea's colour comes from the depth near the coast and the latitude. The texture's alpha holds the mask blurred over five cells, so the shader draws a smooth coast at any zoom.
+  - **Light.** A sun goes round once every two minutes: city lights at night, the sun's glint on the sea, a rim of atmosphere, a thin cloud layer.
+  - **Damage.** A 1° damage layer is tinted by the storm type that did it: floods, torn ground, frost, dust, smoke, burn scars.
+- **The storms.**
+  - **Clouds.** Discs bent onto the sphere in the vertex shader, with one fragment shader for every kind of cloud: spiral arms on a log spiral, an eye and its wall, and noise that rotates faster near the middle. Two layers of noise, each restarting while the other is shown, keep the swirl from winding up.
+  - **Each type** adds its own parts: the tornado's funnel and wall cloud, the supercell's anvil and the flashes inside it, the wildfire's fire front and smoke, the sandstorm's wall of dust. Debris, snow, dust and embers are particles moved on the GPU.
+  - **Moves.** The surge's ring, the whiteout, the dust wall, the bolts, the fire, arcs between brawling storms, sparks on hits and a burst on a KO.
+  - **Few programs.** Discs, rings, walls, funnels and particles each have one shader, shared by every storm.
+- **The camera** rides above your storm, tilted toward the top of the screen: 35° at the lowest and 13° at the highest of its 2,500–16,000 km. Your stick or keys are turned into a direction on the globe from it. North stays up unless you turn it (then it is carried along with you). The mouse picks the point on the globe under the cursor.
+- **Sound** (`js/brawl/audio.js`) is synthesised with Web Audio:
+  - **The wind:** filtered noise following your energy and the camera's height, and a rumble under it while you brawl;
+  - **One-shots:** surge, dash, freeze, dust, thunder, fire, thuds, KOs, energy surges, city hits and the countdown.
+- **Settings in the URL:** `?storm=`, `?rivals=1-5`, `?time=<seconds>`, `?ai=breeze|gale|tempest`, `?seed=`, `?demo=0` (no match behind the menu), `?bloom=0`, `?clouds=0`.
+
+### Checks
+
+```
+node tools/brawl-check.js           the game's DOM-free parts, in Node (about 20 s)
+node tools/brawl-check.js brawl     only the checks whose names contain "brawl"
+```
+
+It exits non-zero if any of these fails:
+- **The Earth:** the mask decodes to its size and is about a third land; 15 known places have the right terrain (London, the mid-Pacific, the Sahara, Antarctica, Kansas, the Amazon, Siberia, the North Atlantic, the Gulf of Mexico, Lake Victoria, Greenland, off California, the Philippine Sea, the outback, Perth); every city has land within 60 km; the countryside is worth 30% of the cities.
+- **Queries:** `citiesNear` and `ruralNear` find what a search of everything finds, at 45 points (by the poles and across 180° too) and three radii; `along`, `toward` and `dist` agree.
+- **Motion:** a storm steered east stays on the sphere and moves at its speed plus the wind; boost is x1.9 and costs energy.
+- **Terrain:** a hurricane gains over warm ocean and loses over Kansas; a tornado the other way round.
+- **Damage:** 2 s of a tornado on Tokyo wrecks it, the damage credited is what Tokyo lost (rebuilding aside), health stays in 0–1, and the storms' totals add up to the Earth's.
+- **Brawls:**
+  - two equal storms drain each other equally;
+  - a sandstorm beats a hurricane;
+  - storms locked together turn counter-clockwise in the north and clockwise in the south;
+  - a KO after a hit is credited, and the storm comes back 4 s later with 50 energy and a shield.
+- **Specials:** each type's move does what it says to a rival placed for it, and nothing beyond its reach.
+- **Matches:** a three-minute match of all six AI storms at each skill has no NaN, ends on time, and every storm scores; the same seed gives the same match, another seed a different one.
+- **Balance:** over six such matches, each type's average damage is within x0.5–x2 of the mean (printed). In the last run: wildfire x1.34 the mean, blizzard x0.77, the others between.
+
+`globe.html?test=1` (with `&time=<seconds>`) lets an AI play your storm at once, and puts the results in `window.__brawl` (the ranking, frame times, whether bloom was on).
+
+**Checked in headless Chromium** (software WebGL), with scripts that aren't in the repository: the keyboard, the mouse and a simulated Switch Pro Controller and Xbox controller each pick a storm, start, move, boost, fire the special, pause and play again, with no errors. `HurricaneBrawl.html` copied alone into an empty folder plays a match.
+
+**Not verified:**
+- **Hardware:** a real Switch, Xbox or PlayStation controller; a phone.
+- **Frame rate on a real graphics card:** software WebGL in the checks runs about 10 frames a second.
+- **The sound,** which wasn't listened to.
 
 ---
 
@@ -2260,7 +2398,7 @@ The CPU solver is unchanged by the GPU option. With the GPU option off, eight cr
 node tools/build-standalone.js
 ```
 
-Writes `Simulator.html` (from `index.html` and every script), `Race.html` (from `game.html`, its scripts and the textures in `media/race/assets.js`), `Destruction.html` (from `junction.html` the same way) and `Car Crash Simulation.html` (from `home.html`, `css/site.css` and `media/`; it embeds the 16:9 videos only and plays them on phones too, while the website serves the 9:16 cuts). Edit the sources, not these four files. It stops if any embedded file doesn't appear intact. `node tools/build-standalone.js Destruction` builds only the files whose names contain the word.
+Writes `Simulator.html` (from `index.html` and every script), `Race.html` (from `game.html`, its scripts and the textures in `media/race/assets.js`), `Destruction.html` (from `junction.html` the same way), `HurricaneBrawl.html` (from `globe.html` and its Earth data) and `Car Crash Simulation.html` (from `home.html`, `css/site.css` and `media/`; it embeds the 16:9 videos only and plays them on phones too, while the website serves the 9:16 cuts). Edit the sources, not these five files. It stops if any embedded file doesn't appear intact. `node tools/build-standalone.js Destruction` builds only the files whose names contain the word.
 
 ```
 blender -b -Y --factory-startup --python tools/fetch-race-assets.py
@@ -2273,6 +2411,19 @@ node tools/readme-images.js
 ```
 
 Captures this README's pictures from the website itself (`home.html` in headless Chrome), so the README looks like the site: the home page's hero, the eight simulations' cards (without their descriptions) and the two game trailers' players, in `media/readme/`. Re-run it when the home page's pictures or posters change. `.vercelignore` keeps them off the website.
+
+### Hurricane Brawl's Earth
+
+```
+NODE_USE_ENV_PROXY=1 node tools/brawl-earth.js    (the variable only behind a proxy)
+node tools/brawl-earth.js <dir>                    from Natural Earth files already downloaded
+```
+
+Downloads four Natural Earth layers (about 6 MB, from its GitHub mirror) and writes `js/brawl/earth-data.js` (82 KB):
+- **the land mask:** 1:50m land with its lakes cut out, at 2048 x 1024 cells, run-length encoded. An island too small to hold a cell's centre (Malta, Madeira) still gets the cell at its middle.
+- **the cities:** populated places of 200,000 or more, with each country's GDP per person from the country table.
+
+Rebuild afterwards.
 
 ### The website's reading pages
 
@@ -2402,16 +2553,19 @@ Car Crash Simulation.html   generated single-file home page (edit home.html, the
 Simulator.html              generated single-file simulator (edit the sources, then rebuild)
 Race.html                   generated single-file Race game (edit game.html and js/race/, then rebuild)
 Destruction.html            generated single-file Destruction mode (edit junction.html and js/destruction/, then rebuild)
+HurricaneBrawl.html         generated single-file Hurricane Brawl game (edit globe.html and js/brawl/, then rebuild)
 home.html                   home page source
 physics.html                generated physics page (edit README.md, then run tools/build-site.js)
 sources.html                generated references page (likewise)
 index.html                  simulator page source and script loader
 game.html                   Race game page source and script loader
 junction.html               Destruction mode page source and script loader
+globe.html                  Hurricane Brawl page source and script loader
 css/style.css               layout and theme
 css/site.css                the website's look (home, physics and sources pages)
 css/game.css                the Race game's HUD and menus (the Destruction mode's base too)
 css/destruction.css         the Destruction mode's score, popups, medal targets and callouts
+css/brawl.css               Hurricane Brawl's menus, HUD, map, labels and banners
 js/
   vehicles.js     vehicle specs: lattice grid, zones, interior lines; the side-impact trolley
   physics.js      XPBD lattice, barriers (rigid, brick wall, offset + honeycomb, pole, and the game
@@ -2455,16 +2609,30 @@ js/
     wrecks.js     the pile-up: rigid wrecks with sphere hulls, damage, fire and explosions, the cash ledger
     look.js       dusk, the heavy vehicles' meshes, dents, explosions and fires, lights, bloom, shake
     game.js       an attempt: select, countdown, the crash and its hand-over to the pile-up, score, HUD, results
+  brawl/
+    earth-data.js generated: the land mask, the cities and their countries' GDP per person (Natural Earth)
+    earth.js      the Earth: the mask, the climate's terrains, the cities' and the countryside's values,
+                  finding what is near a point, moving on a sphere
+    storms.js     the six storms: what feeds them, size, speed, power, their specials, who beats whom
+    sim.js        a match: motion and winds, energy from the terrain, damage, brawls, rams, specials,
+                  KOs, energy surges, rebuilding, the clock
+    ai.js         the rival storms: flee, refuel, hunt, raid; when to use the special
+    input.js      keyboard, mouse and gamepad (Xbox, Switch and PlayStation names), rumble
+    audio.js      the wind and the one-shots, synthesised with Web Audio
+    render.js     the globe, the storms, their moves, the damage layer, the camera
+    game.js       select, a match, the HUD and the map, labels, pause, results
 models/           generated car models (Draco GLB as base64) and physics data
 media/            the home page's trailers (crash tests, Race and Destruction, each also in 9:16 for phones), background loop, posters and pictures (destruction.jpg: the Destruction card)
 media/race/       the Race game's textures and sky (generated by fetch-race-assets.py)
-media/readme/     this README's pictures, captured from the website (readme-images.js)
+media/readme/     this README's pictures, captured from the website (readme-images.js); brawl.jpg from the game
 tools/
   headless-check.js     physics and lab checks in Node
   race-check.js         the Race game's level, cars, near misses, walls, slams, takedown rules, score and a full AI race, in Node
   destruction-check.js  the Destruction mode's junction, traffic, pile-up, wrecks and score, in Node
+  brawl-check.js        Hurricane Brawl's Earth, queries, motion, damage, brawls, specials, matches and balance, in Node
+  brawl-earth.js        builds Hurricane Brawl's Earth data from Natural Earth
   gpu-check.js          the GPU solver against the CPU solver, in headless Chrome
-  build-standalone.js   builds the four single-file pages
+  build-standalone.js   builds the five single-file pages
   build-site.js         builds physics.html and sources.html from this README
   fetch-race-assets.py  downloads and packs the Race game's textures (Blender)
   record-video.js       records the home page's media in headless Chrome
@@ -2489,6 +2657,8 @@ tools/
 Both models are split into parts, re-oriented, scaled and simplified for this app.
 
 **Race textures and sky:** from [Poly Haven](https://polyhaven.com), CC0: asphalt_02, concrete_floor_02 and red_brick_03 by Rob Tuytel; concrete_pavement and concrete_tile_facade by Charlotte Baglioni; beige_wall_001 by Dimitrios Savva and Rico Cilliers; the wide_street_01 HDRI by Sergej Majboroda.
+
+**Hurricane Brawl's Earth:** coastlines, lakes, populated places and country figures from [Natural Earth](https://www.naturalearthdata.com) (public domain), through its GitHub mirror [nvkelso/natural-earth-vector](https://github.com/nvkelso/natural-earth-vector).
 
 **Libraries:**
 - [three.js](https://threejs.org/) (MIT), loaded from jsDelivr;

@@ -3,6 +3,7 @@
   "rewrites": [
     { "source": "/", "destination": "/home.html" },
     { "source": "/race", "destination": "/Race.html" },
-    { "source": "/destruction", "destination": "/Destruction.html" }
+    { "source": "/destruction", "destination": "/Destruction.html" },
+    { "source": "/brawl", "destination": "/HurricaneBrawl.html" }
   ]
 }

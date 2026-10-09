@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Hurricane Brawl</title>
+<link rel="stylesheet" href="css/brawl.css">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="view"></div>
+  <div id="labels" aria-hidden="true"></div>
+
+  <div id="hud" hidden>
+    <div class="h-top">
+      <div id="h-time" class="h-time">3:00</div>
+      <div class="h-world">Damage to the Earth <b id="h-world">$0</b></div>
+    </div>
+    <ol id="h-board" class="h-board panel" aria-label="Damage by storm"></ol>
+    <div class="h-me panel" id="h-me">
+      <div class="h-name"><i id="h-chip"></i><b id="h-storm"></b><span id="h-cat" class="h-cat"></span></div>
+      <div class="h-bar" title="Energy"><i id="h-energy"></i><span style="left:20%"></span><span style="left:40%"></span><span style="left:58%"></span><span style="left:75%"></span><span style="left:90%"></span></div>
+      <div class="h-row"><span id="h-terrain"></span><b id="h-gain"></b></div>
+      <div class="h-row h-special"><span id="h-special"></span><div class="h-cd"><i id="h-cd"></i></div><kbd id="h-special-key">Space</kbd></div>
+      <div class="h-row h-match"><span>Strong vs <b id="h-strong"></b></span><span>Weak vs <b id="h-weak"></b></span></div>
+    </div>
+    <canvas id="h-map" class="h-map panel" width="720" height="360" aria-label="Map of the storms"></canvas>
+    <div id="h-feed" class="h-feed" aria-live="polite"></div>
+    <div id="popups" class="popups" aria-hidden="true"></div>
+    <div id="arrows" class="arrows" aria-hidden="true"></div>
+    <div id="banner" class="banner" aria-live="assertive"></div>
+    <div id="h-hint" class="h-hint"></div>
+    <div id="hurt" class="hurt"></div>
+  </div>
+
+  <div id="select" class="overlay select" hidden>
+    <header class="sel-head">
+      <p class="eyebrow">Natural disasters · a 3D brawl</p>
+      <h1>Hurricane Brawl</h1>
+      <p class="muted">Pick a storm and fight nature's worst over the whole globe. Feed on the terrain that suits you, brawl the rivals that cross you, and wreck more of the world than any of them before the time runs out.</p>
+    </header>
+    <section class="panel sel-main">
+      <div class="sel-row" data-row="0">
+        <h3>Your storm</h3>
+        <div id="sel-storms" class="sel-storms" role="radiogroup" aria-label="Storm"></div>
+      </div>
+      <div class="sel-row inline" data-row="1">
+        <h3>Rivals</h3>
+        <div id="sel-rivals" class="sel-opts" role="radiogroup" aria-label="Rivals"></div>
+      </div>
+      <div class="sel-row inline" data-row="2">
+        <h3>Time</h3>
+        <div id="sel-time" class="sel-opts" role="radiogroup" aria-label="Time"></div>
+      </div>
+      <div class="sel-row inline" data-row="3">
+        <h3>Rivals' skill</h3>
+        <div id="sel-ai" class="sel-opts" role="radiogroup" aria-label="Rivals' skill"></div>
+      </div>
+      <p class="sel-hint">↑ ↓ choose a row · ← → change it · Enter or A to start · or click</p>
+    </section>
+    <section class="panel sel-detail" aria-live="polite">
+      <h2 id="det-name"></h2>
+      <p id="det-blurb" class="muted"></p>
+      <div id="det-bars" class="bars"></div>
+      <dl class="specs" id="det-specs"></dl>
+      <p class="small muted" id="det-best"></p>
+    </section>
+    <footer class="sel-foot">
+      <button type="button" id="btn-start" class="btn primary big" data-row="4">Start <small>Enter · A</small></button>
+      <details class="sel-keys">
+        <summary>Controls</summary>
+        <table class="keys">
+          <tr><th></th><th>Keyboard</th><th>Mouse</th><th>Controller</th></tr>
+          <tr><td>Move</td><td>W A S D, arrows</td><td>Hold the left button</td><td>Left stick</td></tr>
+          <tr><td>Boost</td><td>Shift</td><td>Double-click and hold</td><td>A, right trigger</td></tr>
+          <tr><td>Special</td><td>Space</td><td>Right button (aims)</td><td>X, B, left trigger</td></tr>
+          <tr><td>Turn · zoom</td><td>Q / E · Z / X</td><td>Middle-drag · wheel</td><td>Right stick</td></tr>
+          <tr><td>North up / free</td><td>C</td><td></td><td>Y</td></tr>
+          <tr><td>Big map · pause</td><td>Tab · Esc</td><td></td><td>View · Menu</td></tr>
+          <tr><td>Sound</td><td>M</td><td></td><td></td></tr>
+        </table>
+        <p class="small muted">Controller buttons are Xbox names. On a Switch Pro Controller: B or ZR boosts, Y or ZL fires the special, X turns north up, − is the map and + pauses; in menus A picks and B goes back. On a PlayStation pad: ✕ or R2, □ or L2, △, Create, Options.</p>
+      </details>
+      <p class="credits">Coastlines, lakes, cities and countries: <a href="https://www.naturalearthdata.com" target="_blank" rel="noopener">Natural Earth</a> (public domain). The climate and the values are a game's rough ones. 3D graphics by three.js.</p>
+    </footer>
+  </div>
+
+  <div id="pause" class="overlay" hidden>
+    <div class="panel card">
+      <h2>Paused</h2>
+      <div class="actions"><button type="button" id="btn-resume" class="btn primary">Resume</button><button type="button" id="btn-restart" class="btn">Restart <small>R</small></button><button type="button" id="btn-quit" class="btn">Change storm</button></div>
+      <table class="keys">
+        <tr><th></th><th>Keyboard</th><th>Mouse</th><th>Controller</th></tr>
+        <tr><td>Move</td><td>W A S D, arrows</td><td>Hold the left button</td><td>Left stick</td></tr>
+        <tr><td>Boost</td><td>Shift</td><td>Double-click and hold</td><td>A, right trigger</td></tr>
+        <tr><td>Special</td><td>Space</td><td>Right button</td><td>X, B, left trigger</td></tr>
+        <tr><td>Turn · zoom</td><td>Q / E · Z / X</td><td>Middle-drag · wheel</td><td>Right stick</td></tr>
+        <tr><td>Big map · pause</td><td>Tab · Esc</td><td></td><td>View · Menu</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div id="results" class="overlay" hidden>
+    <div class="panel card wide">
+      <p class="eyebrow">Time!</p>
+      <h2 id="res-title"></h2>
+      <p id="res-sub" class="muted"></p>
+      <table class="results" id="res-table"></table>
+      <div class="actions"><button type="button" id="btn-again" class="btn primary">Play again <small>Enter · A</small></button><button type="button" id="btn-change" class="btn">Change storm</button></div>
+    </div>
+  </div>
+
+  <div id="loading">Loading 3D engine…</div>
+</div>
+
+<script src="js/brawl/earth-data.js"></script>
+<script src="js/brawl/earth.js"></script>
+<script src="js/brawl/storms.js"></script>
+<script src="js/brawl/sim.js"></script>
+<script src="js/brawl/ai.js"></script>
+<script type="module">
+  // three.js is an ES module from the CDN; the game's scripts are classic scripts so the page also
+  // works when opened straight from disk (file://). The standalone build embeds them as
+  // text/x-inline blocks.
+  const APP_SCRIPTS = ['js/brawl/input.js', 'js/brawl/audio.js', 'js/brawl/render.js', 'js/brawl/game.js'];
+  try {
+    const THREE = await import('three');
+    window.THREE = THREE;
+    try {
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+        import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
+        import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js')]);
+      Object.assign(window, { EffectComposer, RenderPass, UnrealBloomPass, OutputPass });
+    } catch (err) { console.warn('No bloom:', err); }
+    for (const src of APP_SCRIPTS) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        const inline = document.querySelector(`script[type="text/x-inline"][data-src="${src}"]`);
+        if (inline) { s.textContent = inline.textContent; document.body.appendChild(s); resolve(); return; }
+        s.src = src; s.onload = resolve;
+        s.onerror = () => reject(new Error('Could not load ' + src));
+        document.body.appendChild(s);
+      });
+    }
+  } catch (err) {
+    document.getElementById('loading').textContent = 'Could not start: ' + err.message + ' (three.js loads from cdn.jsdelivr.net, so an internet connection is needed).';
+    console.error(err);
+  }
+</script>
+</body>
+</html>

@@ -3,13 +3,14 @@
  *   Simulator.html             index.html with the stylesheet and every local script embedded
  *   Race.html                  game.html (the Race game) the same way, with its photo textures
  *   Destruction.html           junction.html (the Destruction mode) the same way
+ *   HurricaneBrawl.html        globe.html (the Hurricane Brawl game) the same way, with its Earth data
  *                              (three.js still comes from the CDN for these, so they need an internet
  *                              connection)
  *   Car Crash Simulation.html  home.html with its stylesheet, pictures and videos (css/, media/)
  *                              embedded (physics.html and sources.html are built by build-site.js)
  *   node tools/build-standalone.js           all of them
  *   node tools/build-standalone.js Race      only the ones whose file name contains "Race"
- * Edit the sources (index.html, game.html, junction.html, home.html, css/, js/, models/, media/) and rebuild; don't
+ * Edit the sources (index.html, game.html, junction.html, globe.html, home.html, css/, js/, models/, media/) and rebuild; don't
  * edit the output. */
 'use strict';
 const fs = require('fs');
@@ -50,6 +51,7 @@ const wanted = (output) => !only || output.includes(only);
 if (wanted('Simulator.html')) buildPage('index.html', 'Simulator.html');
 if (wanted('Race.html')) buildPage('game.html', 'Race.html');
 if (wanted('Destruction.html')) buildPage('junction.html', 'Destruction.html');
+if (wanted('HurricaneBrawl.html')) buildPage('globe.html', 'HurricaneBrawl.html');
 if (!wanted('Car Crash Simulation.html')) process.exit(0);
 
 // ---------------------------------------------------------------- the home page

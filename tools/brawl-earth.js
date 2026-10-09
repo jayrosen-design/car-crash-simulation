@@ -1,0 +1,118 @@
+/* Builds js/brawl/earth-data.js, the Hurricane Brawl game's Earth, from Natural Earth (public domain,
+ * naturalearthdata.com, through its GitHub mirror nvkelso/natural-earth-vector):
+ *   the land mask    ne_50m_land with ne_50m_lakes cut out, rasterised to an equirectangular grid
+ *                    (W x H cells, west to east from -180, north to south from 90), each cell 0 sea,
+ *                    1 land or 2 lake (a cell is what its centre falls in; an island too small for
+ *                    that gets the cell at its middle), run-length encoded
+ *   the cities       ne_50m_populated_places_simple with pop_max >= 200,000: name, country,
+ *                    latitude, longitude, metro population (pop_max), and the country's GDP per
+ *                    person (ne_50m_admin_0_countries: GDP_MD * 1e6 / POP_EST)
+ *   node tools/brawl-earth.js            downloads the four files (about 6 MB) and writes the data
+ *   node tools/brawl-earth.js <dir>      reads them from <dir> instead (the .geojson files, by name)
+ * Behind a proxy, run it with NODE_USE_ENV_PROXY=1. Don't edit the output; rerun this.
+ */
+'use strict';
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+const OUT = path.join(ROOT, 'js/brawl/earth-data.js');
+const BASE = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/';
+const FILES = ['ne_50m_land', 'ne_50m_lakes', 'ne_50m_populated_places_simple', 'ne_50m_admin_0_countries'];
+const W = 2048, H = 1024;
+const MIN_POP = 200000;
+
+async function load(name) {
+  const dir = process.argv[2];
+  if (dir) return JSON.parse(fs.readFileSync(path.join(dir, name + '.geojson'), 'utf8'));
+  const res = await fetch(BASE + name + '.geojson');
+  if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+  return res.json();
+}
+
+// fill every cell whose centre is inside the polygon (even-odd over its rings) with value v; a
+// polygon too small to hold a cell's centre (Malta, Madeira) still gets the cell at its middle
+function fill(grid, rings, v) {
+  const xs = [];
+  let n = 0;
+  let y0 = H, y1 = -1;
+  for (const r of rings) for (const [, lat] of r) { const y = (90 - lat) / 180 * H - 0.5; y0 = Math.min(y0, Math.floor(y)); y1 = Math.max(y1, Math.ceil(y)); }
+  y0 = Math.max(0, y0); y1 = Math.min(H - 1, y1);
+  for (let y = y0; y <= y1; y++) {
+    const lat = 90 - (y + 0.5) * 180 / H;
+    xs.length = 0;
+    for (const r of rings) {
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const [ax, ay] = r[j], [bx, by] = r[i];
+        if ((ay > lat) === (by > lat)) continue;
+        xs.push(ax + (lat - ay) / (by - ay) * (bx - ax));
+      }
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const a = Math.ceil((xs[k] + 180) / 360 * W - 0.5), b = Math.floor((xs[k + 1] + 180) / 360 * W - 0.5);
+      for (let x = Math.max(0, a); x <= Math.min(W - 1, b); x++) { grid[y * W + x] = v; n++; }
+    }
+  }
+  if (!n) {
+    let x0 = 1e9, x1 = -1e9, ya = 1e9, yb = -1e9;
+    for (const [lon, lat] of rings[0]) { x0 = Math.min(x0, lon); x1 = Math.max(x1, lon); ya = Math.min(ya, lat); yb = Math.max(yb, lat); }
+    const x = Math.min(W - 1, Math.floor(((x0 + x1) / 2 + 180) / 360 * W)), y = Math.min(H - 1, Math.floor((90 - (ya + yb) / 2) / 180 * H));
+    grid[y * W + x] = v;
+  }
+}
+const polygons = (g) => g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+
+// runs of one value as varints of (length << 2 | value), base64
+function encode(grid) {
+  const bytes = [];
+  for (let i = 0; i < grid.length;) {
+    const v = grid[i];
+    let n = 1;
+    while (i + n < grid.length && grid[i + n] === v) n++;
+    let x = n * 4 + v;
+    while (x >= 128) { bytes.push((x & 127) | 128); x = Math.floor(x / 128); }
+    bytes.push(x);
+    i += n;
+  }
+  return Buffer.from(bytes).toString('base64');
+}
+
+(async () => {
+  const [land, lakes, places, countries] = await Promise.all(FILES.map(load));
+  const grid = new Uint8Array(W * H);
+  for (const f of land.features) for (const p of polygons(f.geometry)) fill(grid, p, 1);
+  for (const f of lakes.features) for (const p of polygons(f.geometry)) fill(grid, p, 2);
+
+  const gdp = {};
+  for (const f of countries.features) {
+    const p = f.properties;
+    if (p.POP_EST > 0 && p.GDP_MD > 0) gdp[p.ADM0_A3] = p.GDP_MD * 1e6 / p.POP_EST;
+  }
+  const known = Object.values(gdp).sort((a, b) => a - b), median = known[known.length >> 1];
+  const cities = places.features.map(f => f.properties).filter(p => p.pop_max >= MIN_POP)
+    .sort((a, b) => b.pop_max - a.pop_max)
+    .map(p => [p.nameascii || p.name, p.adm0name, +p.latitude.toFixed(3), +p.longitude.toFixed(3), p.pop_max, Math.round(gdp[p.adm0_a3] || median)]);
+  const noGdp = places.features.filter(f => f.properties.pop_max >= MIN_POP && !gdp[f.properties.adm0_a3]).length;
+
+  const mask = encode(grid);
+  const land1 = grid.reduce((n, v) => n + (v === 1), 0);
+  const js = `/* Generated by tools/brawl-earth.js from Natural Earth (public domain): ne_50m_land and ne_50m_lakes
+ * (the mask), ne_50m_populated_places_simple (cities of ${MIN_POP.toLocaleString('en-US')} or more) and
+ * ne_50m_admin_0_countries (GDP per person). Don't edit; rerun the tool.
+ * mask: ${W} x ${H} cells, west to east from -180, north to south from 90; runs of varint(length << 2 | value),
+ * base64; 0 sea, 1 land, 2 lake. cities: [name, country, latitude, longitude, metro population,
+ * the country's GDP per person in US$]. */
+const BRAWL_EARTH_DATA = {
+  w: ${W}, h: ${H},
+  mask: '${mask}',
+  cities: [
+${cities.map(c => '    ' + JSON.stringify(c)).join(',\n')},
+  ],
+};
+if (typeof module === 'object' && module.exports) module.exports = BRAWL_EARTH_DATA;
+`;
+  fs.mkdirSync(path.dirname(OUT), { recursive: true });
+  fs.writeFileSync(OUT, js);
+  console.log(`wrote ${path.relative(ROOT, OUT)}: ${(js.length / 1024).toFixed(0)} KB; land ${(100 * land1 / grid.length).toFixed(1)}% of cells; ${cities.length} cities (${noGdp} with the median GDP per person)`);
+})().catch((e) => { console.error(e); process.exit(1); });
