@@ -594,11 +594,12 @@ const DestructionGame = (() => {
     selBusy = false; showSelect();
   }
   function pickPaint(i) { paintIdx = (i + PAINTS.length) % PAINTS.length; if (!selBusy) R.player.setPaint(PAINTS[paintIdx].hex); showSelect(); }
-  // another junction: the page again with ?level= (the car and paint kept)
+  // another junction: the page again with ?level= (the car and paint kept), once the music has faded out
+  // (the menu song picks up where it was)
   function pickLevel(key) {
     if (key === LEVEL || !DestructionLevel.LEVELS[key] || state !== 'select') return;
     try { localStorage.setItem('destruction-level', key); localStorage.setItem('destruction-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not kept */ }
-    const u = new URL(location.href); u.searchParams.set('level', key); location.href = u.toString();
+    const u = new URL(location.href); u.searchParams.set('level', key); Music.leave(() => { location.href = u.toString(); });
   }
   function updateSelect(inp) {
     if (inp.nav.y) { selRow = (selRow + inp.nav.y + 3) % 3; showSelect(); }
@@ -722,6 +723,11 @@ const DestructionGame = (() => {
       if ($('#touch').hidden === show) $('#touch').hidden = !show;
       if (upright.matches && show && !paused) setPaused(true);
     }
+    // the music (js/music.js): the menu song on the select screen, the junction's own song from the
+    // countdown, the results song from the tally; quieter and muffled while paused or in the slow-motion impact
+    Music.play(state === 'select' ? 'menu' : state === 'tally' || state === 'results' ? 'results' : 'destruction:' + LEVEL);
+    Music.preload('destruction:' + LEVEL, 'results');
+    Music.duck(paused ? 0.35 : state === 'impact' ? 0.5 : 1, paused || state === 'impact');
     if (state === 'select') updateSelect(input);
     if (state === 'results') { if (input.reset) retry(); else RaceInput.menu($('#results'), input); }   // Enter or A: the highlighted button (Retry first)
     else if (input.reset && ['countdown', 'run', 'impact', 'pileup', 'tally'].includes(state) && !paused) retry();

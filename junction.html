@@ -104,6 +104,7 @@
         <button type="button" id="btn-resume" class="btn primary">Resume <small>Esc · Menu</small></button>
         <button type="button" id="btn-retry" class="btn">Retry</button>
         <button type="button" id="btn-quit" class="btn">Quit to car and level select</button>
+        <button type="button" id="btn-music" class="btn">Music: on</button>
         <a class="btn" href="Race.html">Play Race</a>
         <a class="btn" href="Car Crash Simulation.html">Home</a>
       </div>
@@ -117,6 +118,7 @@
         <tr><td>Boost · Crashbreaker</td><td>Shift</td><td>A or right bumper</td></tr>
         <tr><td>Retry</td><td>R</td><td>View</td></tr>
         <tr><td>Pause</td><td>Esc, P</td><td>Menu</td></tr>
+        <tr><td>Music on / off</td><td>M</td><td></td></tr>
       </table>
       </details>
     </div>
@@ -159,6 +161,8 @@
 <script src="js/destruction/traffic.js"></script>
 <script src="js/destruction/wrecks.js"></script>
 <script src="media/race/assets.js"></script>
+<script src="js/music.js"></script>
+<script>Music.bindButton(document.getElementById('btn-music'));   // the pause menu's music switch (js/music.js)</script>
 <script type="module">
   // three.js is an ES module from the CDN; the game's scripts are classic scripts so the page also
   // works when opened straight from disk (file://). The standalone build embeds them as

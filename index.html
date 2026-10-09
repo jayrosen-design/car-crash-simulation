@@ -51,15 +51,16 @@
       <button id="btn-stop" class="danger" hidden>Emergency stop</button>
       <button id="btn-reset" class="ghost" hidden>New test</button>
       <button id="btn-sound" class="ghost icon" aria-pressed="true" title="Sound on/off">Sound: on</button>
+      <button id="btn-music" class="ghost icon" aria-pressed="true" title="Music on/off (M)">Music: on</button>
     </div>
   </header>
   <script>
     // Simulation menu: shows the one on screen; picking another opens it on this same page (a game
-    // mode on its own page).
+    // mode on its own page), once the music has faded out.
     (function () {
       var sel = document.getElementById('scenario'), q = new URLSearchParams(location.search);
       sel.value = q.get('lab') ? '?lab=' + q.get('lab') : (q.get('preset') === 'brick' || q.get('barrier') === 'brick') ? '?preset=brick' : '?preset=rigid';
-      sel.addEventListener('change', function () { location.href = sel.value.charAt(0) === '?' ? location.pathname + sel.value : sel.value; });
+      sel.addEventListener('change', function () { Music.leave(function () { location.href = sel.value.charAt(0) === '?' ? location.pathname + sel.value : sel.value; }); });
     })();
   </script>
 
@@ -308,6 +309,12 @@
 <script src="js/guidance.js"></script>
 <script src="js/whiplash.js"></script>
 <script src="js/pedestrian.js"></script>
+<script src="js/music.js"></script>
+<script>
+  // the simulator's background music, which picks up where the last test page left it (js/music.js)
+  Music.bindButton(document.getElementById('btn-music'));
+  Music.play('simulator');
+</script>
 <script type="module">
   // three.js is an ES module from the CDN; the app scripts are classic scripts so the page also
   // works when opened straight from disk (file://), where local module imports are blocked.

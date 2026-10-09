@@ -53,7 +53,7 @@ There are also two game modes, with crashes worked out by the same solver:
 
 ## Getting started
 
-**Open `Car Crash Simulation.html`** (the home page), **`Simulator.html`** (the simulator), **`Race.html`** (the Race game) or **`Destruction.html`** (the Destruction mode) in Chrome, Edge, Firefox or Safari. Each is a single self-contained file, so they work straight from disk (`file://`) or from any static web host, such as GitHub Pages.
+**Open `Car Crash Simulation.html`** (the home page), **`Simulator.html`** (the simulator), **`Race.html`** (the Race game) or **`Destruction.html`** (the Destruction mode) in Chrome, Edge, Firefox or Safari. Each is a single self-contained file, so they work straight from disk (`file://`) or from any static web host, such as GitHub Pages. The one exception is the background music: it loads from `media/music/` beside them, so a page copied on its own plays without it.
 
 Requirements:
 - **WebGL 2.** Any desktop or laptop GPU from the last decade works; phones work but the layout is cramped.
@@ -74,7 +74,7 @@ Simulator.html?solver=gpu                      the crash computed on the GPU (We
 For development, open `index.html` (or `game.html` for Race, `junction.html` for Destruction) instead. It loads the source files one by one, so edits show on reload. Then rebuild the single files with `node tools/build-standalone.js`. Opened from disk, `game.html` and `junction.html` run their crashes on the main thread, because the browser won't let them read their own scripts for the worker; `Race.html`, `Destruction.html` and any web server don't have that limit.
 
 **Hosting.** The site is static and needs no build step.
-- **Vercel:** import the repository with the framework preset *Other*. `vercel.json` serves `home.html` at `/`; it loads the video and pictures from `media/` instead of embedding them, so it opens faster than the single-file home page. `.vercelignore` keeps the docs and tools off the site. It also leaves out `index.html` (the developer page), because Vercel serves a real file at `/` before it applies any rewrite, `game.html` with `media/race/`, which `Race.html` embeds, and `junction.html`. `/race` serves `Race.html`, and `/destruction` serves `Destruction.html`.
+- **Vercel:** import the repository with the framework preset *Other*. `vercel.json` serves `home.html` at `/`; it loads the video and pictures from `media/` instead of embedding them, so it opens faster than the single-file home page. `.vercelignore` keeps the docs and tools off the site. It also leaves out `index.html` (the developer page), because Vercel serves a real file at `/` before it applies any rewrite, `game.html` with `media/race/`, which `Race.html` embeds, `junction.html`, and the soundtrack's MP3 sources (the pages load `media/music/*.js`). `/race` serves `Race.html`, and `/destruction` serves `Destruction.html`.
 - **Other static hosts** (GitHub Pages, Netlify and others) work too: open `home.html` or `Car Crash Simulation.html`.
 
 ---
@@ -163,11 +163,12 @@ In playback:
 | Look back | B | Left bumper |
 | Back on the road | R | View |
 | Pause | Esc, P, or the Menu button at the top | Menu |
+| Music on or off | M, or Music in the pause menu | the pause menu |
 | Menus (car select, pause, results) | arrows or WASD, Enter | d-pad or left stick, A |
 
 Controllers work through the Gamepad API's standard mapping, with rumble where the browser supports it.
 
-**Ways out.** The car select has links home and to Destruction. The pause menu offers Resume, Restart race (straight back to the grid with the same car and track), Quit to car and track select, Play Destruction and Home. The results offer Race again (also straight to the grid), Change car or track, the crash replay, Play Destruction and Home.
+**Ways out.** The car select has links home and to Destruction. The pause menu offers Resume, Restart race (straight back to the grid with the same car and track), Quit to car and track select, Music on or off, Play Destruction and Home. The results offer Race again (also straight to the grid), Change car or track, the crash replay, Play Destruction and Home.
 
 **On a touch screen** (phones and tablets), on-screen buttons appear on their own while racing:
 - **Left thumb:** steer left and right.
@@ -315,9 +316,10 @@ Open it from the home page, the **Simulation** menu in the simulator, or `/destr
 | Handbrake | Space | X |
 | Retry (at any time) | R, or Enter on the results | View, or A |
 | Pause | Esc, P, or the Menu button at the top left | Menu |
+| Music on or off | M, or Music in the pause menu | the pause menu |
 | Menus (select, pause, results) | arrows or WASD, Enter | d-pad or left stick, A |
 
-The car select has links home and to Race. The pause menu offers Resume, Retry, Quit to car and level select, Play Race and Home; the results offer Retry, Change car, Play Race and Home.
+The car select has links home and to Race. The pause menu offers Resume, Retry, Quit to car and level select, Music on or off, Play Race and Home; the results offer Retry, Change car, Play Race and Home.
 
 On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once the Crashbreaker is ready, and Retry sits at the top. The running total moves to the top left.
 
@@ -575,6 +577,31 @@ Playback finds the two frames around the playback time and blends between them (
 - **Single-file build** (`tools/build-standalone.js`):
   - **Simulator:** inlines the model data and core modules as ordinary scripts, and the presentation modules as `text/x-inline` blocks that the loader executes after three.js is ready. It fails if any embedded file doesn't match its source.
   - **Home page:** embeds the pictures as data URLs and the video as base64, which the page turns into a blob URL.
+
+### Music
+
+`js/music.js` (`Music`) plays the soundtrack in the games and the simulator: one song at a time, chosen by the screen. Each page asks for a cue every frame, and the mixer crossfades when the cue's song changes.
+
+| Screen | Cue | Song |
+|---|---|---|
+| Car and track select (both games) | `menu` | Impact Velocity, standing in for *Ignition* |
+| Race: Downtown at dusk | `race:downtown` | No Brakes Downtown |
+| Race: Harbour at night | `race:harbour` | Midnight Freight |
+| Race: Hillside at noon | `race:hillside` | Full Throttle, standing in for *Gravity Doesn't Care* |
+| Destruction: Crossroads at dusk | `destruction:crossroads` | Fuel for the Fire, standing in for *Chain Reaction* |
+| Destruction: Docklands at night | `destruction:docklands` | Fuel for the Fire |
+| Destruction: Boulevard at noon | `destruction:boulevard` | Million Dollar Wreck |
+| Race finish; Destruction tally and results | `results` | After the Impact |
+| Simulator and crash labs | `simulator` | Impact Velocity |
+
+Three songs of the soundtrack's cue sheet aren't made yet; until they are, the song with the closest brief stands in (the `CUES` table in `music.js`).
+
+- **Mixing.** A change of song is an equal-power crossfade: 1.2 s out and 0.8 s in, and 2.5 s into the results song. Each song is trimmed to −16 LUFS, and the music plays 6 dB under that, below the game's own sounds. A pause ducks it to 35% and muffles it (a 900 Hz low-pass); the Race crash camera and replays, and the Destruction mode's slow-motion impact, duck it to 50%.
+- **Loops.** Each song loops on a splice from late in the song back to an earlier point. The splice sits 25 ms before a drum hit that both places share, with the two hits lined up to the millisecond and a 40 ms crossfade, so the beat carries on. `tools/build-music.js --analyze` finds the splices: the rhythm (onsets in four bands) and the sound (band energies) in the 6 s before both points must match. Fuel for the Fire loops before its groove changes at 84 s, so it never reaches its halftime break.
+- **Page changes.** Picking another track or junction, restarting, quitting to the select screen and same-window links fade the music out over 0.25 s first. The menu and simulator songs pick up on the next page where they stopped (sessionStorage), so a change of track doesn't restart the menu song. The level songs and the results song start from the top each time. Chrome lets the next page play without another click when the last page had one; other browsers wait for the first click, tap or key.
+- **Loading.** The songs are MP3s wrapped as base64 in classic scripts (`media/music/<song>.js`, written by `tools/build-music.js`): a page opened from disk can't fetch files, and an `<audio>` element routed through Web Audio plays silence there. They are decoded into Web Audio buffers, which keeps the splices sample-accurate (MP3 seeking in an `<audio>` element isn't). At most three songs are kept decoded (two on touch screens; a three-minute song is about 60 MB), and a page decodes the songs it will want next while one plays.
+- **Controls.** M, or Music in the games' pause menus and the simulator's top bar; the choice is remembered (localStorage). The song's title shows for a few seconds when it starts. The music is off in scripted runs (`?test`, `?director`) and with `?music=0`.
+- **Checked:** in headless Chrome, the cues, crossfades, ducking, page changes and the M key in Race, Destruction and the simulator, from disk and over HTTP; on the live output, a splice lands exactly (to the sample) where the table says. **Not checked by ear:** the splice points and the music's level against the game's sounds were chosen by analysis; adjust `loop` or `LEVEL` in `music.js` if one sounds off.
 
 ---
 
@@ -2274,6 +2301,13 @@ blender -b -Y --factory-startup --python tools/fetch-race-assets.py
 Downloads the Race game's textures and street HDRI from Poly Haven and writes `media/race/assets.js`. Diffuse maps are 1024 px; normal and roughness maps are scaled to 512 px. All are recompressed as JPEG, and the HDRI is kept at 1k. Rebuild afterwards.
 
 ```
+node tools/build-music.js
+node tools/build-music.js --analyze <song> [--range a0,a1,b0,b1]
+```
+
+The first wraps every `media/music/<song>.mp3` as `media/music/<song>.js`, the form the pages load. The second measures one song in headless Chrome and prints its entry for `SONGS` in `js/music.js`: the loudness trim and the loop splice, with the best candidates. It also writes a picture of the splice to `tools/out/music-<song>.jpg`: the song at both points and spliced, lined up, where the drum hits should make unbroken stripes. `--range` sets where to look for the two points, in seconds. To add a song: put the MP3 in `media/music/`, run both, add it to `SONGS`, and point its cue at it in `CUES`.
+
+```
 node tools/readme-images.js
 ```
 
@@ -2438,6 +2472,8 @@ js/
                   point particles
   cinematic.js    bullet-time speed, camera shake and the crash's power, from the crash pulse
   export.js       saving a replay as an MP4 video (WebCodecs, mp4-muxer)
+  music.js        the background music: which song each screen plays, crossfades, beat-matched loops,
+                  ducking, carrying on across page changes
   app.js          controller for the barrier tests
   labs.js         controller for the six crash labs (runs instead of app.js with ?lab=)
   race/
@@ -2463,6 +2499,7 @@ js/
 models/           generated car models (Draco GLB as base64) and physics data
 media/            the home page's trailers (crash tests, Race and Destruction, each also in 9:16 for phones), background loop, posters and pictures (destruction.jpg: the Destruction card)
 media/race/       the Race game's textures and sky (generated by fetch-race-assets.py)
+media/music/      the soundtrack: the MP3s and their base64 wrappers for the pages (build-music.js)
 media/readme/     this README's pictures, captured from the website (readme-images.js)
 tools/
   headless-check.js     physics and lab checks in Node
@@ -2471,6 +2508,7 @@ tools/
   gpu-check.js          the GPU solver against the CPU solver, in headless Chrome
   build-standalone.js   builds the four single-file pages
   build-site.js         builds physics.html and sources.html from this README
+  build-music.js        wraps the soundtrack for the pages; finds a song's loudness trim and loop splice
   fetch-race-assets.py  downloads and packs the Race game's textures (Blender)
   record-video.js       records the home page's media in headless Chrome
   readme-images.js      captures the README's pictures from the website
@@ -2492,6 +2530,8 @@ tools/
 - **Ford Mustang GT500:** "[Ford Mustang Gt 500 With pro Rig FOR FREE!](https://sketchfab.com/3d-models/ford-mustang-gt-500-with-pro-rig-for-free-f26a29f766844f46910547d6d2cc291d)" by NoOb StUfFs, CC BY 4.0.
 
 Both models are split into parts, re-oriented, scaled and simplified for this app.
+
+**Music:** seven songs made for this project's soundtrack (`media/music/`).
 
 **Race textures and sky:** from [Poly Haven](https://polyhaven.com), CC0: asphalt_02, concrete_floor_02 and red_brick_03 by Rob Tuytel; concrete_pavement and concrete_tile_facade by Charlotte Baglioni; beige_wall_001 by Dimitrios Savva and Rico Cilliers; the wide_street_01 HDRI by Sergej Majboroda.
 

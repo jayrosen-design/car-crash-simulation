@@ -385,8 +385,8 @@ const RaceGame = (() => {
     $('#results').hidden = false;
   }
   // racing again: the page again, straight into the race with the same car and track (?go), or to the
-  // car and track select
-  const reloadTo = (race) => { const u = new URL(location.href); if (race) u.searchParams.set('go', '1'); else u.searchParams.delete('go'); location.href = u.toString(); };
+  // car and track select (once the music has faded out)
+  const reloadTo = (race) => { const u = new URL(location.href); if (race) u.searchParams.set('go', '1'); else u.searchParams.delete('go'); Music.leave(() => { location.href = u.toString(); }); };
   $('#btn-again').addEventListener('click', () => reloadTo(true));
   $('#btn-change').addEventListener('click', () => reloadTo(false));
   $('#btn-replay').addEventListener('click', () => startReplay(crashes.length - 1));
@@ -514,11 +514,12 @@ const RaceGame = (() => {
     if (!selBusy) R.player.setPaint(PAINTS[paintIdx].hex);   // else chooseCar paints the new model
     showSelect();
   }
-  // another track: the page again with ?level= (the car and paint kept)
+  // another track: the page again with ?level= (the car and paint kept), once the music has faded out
+  // (the menu song picks up where it was)
   function pickLevel(key) {
     if (key === LEVEL || !CrashLevel.LEVELS[key] || state !== 'select') return;
     try { localStorage.setItem('race-level', key); localStorage.setItem('race-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not remembered */ }
-    const u = new URL(location.href); u.searchParams.set('level', key); location.href = u.toString();
+    const u = new URL(location.href); u.searchParams.set('level', key); Music.leave(() => { location.href = u.toString(); });
   }
   function updateSelect(inp) {
     if (inp.nav.y) { selRow = (selRow + inp.nav.y + 3) % 3; showSelect(); }
@@ -603,6 +604,12 @@ const RaceGame = (() => {
       if ($('#touch').hidden === show) $('#touch').hidden = !show;
       if (upright.matches && (state === 'race' || state === 'countdown') && !paused) setPaused(true);
     }
+    // the music (js/music.js): the menu song on the select screen, the track's own song from the
+    // countdown, the results song at the finish; quieter and muffled while paused or in the crash camera
+    const ms = state === 'replay' ? replay.prevState : state, muffle = paused || state === 'crash' || state === 'replay';
+    Music.play(ms === 'select' ? 'menu' : ms === 'finished' ? 'results' : 'race:' + LEVEL);
+    Music.preload('race:' + LEVEL, 'results');
+    Music.duck(paused ? 0.35 : muffle ? 0.5 : 1, muffle);
     if (state === 'replay') updateReplay(dt, input);
     if (state === 'select') updateSelect(input);
     const hold = state === 'select' || state === 'countdown';

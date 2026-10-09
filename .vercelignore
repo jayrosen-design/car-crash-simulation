@@ -11,3 +11,5 @@
 /media/readme
 # the Destruction mode's developer page (Destruction.html is the built one)
 /junction.html
+# the soundtrack's MP3 sources (the pages load media/music/*.js, written from them by tools/build-music.js)
+/media/music/*.mp3

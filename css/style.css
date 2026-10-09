@@ -102,6 +102,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .export-box button { margin-top: 10px; }
 body.exporting #timeline, body.exporting #results, body.exporting #setup, body.exporting header { pointer-events: none; opacity: 0.55; }
 .comp-text { font-family: var(--mono); margin: 6px 0; }
+/* the song now playing (js/music.js): under the Music button, clear of the setup panel */
+#music-now { left: auto; right: 12px; bottom: auto; top: 64px; }
 
 /* results */
 .res-head { display: flex; justify-content: space-between; align-items: center; }
