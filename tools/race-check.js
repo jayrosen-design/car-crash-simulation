@@ -34,6 +34,10 @@
  *          slam and comes through had a lucky escape
  * attack:  an aggressive rival (ai.js) 15 m behind the player's car in the next lane catches it and
  *          drives into it within 8 s; a calm one never does
+ * drift:   the player's handling (vehicle.js, car.arcade) at 90 km/h: a brake tap with full lock,
+ *          then throttle steering in, holds a 20-45 degree slide for at least 1.5 s keeping over 80%
+ *          of the speed, and straightens up within 1.5 s of letting go (both cars); the same
+ *          inputs don't make a rival's car drift
  * shove:   steering into a car alongside pushes it away harder than holding the wheel straight, and
  *          faster than the contacts alone would (6.3 m/s sideways at most without world.js's shove)
  * Exits non-zero on any failure.
@@ -366,6 +370,28 @@ if (want('attack')) {
   };
   const hot = run(1), calm = run(0);
   check('attack', !!hot && !calm, `aggressive rival: ${hot ? `drove into the player at ${hot.t.toFixed(1)} s, ${hot.vn.toFixed(1)} m/s` : 'never touched the player'} (must); calm rival: ${calm ? `drove into the player at ${calm.t.toFixed(1)} s` : 'never did'} (must not)`);
+}
+
+if (want('drift')) {
+  const run = (key, arcade) => {
+    const car = RaceCar.create(Veh.get(key));
+    car.arcade = arcade; car.place(0, 0, 0, 25);
+    let held = 0, maxSlip = 0, kept = 0, back = -1;
+    for (let i = 0; i < 240 * 5; i++) {
+      const t = i / 240;
+      car.step(1 / 240, t < 0.15 ? { brake: 1, steer: 1 } : t < 2.65 ? { throttle: 0.7, steer: 1 } : { throttle: 0.5, steer: 0 });
+      const deg = Math.abs(car.sideSlip) * 180 / Math.PI;
+      if (t >= 0.15 && t < 2.65) { if (car.mode === 'drift' && deg >= 20 && deg <= 45) held += 1 / 240; maxSlip = Math.max(maxSlip, deg); }
+      if (i === Math.round(2.65 * 240)) kept = car.speed / 25;
+      if (t > 2.65 && back < 0 && car.mode === 'grip' && deg < 6) back = t - 2.65;
+    }
+    return { held, maxSlip, kept, back };
+  };
+  const lx = run('lexus', true), mu = run('mustang', true), rv = run('lexus', false);
+  const good = (d) => d.held >= 1.5 && d.kept > 0.8 && d.back >= 0 && d.back < 1.5;
+  const fmt = (d) => `${d.held.toFixed(1)} s at 20-45 degrees (up to ${d.maxSlip.toFixed(0)}), ${(d.kept * 100).toFixed(0)}% of the speed kept, straight ${d.back < 0 ? 'never' : d.back.toFixed(1) + ' s'} after letting go`;
+  check('drift', good(lx) && good(mu) && rv.maxSlip < 10,
+    `Lexus: ${fmt(lx)}; Mustang: ${fmt(mu)} (at least 1.5 s, over 80%, within 1.5 s); a rival's Lexus: slides up to ${rv.maxSlip.toFixed(0)} degrees (under 10: no drift)`);
 }
 
 console.log(failures ? `\n${failures} check(s) with problems` : '\nall race checks passed');

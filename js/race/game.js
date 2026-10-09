@@ -77,6 +77,7 @@ const RaceGame = (() => {
   for (let i = 0, k = 0; i < 8; i++) if (i !== PLAYER_SLOT) grid.push(Object.assign(slotPose(i), RIVALS[k++]));
 
   let car = RaceCar.create(specs[carKey]);   // replaced when another car is picked (chooseCar)
+  car.arcade = true;                          // the player's handling: drifts, boost kick (vehicle.js)
   const me = world.add(car, { kind: 'player' });
   const ps = slotPose(PLAYER_SLOT);
   car.place(ps.x, ps.z, ps.h, 0);
@@ -323,6 +324,7 @@ const RaceGame = (() => {
   let autopilot = null;
   function finish(t) {
     prog.done = true; prog.time = t;
+    car.arcade = false;   // the rivals' driver takes over: plain handling (it brakes and steers at once)
     autopilot = ai.adopt(me, prog.l > 3.5 ? 5.25 : 1.75, 0.95);
     autopilot.prog = { i: prog.i, s: prog.s, prevS: prog.s, lap: 99, dist: 0, done: true, time: t };
     state = 'finished';
@@ -446,6 +448,7 @@ const RaceGame = (() => {
     const token = ++selToken;
     carKey = key;
     car = RaceCar.create(specs[key]);
+    car.arcade = true;
     me.car = car;
     placeForSelect();
     selBusy = true; showSelect();
@@ -513,6 +516,7 @@ const RaceGame = (() => {
       ooc.t += STEP;
       const k = ooc.t < 0.3 ? 1 : Math.max(0, 1 - (ooc.t - 0.3) / (ooc.dur - 0.3));
       inp.steer = (inp.steer || 0) * (1 - k) + ooc.kick * k;
+      inp.ooc = ooc.t < 0.3;   // and no stability control at first
       if (ooc.t >= ooc.dur) ooc = null;
     }
     return inp;
@@ -590,7 +594,12 @@ const RaceGame = (() => {
       prevSpin = spinNow;
       // the car faces the camera: a front three-quarter view, swaying 3-37 degrees off the nose
       if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
-      else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dt);
+      else {
+        R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dt);
+        // the boost's first surge widens the view a little more (the camera keeps its own smoothed
+        // field of view, which it puts back next frame)
+        if (car.kick > 0) { R.camera.fov += 5 * car.kick; R.camera.updateProjectionMatrix(); }
+      }
     }
     // everyone else (instanced): the street as it was during a crash or replay
     const draws = (state === 'crash' || state === 'replay') && frozenDraw ? frozenDraw : drawStates();

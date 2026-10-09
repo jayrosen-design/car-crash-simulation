@@ -4557,6 +4557,15 @@ if (typeof module === 'object' && module.exports) module.exports = CrashLevel;
  * Brakes have ABS; the handbrake locks the rear wheels. Steering lock narrows with speed, and an
  * assist steers into a slide, as arcade racers do. Pitch and roll are drawn, not simulated.
  *
+ * The player's car (car.arcade) handles like Burnout's: the stick's travel is rate-limited (about
+ * 0.2 s to full lock, at any speed) rather than the wheel's angle; boost kicks in with a surge; spin
+ * dies away in the air; and it drifts. A drift starts above 60 km/h with a tap of the brake or
+ * handbrake while steering, with full lock held above 135 km/h, or landing sideways. Then the rear
+ * lets go, the car holds a slide angle set by the steering (counter-steer takes it in, the brake
+ * widens it), and on the throttle the tyres don't slow it. It ends when the slide swings the other
+ * way, when the wheel is let go with little slide left, below 43 km/h, on a hard hit or in the air.
+ * An input { ooc: true } (a rival's full slam) switches the stability control off.
+ *
  * Conventions (js/physics.js): heading h points along (cos h, sin h); car-local x forward, z right;
  * yaw rate = dh/dt, positive turning right. The pose (x, z) is the car model's origin; the body
  * moves about its centre of gravity, cgX ahead of that origin.
@@ -4595,6 +4604,9 @@ const RaceCar = (() => {
       gear: 1, rpm: 900, reverse: false, odometer: 0,
       drift: 0,                // 0..1: how much the car is sliding (for boost and sound)
       sideSlip: 0,             // body slip angle (rad)
+      // the player's handling (see above): on?, the rate-limited stick, 'grip' or 'drift', the
+      // drift's side (+1 right) and time, its blend (0..1), full lock held for, the boost's kick (1..0)
+      arcade: false, steerIn: 0, mode: 'grip', driftDir: 0, driftT: 0, dg: 0, lockT: 0, kick: 0, wasAir: false,
       // height over hills and ramps (world.js keeps these): height of the centre of gravity's
       // ground point, vertical speed, in the air?, put back on the ground next step?, the ground's
       // (or the flight's) pitch and roll for drawing
@@ -4627,20 +4639,27 @@ const RaceCar = (() => {
       const c = Math.cos(car.h), s = Math.sin(car.h);
       let vx = car.vx * c + car.vz * s, vz = -car.vx * s + car.vz * c;   // local: forward, right
       const v = Math.hypot(vx, vz);
-      // steering: lock narrows with speed; assist steers into a slide
+      // steering: lock narrows with speed; assist steers into a slide. The player's stick travels at
+      // most 5 per second (the wheel then follows it quickly); others' wheels turn at most 2.6 rad/s
+      let st = inp.steer || 0;
+      if (car.arcade) { car.steerIn += Math.max(-5 * dt, Math.min(5 * dt, st - car.steerIn)); st = car.steerIn; }
       const lock = tune.steer / (1 + Math.max(0, Math.abs(vx)) / 14) + 0.035;
       const slideAngle = v > 3 ? Math.atan2(vz, Math.abs(vx)) : 0;
-      let target = (inp.steer || 0) * lock + (v > 8 ? 0.55 * slideAngle * (1 - Math.abs(inp.steer || 0) * 0.5) : 0);
+      let target = st * lock + (v > 8 ? 0.55 * slideAngle * (1 - Math.abs(st) * 0.5) : 0);
       target = Math.max(-0.6, Math.min(0.6, target));
-      const rate = 2.6 * dt;
+      const rate = (car.arcade ? 8 : 2.6) * dt;
       car.steer += Math.max(-rate, Math.min(rate, target - car.steer));
+      if (car.arcade) drift(dt, inp, st, vx, slideAngle);
       // reverse when the brake is held at a standstill
       if (vx < 0.5 && (inp.brake || 0) > 0.5 && (inp.throttle || 0) < 0.1) car.reverse = true;
       if ((inp.throttle || 0) > 0.1 || vx > 1) car.reverse = false;
       const thr = car.reverse ? (inp.brake || 0) : (inp.throttle || 0), brk = car.reverse ? 0 : (inp.brake || 0);
-      car.throttle = thr; car.brake = brk; car.handbrake = inp.handbrake || 0; car.boosting = !!inp.boost && !car.reverse;
+      car.throttle = thr; car.brake = brk; car.handbrake = inp.handbrake || 0;
+      const boosting = !!inp.boost && !car.reverse;
+      if (car.arcade) car.kick = boosting ? (car.boosting ? Math.max(0, car.kick - dt / 0.6) : 1) : 0;   // the player's boost: a surge as it starts
+      car.boosting = boosting;
       // engine: power-limited drive force, shared between the driven wheels
-      const power = tune.power * (car.boosting ? BOOST : 1);
+      const power = tune.power * (car.boosting ? BOOST * (1 + 0.4 * car.kick) : 1);
       let drive = thr * Math.min(m * G * 0.95, power / Math.max(4, Math.abs(vx)));
       if (car.reverse) drive = -thr * Math.min(m * G * 0.5, 40e3 / Math.max(3, Math.abs(vx)));
       // wheel loads: static plus the transfer from the last step's acceleration
@@ -4649,21 +4668,21 @@ const RaceCar = (() => {
       const latF = m * car.ay * hc / car.track * 0.55, latR = m * car.ay * hc / car.track * 0.45;
       W[0].Fz = Math.max(0, front / 2 - latF); W[1].Fz = Math.max(0, front / 2 + latF);
       W[2].Fz = Math.max(0, rear / 2 - latR); W[3].Fz = Math.max(0, rear / 2 + latR);
-      // tyre forces (local frame)
+      // tyre forces (local frame); in a drift the rear lets go and the brakes only bite lightly
       let Fx = 0, Fz = 0, Tq = 0, slideSum = 0;
-      const sinD = Math.sin(car.steer), cosD = Math.cos(car.steer);
+      const sinD = Math.sin(car.steer), cosD = Math.cos(car.steer), brkT = car.mode === 'drift' ? brk * 0.3 : brk;
       for (const w of W) {
         // velocity of the contact patch: v + yaw x p (yaw turns x toward z)
         const px = w.x, pz = w.z, wvx = vx - car.yaw * pz, wvz = vz + car.yaw * px;
         const sd = w.front ? sinD : 0, cd = w.front ? cosD : 1;
         const vl = cd * wvx + sd * wvz, vs = -sd * wvx + cd * wvz;      // along and across the wheel
         const tyre = w.front ? MF.front : MF.rear;
-        const mu = tune.grip * tyre.mu * (w.front ? 1 : (car.handbrake > 0.5 ? 0.42 : 1));
+        const mu = tune.grip * tyre.mu * (w.front ? 1 : (car.handbrake > 0.5 ? 0.42 : 1) * (1 - 0.4 * car.dg));
         const Fmax = car.air ? 0 : mu * w.Fz;   // no grip in the air
         // longitudinal: drive, brakes (ABS: up to the grip), rolling resistance, handbrake
         let fl = drive * (w.front ? tune.drive[0] : tune.drive[1]) / 2;
         const sgn = vl > 0.05 ? 1 : vl < -0.05 ? -1 : 0;
-        fl -= sgn * (brk * Fmax * (w.front ? 1.1 : 0.9) + 0.012 * w.Fz);
+        fl -= sgn * (brkT * Fmax * (w.front ? 1.1 : 0.9) + 0.012 * w.Fz);
         if (!w.front && car.handbrake > 0.5) fl -= sgn * Fmax * 0.75;
         if (Math.abs(fl) > Fmax) fl = Math.sign(fl) * Fmax;
         // lateral: Magic Formula in the slip angle, within what's left of the grip (friction ellipse)
@@ -4685,16 +4704,32 @@ const RaceCar = (() => {
         w.omega = (!w.front && car.handbrake > 0.5) ? 0 : vl / R;
         w.spin += w.omega * dt;
       }
+      // drifting on the throttle: the tyres' pull against the travel is mostly cancelled (it keeps its speed)
+      if (car.mode === 'drift' && thr > 0.2 && v > 1) {
+        const back = (Fx * vx + Fz * vz) / v;
+        if (back < 0) { const f = 0.75 * thr * car.dg * back / v; Fx -= f * vx; Fz -= f * vz; }
+      }
       // aerodynamic drag
       const drag = 0.5 * RHO * tune.cdA * v;
       Fx -= drag * vx; Fz -= drag * vz;
       // integrate (semi-implicit Euler), in the local frame then back to the world
-      const axL = Fx / m, azL = Fz / m;
+      const axL = Fx / m, azL = Fz / m, dir0 = Math.atan2(vz, vx);
       vx += axL * dt; vz += azL * dt;
       car.yaw += Tq / Izz * dt;
-      // arcade stability control: hold the yaw rate near what the steering asks for (plus a margin), and
-      // damp it a little when not steering, so the car tracks straight; off under the handbrake
-      if (car.handbrake < 0.5 && !car.air) {
+      if (car.air && car.arcade) car.yaw *= Math.exp(-2 * dt);   // the player's spin dies away in the air
+      if (car.mode === 'drift' && !car.air) {
+        // a drift: turn the car with its travel, plus a pull toward the slide angle the steering asks
+        // for (steering in widens it, letting go straightens the car up, counter-steering takes it in
+        // faster, the brake widens it)
+        const into = Math.max(0, st * car.driftDir), counter = Math.max(0, -st * car.driftDir);
+        const want = Math.max(0.05, Math.min(0.75, 0.1 + 0.25 * Math.min(1, into / 0.3) + 0.3 * into - 0.4 * counter + 0.15 * brk));
+        let turn = Math.atan2(vz, vx) - dir0; turn = Math.atan2(Math.sin(turn), Math.cos(turn)) / dt;   // the travel's turn rate
+        const slip = Math.atan2(vz, Math.max(1, Math.abs(vx)));   // < 0: the travel left of the nose (a right-hand drift)
+        car.yaw += (turn + 5 * (slip + car.driftDir * want) - car.yaw) * (1 - Math.exp(-8 * car.dg * dt));
+      } else if (car.handbrake < 0.5 && !car.air && !inp.ooc) {
+        // arcade stability control: hold the yaw rate near what the steering asks for (plus a margin),
+        // and damp it a little when not steering, so the car tracks straight; off under the handbrake
+        // (and for a moment after a rival's full slam)
         const want = vx * Math.tan(car.steer) / car.L;
         const lim = Math.min(Math.abs(want) * 1.25 + 0.15, 0.95 * tune.grip * G / Math.max(3, v) + 0.05);   // no tighter than the grip allows
         if (Math.abs(car.yaw) > lim) car.yaw += (Math.sign(car.yaw) * lim - car.yaw) * (1 - Math.exp(-6 * dt));
@@ -4714,6 +4749,7 @@ const RaceCar = (() => {
       car.rv += ((rt - car.roll) * 100 - car.rv * 12) * dt; car.roll += car.rv * dt;
       car.sideSlip = v > 2 ? Math.atan2(vz, Math.abs(vx)) : 0;
       car.drift = Math.min(1, slideSum / 2);
+      if (car.mode === 'drift') car.drift = Math.max(car.drift, 0.6 * car.dg);
       // gearbox: revs from the road speed (for the sound)
       const gr = tune.gears, wheelRpm = Math.abs(vx) / R * 60 / (2 * Math.PI);
       let rpm = wheelRpm * gr[car.gear - 1] * tune.final;
@@ -4723,11 +4759,32 @@ const RaceCar = (() => {
       car.rpm = Math.max(900 + 1400 * thr * (car.gear === 1 ? 1 : 0.4), Math.min(tune.redline, rpm));
     }
 
-    // an impulse J (N s, world) at world point (px, pz)
+    // the player's drift: start, carry on or end it (st: the stick, vx: the forward speed, slip: the
+    // body's slip angle, < 0 with the travel left of the nose), and blend it in and out over 0.3 s
+    function drift(dt, inp, st, vx, slip) {
+      const ground = !car.air;
+      if (car.mode !== 'drift') {
+        car.lockT = Math.abs(st) > 0.9 && vx > 38 ? car.lockT + dt : 0;
+        const tap = (inp.handbrake || 0) > 0.5 || (inp.brake || 0) > 0.3;
+        const landed = car.wasAir && ground && Math.abs(slip) > 0.35;
+        if (ground && vx > 17 && ((tap && Math.abs(st) > 0.4) || car.lockT > 0.3 || landed)) {
+          car.mode = 'drift'; car.driftT = 0; car.driftDir = landed ? -Math.sign(slip) : Math.sign(st);
+        }
+      } else {
+        car.driftT += dt;
+        const into = st * car.driftDir, swung = slip * car.driftDir > 0.05;   // the slide has swung the other way
+        if (!ground || vx < 12 || (car.driftT > 0.5 && swung && into < 0.2) || (car.driftT > 0.4 && Math.abs(st) < 0.1 && -slip * car.driftDir < 0.12)) car.mode = 'grip';
+      }
+      car.dg += ((car.mode === 'drift' ? 1 : 0) - car.dg) * (1 - Math.exp(-dt / 0.3));
+      car.wasAir = car.air;
+    }
+
+    // an impulse J (N s, world) at world point (px, pz); a hard one ends a drift
     function applyImpulse(px, pz, Jx, Jz) {
       car.vx += Jx / m; car.vz += Jz / m;
       const rx = px - car.x, rz = pz - car.z;
       car.yaw += (rx * Jz - rz * Jx) / Izz;
+      if (car.mode === 'drift' && Math.hypot(Jx, Jz) > 1.5 * m) car.mode = 'grip';
     }
     return car;
   }
@@ -8614,6 +8671,7 @@ const RaceGame = (() => {
   for (let i = 0, k = 0; i < 8; i++) if (i !== PLAYER_SLOT) grid.push(Object.assign(slotPose(i), RIVALS[k++]));
 
   let car = RaceCar.create(specs[carKey]);   // replaced when another car is picked (chooseCar)
+  car.arcade = true;                          // the player's handling: drifts, boost kick (vehicle.js)
   const me = world.add(car, { kind: 'player' });
   const ps = slotPose(PLAYER_SLOT);
   car.place(ps.x, ps.z, ps.h, 0);
@@ -8860,6 +8918,7 @@ const RaceGame = (() => {
   let autopilot = null;
   function finish(t) {
     prog.done = true; prog.time = t;
+    car.arcade = false;   // the rivals' driver takes over: plain handling (it brakes and steers at once)
     autopilot = ai.adopt(me, prog.l > 3.5 ? 5.25 : 1.75, 0.95);
     autopilot.prog = { i: prog.i, s: prog.s, prevS: prog.s, lap: 99, dist: 0, done: true, time: t };
     state = 'finished';
@@ -8983,6 +9042,7 @@ const RaceGame = (() => {
     const token = ++selToken;
     carKey = key;
     car = RaceCar.create(specs[key]);
+    car.arcade = true;
     me.car = car;
     placeForSelect();
     selBusy = true; showSelect();
@@ -9050,6 +9110,7 @@ const RaceGame = (() => {
       ooc.t += STEP;
       const k = ooc.t < 0.3 ? 1 : Math.max(0, 1 - (ooc.t - 0.3) / (ooc.dur - 0.3));
       inp.steer = (inp.steer || 0) * (1 - k) + ooc.kick * k;
+      inp.ooc = ooc.t < 0.3;   // and no stability control at first
       if (ooc.t >= ooc.dur) ooc = null;
     }
     return inp;
@@ -9127,7 +9188,12 @@ const RaceGame = (() => {
       prevSpin = spinNow;
       // the car faces the camera: a front three-quarter view, swaying 3-37 degrees off the nose
       if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4, 1.5, level); }
-      else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dt);
+      else {
+        R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dt);
+        // the boost's first surge widens the view a little more (the camera keeps its own smoothed
+        // field of view, which it puts back next frame)
+        if (car.kick > 0) { R.camera.fov += 5 * car.kick; R.camera.updateProjectionMatrix(); }
+      }
     }
     // everyone else (instanced): the street as it was during a crash or replay
     const draws = (state === 'crash' || state === 'replay') && frozenDraw ? frozenDraw : drawStates();
