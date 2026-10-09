@@ -246,12 +246,54 @@
       <label class="switch" title="The camera shakes with the impact"><input type="checkbox" id="tg-shake" checked><span>Shake</span></label>
     </div>
     <button id="btn-video" class="small" title="Save the replay as an MP4 video (1080p, with sound), at the playback speed chosen">Save video</button>
+    <button id="btn-more" class="small ghost more-toggle" aria-expanded="false">More</button>
   </div>
 
   <div id="pip-label" hidden>Onboard high-speed camera</div>
   <div id="legend" class="panel legend" hidden></div>
   <div id="toast" role="status" hidden></div>
   <div id="loading">Loading 3D engine…</div>
+  <script>
+    // The panels' fold buttons, for the barrier tests and the crash labs alike. On a phone (narrow,
+    // or short when held sideways) the panels start folded so the 3D view and the main buttons stay
+    // clear: the setup to a bar with its run button, the results to their header (each time they
+    // appear), the playback bar to its basic controls (More shows the rest).
+    (function () {
+      var small = window.matchMedia('(max-width: 900px), (max-height: 520px)');
+      var setup = document.getElementById('setup'), results = document.getElementById('results');
+      var hide = document.getElementById('btn-collapse'), timeline = document.getElementById('timeline'), more = document.getElementById('btn-more');
+      function foldResults(fold) {
+        var body = document.getElementById('res-body');
+        body.hidden = fold;
+        hide.textContent = fold ? 'Show' : 'Hide'; hide.setAttribute('aria-expanded', String(!fold));
+        document.body.classList.toggle('res-open', !fold && !results.hidden);
+      }
+      hide.addEventListener('click', function () { foldResults(!document.getElementById('res-body').hidden); });
+      new MutationObserver(function () {
+        if (results.hidden) document.body.classList.remove('res-open');
+        else foldResults(small.matches || document.getElementById('res-body').hidden);   // on a phone, folded each time
+      }).observe(results, { attributes: true, attributeFilter: ['hidden'] });
+      // the setup's fold toggle (the labs build the panel's content: put it back when it's gone)
+      function addToggle() {
+        if (setup.querySelector('.sheet-toggle')) return;
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'ghost small sheet-toggle'; b.textContent = 'Settings'; b.setAttribute('aria-expanded', 'false');
+        b.addEventListener('click', function () {
+          var open = !setup.classList.contains('open');
+          setup.classList.toggle('open', open);
+          b.textContent = open ? 'Done' : 'Settings'; b.setAttribute('aria-expanded', String(open));
+        });
+        setup.insertBefore(b, setup.firstChild);
+      }
+      addToggle();
+      new MutationObserver(addToggle).observe(setup, { childList: true });
+      more.addEventListener('click', function () {
+        var on = !timeline.classList.contains('more');
+        timeline.classList.toggle('more', on);
+        more.textContent = on ? 'Less' : 'More'; more.setAttribute('aria-expanded', String(on));
+      });
+    })();
+  </script>
 </div>
 
 <script src="models/lexus.phys.js"></script>

@@ -1539,6 +1539,7 @@ node tools/headless-check.js lexus      a subset, by name fragment (rigid56, lab
 <li>Only your crashes run the lattice solver. Rivals and traffic wreck as rigid bodies, because the solver runs slower than real time during an impact, which is also why the crash camera is in slow motion.</li>
 <li>Very hard head-on hits (about 150 km/h and up, square into a wall) can tip the car onto its nose. That is the solver's own behaviour, also seen in the simulator's rigid-barrier test.</li>
 <li>Opponent driving is a set of rules (speed profile, pure pursuit, lane choice), not a learned driver.</li>
+<li>The touch controls were tested with simulated touches in desktop Chrome at phone sizes, not on a real phone; how smoothly the city runs on a phone isn't measured.</li>
 </ul></li>
 <li><strong>Saving a video</strong> needs WebCodecs. The first time, it loads mp4-muxer from the CDN.</li>
 <li><strong>Performance.</strong> The brick-wall computation takes several seconds on a laptop. The phone layout works but is cramped.</li>

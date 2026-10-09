@@ -22,7 +22,7 @@
  * URL: ?car=lexus|mustang (the car the select screen starts on), ?seed=<n> (another city),
  * ?damage=dramatic, ?traffic=0,
  * ?test=wall150|headon|takedown (a scripted crash or takedown at once, results in
- * window.__race.test), ?worker=0.
+ * window.__race.test), ?worker=0, ?touch=1|0 (on-screen buttons on or off; by default on touch screens).
  */
 const RaceGame = (() => {
   'use strict';
@@ -36,7 +36,10 @@ const RaceGame = (() => {
 
   const level = CrashLevel.build({ seed: +q.get('seed') || undefined });
   const L = level.length;
-  const R = RaceRender.create({ level, container: $('#view') });
+  // a touch screen (or ?touch=1): on-screen buttons, and a lighter picture for a phone's GPU
+  const TOUCH = q.get('touch') === '1' || (q.get('touch') !== '0' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  if (TOUCH) document.body.classList.add('touch');
+  const R = RaceRender.create({ level, container: $('#view'), pixelRatio: TOUCH ? 1 : 1.5, shadowSize: TOUCH ? 1024 : 2048 });
   const world = RaceWorld.create(level);
   const props = RaceProps.create(level);   // street lights, signals, cones, bins ... to knock over
   const specs = { lexus: Veh.get('lexus'), mustang: Veh.get('mustang') };
@@ -222,7 +225,7 @@ const RaceGame = (() => {
       camAngle += dt * 0.35;
       R.orbit(PT, camAngle, 7.5, 1.9, level);
     }
-    if (crashT > 1.2) $('#crash-skip').hidden = false;
+    if (crashT > 1.2) { $('#crash-skip').hidden = false; if (TOUCH) $('#crash-skip').textContent = 'Tap Gas to carry on'; }
     const over = (crash.done && tPlay >= F.t[n - 1] - 1e-6) || (crash.T0 >= 0 && tPlay >= crash.T0 + 1.25);
     if (over || (crashT > 1.2 && (input.start || input.throttle > 0.5))) respawn();
   }
@@ -441,6 +444,23 @@ const RaceGame = (() => {
     $('#select').hidden = true; $('#hud').hidden = false;
   }
 
+  // ---------------------------------------------------------------- touch screens
+  const upright = window.matchMedia('(orientation: portrait)');
+  if (TOUCH) {
+    RaceInput.bindTouch($('#touch'));
+    // the first touch also starts the sound (phones only allow it inside a tap)
+    window.addEventListener('pointerdown', () => { if (!audio) { FX.initAudio(); FX.engineStart(); audio = true; } });
+    // full screen (and landscape, where the browser allows it): Android Chrome; not iPhone Safari
+    if (document.fullscreenEnabled) {
+      $('#btn-full').hidden = false;
+      $('#btn-full').addEventListener('click', () => {
+        if (document.fullscreenElement) { document.exitFullscreen(); return; }
+        document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape')).catch(() => {});
+      });
+    }
+  }
+  $('#btn-resume').addEventListener('click', () => { if (upright.matches && TOUCH) return; paused = false; $('#pause').hidden = true; });
+
   // ---------------------------------------------------------------- loop
   const sparks = new FX.Particles(R.scene, 2500);
   let acc = 0, last = performance.now(), simT = 0, audio = false, prevSpin = 0, paused = false, held = false;
@@ -465,6 +485,12 @@ const RaceGame = (() => {
     input = RaceInput.poll(dt);
     if (input.any && !audio) { FX.initAudio(); FX.engineStart(); audio = true; }
     if (input.pause && (state === 'race' || state === 'countdown')) { paused = !paused; $('#pause').hidden = !paused; }
+    // touch: the buttons while racing; a phone held upright pauses the race (and asks to turn it)
+    if (TOUCH) {
+      const show = state === 'countdown' || state === 'race' || state === 'crash';
+      if ($('#touch').hidden === show) $('#touch').hidden = !show;
+      if (upright.matches && (state === 'race' || state === 'countdown') && !paused) { paused = true; $('#pause').hidden = false; }
+    }
     if (state === 'replay') updateReplay(dt, input);
     if (state === 'select') updateSelect(input);
     const hold = state === 'select' || state === 'countdown';

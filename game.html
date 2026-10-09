@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Race · Car Crash Simulation</title>
 <link rel="stylesheet" href="css/game.css">
 <script type="importmap">
@@ -114,8 +114,30 @@
         <tr><td>Pause</td><td>Esc, P</td><td>Menu</td></tr>
       </table>
       <p class="muted">Press Esc or Menu to carry on.</p>
+      <button type="button" id="btn-resume" class="btn primary">Resume</button>
     </div>
   </div>
+
+  <!-- on a touch screen (or ?touch=1): on-screen buttons while racing -->
+  <div id="touch" class="touch" hidden>
+    <div class="t-top">
+      <button type="button" data-k="pause" aria-label="Pause">II</button>
+      <button type="button" data-k="camera" aria-label="Change camera">Cam</button>
+      <button type="button" data-k="reset" aria-label="Back on the road">Reset</button>
+      <button type="button" id="btn-full" aria-label="Full screen" hidden>⛶</button>
+    </div>
+    <div class="t-left">
+      <button type="button" data-k="left" aria-label="Steer left">◀</button>
+      <button type="button" data-k="right" aria-label="Steer right">▶</button>
+    </div>
+    <div class="t-right">
+      <button type="button" data-k="boost" class="t-boost">Boost</button>
+      <button type="button" data-k="hand" class="t-hand">Drift</button>
+      <button type="button" data-k="brake" class="t-brake">Brake</button>
+      <button type="button" data-k="gas" class="t-gas">Gas</button>
+    </div>
+  </div>
+  <div id="rotate" class="rotate"><div class="panel card"><b>Turn your phone sideways to race</b><span class="muted">The race is paused until then.</span></div></div>
   <div id="loading">Loading 3D engine…</div>
 </div>
 

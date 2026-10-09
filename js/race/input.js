@@ -12,6 +12,9 @@
  *   pause        Esc, P                           Menu
  *   menus        arrows, WASD; Enter              d-pad, left stick; A
  *
+ * On a touch screen the game shows on-screen buttons (game.html #touch, bindTouch): steer left and
+ * right, gas, brake, boost, drift (handbrake), and camera, back on the road, pause.
+ *
  * Keyboard steering eases in and out (a key is all or nothing; a stick isn't). Rumble, where the
  * browser and controller support it, through the gamepad's vibrationActuator.
  */
@@ -36,6 +39,26 @@ const RaceInput = (() => {
 
   const dz = (v) => Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD);
   const prevButtons = [];
+  // on-screen buttons (phones and tablets): [data-k] elements held down, or tapped (camera, reset,
+  // pause). Each button follows its own finger, so steering and the pedals work together.
+  const touch = { left: false, right: false, gas: false, brake: false, boost: false, hand: false };
+  const tapped = new Set();
+  function bindTouch(root) {
+    for (const b of root.querySelectorAll('[data-k]')) {
+      const k = b.dataset.k;
+      const down = (ev) => {
+        ev.preventDefault();
+        try { b.setPointerCapture(ev.pointerId); } catch (err) { /* a synthetic event */ }
+        if (k in touch) touch[k] = true; else tapped.add(k);
+        b.classList.add('on');
+      };
+      const up = () => { if (k in touch) touch[k] = false; b.classList.remove('on'); };
+      b.addEventListener('pointerdown', down);
+      for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(t, up);
+      b.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    }
+  }
+  window.addEventListener('blur', () => { for (const k in touch) touch[k] = false; });
   // menu steps from the stick: one per flick past 0.6, re-armed once it's back under 0.3
   const armed = [true, true];
   const flick = (i, v) => { if (Math.abs(v) < 0.3) armed[i] = true; else if (Math.abs(v) > 0.6 && armed[i]) { armed[i] = false; return Math.sign(v); } return 0; };
@@ -43,17 +66,19 @@ const RaceInput = (() => {
    *      nav: { x, y } (menu steps this poll: -1, 0 or 1; right and down positive) } */
   function poll(dt) {
     const k = (...c) => c.some(x => keys.has(x)), e = (...c) => c.some(x => pressed.has(x));
-    // keyboard steering: ease toward the key's direction, quicker back to centre
-    const kt = (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0);
+    // keyboard (and on-screen) steering: ease toward the key's direction, quicker back to centre
+    const kt = (k('KeyD', 'ArrowRight') || touch.right ? 1 : 0) - (k('KeyA', 'ArrowLeft') || touch.left ? 1 : 0);
     const rate = (kt === 0 || Math.sign(kt) !== Math.sign(kSteer)) ? 6 : 3.2;
     kSteer += Math.max(-rate * dt, Math.min(rate * dt, kt - kSteer));
+    const t = (x) => tapped.has(x);
     const out = {
-      steer: kSteer, throttle: k('KeyW', 'ArrowUp') ? 1 : 0, brake: k('KeyS', 'ArrowDown') ? 1 : 0,
-      handbrake: k('Space') ? 1 : 0, boost: k('ShiftLeft', 'ShiftRight', 'KeyN'), lookBack: k('KeyB'),
-      camera: e('KeyC'), reset: e('KeyR'), pause: e('Escape', 'KeyP'), start: e('Enter', 'Space'),
-      any: pressed.size > 0, device: 'keyboard',
+      steer: kSteer, throttle: k('KeyW', 'ArrowUp') || touch.gas ? 1 : 0, brake: k('KeyS', 'ArrowDown') || touch.brake ? 1 : 0,
+      handbrake: k('Space') || touch.hand ? 1 : 0, boost: k('ShiftLeft', 'ShiftRight', 'KeyN') || touch.boost, lookBack: k('KeyB'),
+      camera: e('KeyC') || t('camera'), reset: e('KeyR') || t('reset'), pause: e('Escape', 'KeyP') || t('pause'), start: e('Enter', 'Space'),
+      any: pressed.size > 0 || tapped.size > 0 || Object.values(touch).some(Boolean), device: Object.values(touch).some(Boolean) ? 'touch' : 'keyboard',
       nav: { x: (e('KeyD', 'ArrowRight') ? 1 : 0) - (e('KeyA', 'ArrowLeft') ? 1 : 0), y: (e('KeyS', 'ArrowDown') ? 1 : 0) - (e('KeyW', 'ArrowUp') ? 1 : 0) },
     };
+    tapped.clear();
     // the first connected standard-mapping gamepad
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let gp = null;
@@ -89,5 +114,5 @@ const RaceInput = (() => {
     const gp = lastPad, act = gp && gp.vibrationActuator;
     if (act && act.playEffect) act.playEffect('dual-rumble', { duration: ms, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak) }).catch(() => {});
   }
-  return { poll, rumble, get pad() { return lastPad ? lastPad.id : padId; } };
+  return { poll, rumble, bindTouch, get pad() { return lastPad ? lastPad.id : padId; } };
 })();

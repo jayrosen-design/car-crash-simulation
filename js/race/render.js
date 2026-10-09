@@ -42,7 +42,7 @@ const RaceRender = (() => {
     const sun = new T.DirectionalLight(0xffe3c2, 2.6);
     const SUN_DIR = new T.Vector3(-0.55, 0.52, -0.65).normalize();
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(opts.shadowSize || 2048, opts.shadowSize || 2048);
     Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 420 });
     sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
     sun.shadow.camera.layers.enable(1);

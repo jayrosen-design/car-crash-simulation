@@ -137,3 +137,61 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   .speedo #hud-speed { font-size: 44px; }
   .msg { font-size: 24px; }
 }
+
+/* touch screens (body.touch, set by game.js): on-screen buttons. Left thumb steers; right thumb has
+   gas, brake, boost and drift; pause, camera and back-on-the-road at the top. The speed, health and
+   boost move to the bottom middle, between the thumbs. */
+#touch { position: absolute; inset: 0; pointer-events: none; z-index: 25; }
+#touch button { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.35); background: rgba(16, 20, 26, 0.42); color: #fff; border-radius: 50%; font: 800 14px var(--font); letter-spacing: 0.04em; text-transform: uppercase; backdrop-filter: blur(3px); }
+#touch button.on { background: rgba(79, 156, 240, 0.6); border-color: #fff; }
+.t-left { position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; gap: 14px; }
+#touch .t-left button { width: 86px; height: 86px; font-size: 28px; }
+.t-right { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); width: 216px; height: 200px; }
+.t-right button { position: absolute; }
+.t-gas { right: 0; bottom: 0; width: 100px; height: 100px; background: rgba(46, 150, 80, 0.5) !important; }
+.t-brake { right: 112px; bottom: 0; width: 80px; height: 80px; background: rgba(180, 45, 35, 0.5) !important; }
+.t-boost { right: 10px; bottom: 112px; width: 80px; height: 80px; background: rgba(230, 130, 30, 0.5) !important; }
+.t-hand { right: 118px; bottom: 96px; width: 66px; height: 66px; font-size: 12px !important; }
+.t-gas.on, .t-brake.on, .t-boost.on, .t-hand.on { border-color: #fff; filter: brightness(1.4); }
+.t-top { position: absolute; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+#touch .t-top button { width: 50px; height: 40px; border-radius: 10px; font-size: 12px; }
+body.touch .hud-br { right: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(50%); text-align: center; }
+body.touch .boost, body.touch .health { justify-content: center; margin-bottom: 3px; }
+body.touch .boost-bar, body.touch .health-bar { width: 130px; height: 9px; }
+body.touch .speedo { justify-content: center; }
+body.touch .speedo #hud-speed { font-size: 38px; }
+body.touch .chip { right: 50%; transform: translateX(50%); bottom: 118px; }
+body.touch .crash-skip { bottom: 140px; }
+/* the pause card on a touch screen: no keyboard table, clear of the buttons at the top */
+body.touch #pause .keys, body.touch #pause .card > .muted { display: none; }
+body.touch .overlay:not(.select) { padding-top: 56px; }
+/* held upright: ask to turn it (game.js pauses the race meanwhile) */
+.rotate { display: none; position: absolute; inset: 0; z-index: 40; place-items: center; background: rgba(5, 7, 10, 0.88); text-align: center; }
+.rotate .card { display: grid; gap: 6px; }
+@media (orientation: portrait) { body.touch .rotate { display: grid; } }
+/* short screens (a phone held sideways): a smaller HUD, scrolling overlays, a two-column car select */
+@media (max-height: 520px) {
+  .hud-tl { transform: scale(0.72); transform-origin: top left; top: 8px; left: 8px; }
+  .minimap { width: 120px; height: 102px; top: 8px; right: 8px; }
+  .overlay:not(.select) { place-items: start center; overflow: auto; padding: 12px 0; }
+  .card { padding: 14px 18px; }
+  .card h2 { margin-bottom: 8px; }
+  .msg { top: 26%; font-size: 26px; }
+  .overlay.select { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto 1fr; grid-template-areas: "head head" "garage stats" "foot stats"; gap: 8px 12px; padding: 10px 12px; align-items: start; }
+  .overlay.select .sel-head { grid-area: head; max-width: none; }
+  .overlay.select .sel-garage { grid-area: garage; }
+  .overlay.select .sel-stats { grid-area: stats; }
+  .sel-stats .small.muted { display: none; }
+  .overlay.select .sel-head .muted { display: none; }
+  .overlay.select .sel-head h2 { font-size: 22px; margin: 0; }
+  .overlay.select .sel-head .eyebrow { margin: 0; }
+  .overlay.select .sel-garage, .overlay.select .sel-stats { max-width: none; padding: 8px 10px; }
+  .overlay.select .sel-foot { grid-area: foot; max-width: none; text-align: left; }
+  .sel-row { padding: 6px; }
+  .sel-car { padding: 6px 10px; }
+  .bars { gap: 6px; margin-bottom: 8px; }
+  .specs { gap: 2px 10px; padding-top: 6px; font-size: 13px; }
+  .sel-keys, .sel-hint { display: none; }
+  .sel-foot .credits { margin-top: 6px; padding: 4px 8px; font-size: 10px; }
+}

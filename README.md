@@ -138,6 +138,12 @@ In playback:
 - **Re-run the dummy.** Change the seatbelt, airbag, curtain airbag or restraint system to replay the same crash with different restraints.
 - **After the crash.** If the crash crushed the radiator, steam vents. If it drove the engine back into the firewall, the engine bay catches fire. This plays in real time once the replay reaches its end; **Show the aftermath** in the results jumps there.
 
+**On a phone** (a narrow screen, or a short one held sideways), the panels start folded so the 3D view and the main buttons stay clear:
+- **Setup** shows its title, **Settings** and the run button. Settings opens the full panel, with the run button kept at its foot.
+- **Results** show only their header each time they appear. **Show** opens them.
+- **The playback bar** keeps play, the scrubber, the speed and the cameras. **More** adds the map and X-ray toggles and Save video.
+- **Held sideways,** the panels sit at the sides instead of top and bottom.
+
 ---
 
 ## Race (game mode)
@@ -160,6 +166,14 @@ In playback:
 | Menus (car select) | arrows or WASD, Enter | d-pad or left stick, A |
 
 Controllers work through the Gamepad API's standard mapping, with rumble where the browser supports it.
+
+**On a touch screen** (phones and tablets), on-screen buttons appear on their own while racing:
+- **Left thumb:** steer left and right.
+- **Right thumb:** gas, brake, boost and drift (the handbrake).
+- **Top:** pause, camera, back on the road, and full screen where the browser allows it (Android Chrome; not iPhone Safari).
+- **Holding the phone:** race with it sideways. Held upright, the race pauses and asks you to turn it.
+- **Picture:** on a touch screen the game draws at a lower resolution, with a smaller shadow map, to suit a phone's graphics chip.
+- **Testing:** `?touch=1` shows the buttons on any screen, and `?touch=0` hides them.
 
 ### The race
 
@@ -2172,6 +2186,7 @@ Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panel
   - Only your crashes run the lattice solver. Rivals and traffic wreck as rigid bodies, because the solver runs slower than real time during an impact, which is also why the crash camera is in slow motion.
   - Very hard head-on hits (about 150 km/h and up, square into a wall) can tip the car onto its nose. That is the solver's own behaviour, also seen in the simulator's rigid-barrier test.
   - Opponent driving is a set of rules (speed profile, pure pursuit, lane choice), not a learned driver.
+  - The touch controls were tested with simulated touches in desktop Chrome at phone sizes, not on a real phone; how smoothly the city runs on a phone isn't measured.
 - **Saving a video** needs WebCodecs. The first time, it loads mp4-muxer from the CDN.
 - **Performance.** The brick-wall computation takes several seconds on a laptop. The phone layout works but is cramped.
 

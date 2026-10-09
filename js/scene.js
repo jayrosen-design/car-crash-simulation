@@ -989,7 +989,8 @@ const Scene3D = (() => {
     if (shaking) { camera.rotateZ(-shk.roll); camera.position.sub(shk.off); }
     pipRect = null;
     if (showPip && camMode !== 'onboard') {
-      const pw = Math.round(Math.min(360, w * 0.28)), ph = Math.round(pw * 0.75), px = 12, py = (bottomInset || 0) + 12;
+      // on a short screen (a phone held sideways) no taller than about a quarter of it
+      const pw = Math.round(Math.min(360, w * 0.28, h < 600 ? h * 0.25 / 0.75 : Infinity)), ph = Math.round(pw * 0.75), px = 12, py = (bottomInset || 0) + 12;
       main.onboardPose(pipCam);
       pipCam.aspect = pw / ph; pipCam.updateProjectionMatrix();
       renderer.setScissorTest(true);

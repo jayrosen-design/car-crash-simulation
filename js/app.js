@@ -448,10 +448,7 @@
     $$('.tab-panels > div').forEach(p => { p.hidden = p.dataset.panel !== b.dataset.tab; });
     charts.forEach(c => c.render());
   }));
-  $('#btn-collapse').addEventListener('click', (e) => {
-    const body = $('#res-body'); body.hidden = !body.hidden;
-    e.target.textContent = body.hidden ? 'Show' : 'Hide'; e.target.setAttribute('aria-expanded', !body.hidden);
-  });
+  // (the results' Hide button: index.html's panel script, shared with the crash labs)
 
   // ---------------------------------------------------------------- playback
   $('#btn-play').addEventListener('click', togglePlay);

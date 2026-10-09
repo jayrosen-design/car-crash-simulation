@@ -152,7 +152,7 @@ body.exporting #timeline, body.exporting #results, body.exporting #setup, body.e
 #toast { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--panel-solid); border: 1px solid var(--line); padding: 10px 14px; border-radius: 8px; z-index: 20; max-width: calc(100% - 32px); }
 
 /* narrow screens: panels become stacked sheets */
-@media (max-width: 900px) {
+@media (max-width: 900px), (max-height: 520px) {
   #stepper li:not(.on) { display: none; }
   #scenario { max-width: 170px; }
   #topbar { gap: 8px; padding: 0 10px; }
@@ -196,7 +196,7 @@ table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
 table.cmp th { color: var(--muted); font-weight: 500; }
 table.cmp tr.on td { color: var(--accent); font-weight: 600; }
 .rerun .field { margin: 4px 0 0; }
-@media (max-width: 900px) {
+@media (max-width: 900px), (max-height: 520px) {
   .live { top: auto; bottom: calc(42% + 16px); left: 8px; right: 8px; max-width: none; width: auto; font-size: 12px; }
 }
 @media (max-width: 600px) {
@@ -204,4 +204,30 @@ table.cmp tr.on td { color: var(--accent); font-weight: 600; }
   .scenario { flex: 1 1 auto; }
   #scenario { max-width: none; width: 100%; }
   .top-actions button { white-space: nowrap; padding: 6px 8px; font-size: 13px; }
+}
+
+/* phones (narrow, or short when held sideways): the panels fold (index.html's panel script) so the
+   3D view and the main buttons stay clear. The fold buttons never show on a desktop. */
+.sheet-toggle, .more-toggle { display: none; }
+@media (max-width: 900px), (max-height: 520px) {
+  #setup .sheet-toggle { display: inline-block; position: absolute; top: 9px; right: 10px; z-index: 1; }
+  #setup h2 { margin-right: 84px; }
+  #setup:not(.open) { padding: 10px 12px; overflow: hidden; }
+  #setup:not(.open) > :not(h2):not(#btn-run):not(.sheet-toggle) { display: none !important; }
+  #setup:not(.open) h2 { margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #setup.open { max-height: 72%; }
+  #setup.open #btn-run { position: sticky; bottom: -14px; box-shadow: 0 -12px 16px rgba(14, 18, 23, 0.85); }
+  .res-head h2 { margin: 0; }
+  #timeline .more-toggle { display: inline-block; }
+  #timeline:not(.more) .toggles.compact, #timeline:not(.more) #btn-video { display: none; }
+  .live { top: 112px; bottom: auto; }   /* the crash labs' readout, under the folded results */
+  body.res-open .live { display: none; }
+}
+/* phones held sideways: panels at the sides instead of sheets */
+@media (max-height: 520px) and (min-width: 560px) {
+  .left, .hud { top: 60px; bottom: auto; left: 8px; right: auto; width: min(360px, 46%); max-height: calc(100% - 68px); }
+  #setup:not(.open) { top: auto; bottom: 8px; }
+  .right { top: 60px; right: 8px; left: auto; width: min(400px, 50%); max-height: calc(100% - 168px); }   /* clear of the playback bar */
+  .live { top: 60px; left: 8px; right: auto; width: auto; max-width: 46%; }
+  .bottom { left: 8px; right: 8px; bottom: 8px; padding: 6px 10px; gap: 8px; }
 }
