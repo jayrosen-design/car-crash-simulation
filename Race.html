@@ -4695,9 +4695,16 @@ if (typeof module === 'object' && module.exports) module.exports = RaceCar;
  * envelope). Against the level's boxes (buildings, barriers) and cylinders (trees), and against
  * each other, contacts are found by the separating-axis test and
  * resolved with impulses: restitution and Coulomb friction at the contact point, so a glancing hit
- * scrapes and turns the car and a square one stops it. A hit is a crash when the approach speed
- * along the contact normal passes a limit (CRASH); then the game hands the cars over to the full
- * crash solver from their state one step earlier, just before they touched (history()).
+ * scrapes and turns the car and a square one stops it. Walls are slippery (as in Burnout), and a car
+ * already spinning hard is not spun harder by a wall, so it grinds along it. A hit is a crash when
+ * the approach speed along the contact normal passes a limit (CRASH), and on a wall only when the car
+ * meets it nose or tail first (within 45 degrees of square): sliding into a wall sideways is a
+ * bounce. Then the game hands the cars over to the full crash solver from their state one step
+ * earlier, just before they touched (history()).
+ *
+ * Car against car, the push-out is shared by mass, and a driver steering into the other car shoves
+ * it (a push on top of the impulse, growing with the steering). A wrecked car (body.wrecked) is
+ * shoved out of the way by a driving car without slowing it.
  *
  * Cars are RaceCar bodies (vehicle.js). Traffic can be kinematic (set by its driver each step)
  * until something hits it; then it becomes a free body. Cars follow the level's hills and ramps and
@@ -4712,7 +4719,9 @@ const RaceWorld = (() => {
   'use strict';
   // m/s of approach along the contact normal that wrecks a car; rivals jostling each other (pack) take more
   const CRASH = { wall: 13, car: 13.5, pack: 20 };
-  const E_WALL = 0.12, E_CAR = 0.2, MU_WALL = 0.35, MU_CAR = 0.3;
+  const E_WALL = 0.12, E_CAR = 0.2, MU_WALL = 0.15, MU_CAR = 0.3;
+  const SQUARE = 0.7;       // |cos| of the angle between the car's heading and a wall's normal: nose or tail first
+  const SHOVE = 12;         // m/s² of push from a car steering fully into another (times its mass)
   const HISTORY = 12;                       // steps kept for the crash hand-over
   const G = 9.81, FLAT = { h: 0, gx: 0, gz: 0 };
   // the player's damage (a share of the health bar) from a hit that changes the car's speed by dv
@@ -4720,17 +4729,19 @@ const RaceWorld = (() => {
   // 13 m/s (47 km/h), all of it from about 25 m/s (90 km/h)
   const damage = (dv) => Math.max(0, dv - 2.5) ** 2 / 650;
   // ... from a contact event, at its first touch: the approach speed along the normal, with the
-  // bounce; against another car, the share of the change of speed this car takes (by mass)
+  // bounce; against another car, the share of the change of speed this car takes (by mass); against
+  // a wall, full nose or tail first, down to 0.4 of it sliding in sideways
   function hitDamage(e, b) {
     if (e.kind === 'land') return 0;
     let dv = e.vn * (e.kind === 'car' ? 1 + E_CAR : 1 + E_WALL);
     if (e.kind === 'car') { const o = e.a === b ? e.b : e.a; dv *= o.car.m / (o.car.m + b.car.m); }
+    if (e.kind === 'wall') dv *= 0.4 + 0.6 * Math.min(1, e.sq / SQUARE);
     return damage(dv);
   }
 
   function create(level) {
     const bodies = [];
-    const events = [];        // contacts this step: { a, b (body or null), kind: 'wall'|'post'|'car', vn, x, z, nx, nz, crash }
+    const events = [];        // contacts this step: { a, b (body or null), kind: 'wall'|'post'|'car'|'land', vn, x, z, nx, nz, crash, J; walls: sq; cars: ua, ub }
     const hist = [];          // ring of snapshots
     let tick = 0;
 
@@ -4770,14 +4781,20 @@ const RaceWorld = (() => {
       const dx = px - X.x, dz = pz - X.z;
       return Math.max(Math.abs(dx * X.ux + dz * X.uz) - X.hx, Math.abs(-dx * X.uz + dz * X.ux) - X.hz);
     }
-    // the contact point of two overlapping boxes: the corner of either lying deepest inside the other
-    const CORNERS = [[1, 1], [1, -1], [-1, 1], [-1, -1]], PT = [0, 0];
+    // the contact point of two overlapping boxes: the corner of either lying deepest inside the other,
+    // or the middle of the corners within 2 cm of that (a side flat against a wall: its middle, not
+    // one end or the other from step to step)
+    const CORNERS = [[1, 1], [1, -1], [-1, 1], [-1, -1]], PT = [0, 0], CD = new Float64Array(24);
     function deepest(A, B) {
-      let best = Infinity;
+      let best = Infinity, n = 0;
       for (const [X, Y] of [[A, B], [B, A]]) for (const [u, w] of CORNERS) {
         const x = X.x + X.ux * u * X.hx - X.uz * w * X.hz, z = X.z + X.uz * u * X.hx + X.ux * w * X.hz, d = boxDist(Y, x, z);
-        if (d < best) { best = d; PT[0] = x; PT[1] = z; }
+        CD[n++] = x; CD[n++] = z; CD[n++] = d;
+        if (d < best) best = d;
       }
+      let sx = 0, sz = 0, k = 0;
+      for (let i = 0; i < n; i += 3) if (CD[i + 2] < best + 0.02) { sx += CD[i]; sz += CD[i + 1]; k++; }
+      PT[0] = sx / k; PT[1] = sz / k;
       return PT;
     }
     function vsCyl(b, A, q) {
@@ -4799,8 +4816,12 @@ const RaceWorld = (() => {
       const J = -(1 + E_WALL) * vn / kn;
       const tx = -hit.nz, tz = hit.nx, vt = vx * tx + vz * tz, rt = rx * tz - rz * tx, kt = 1 / c.m + rt * rt / c.Izz;
       const Jt = Math.max(-MU_WALL * J, Math.min(MU_WALL * J, -vt / kt));
-      c.applyImpulse(hit.px, hit.pz, J * hit.nx + Jt * tx, J * hit.nz + Jt * tz);
-      events.push({ a: b, b: null, kind, vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, crash: -vn > CRASH.wall && !b.ghost, J });
+      const jx = J * hit.nx + Jt * tx, jz = J * hit.nz + Jt * tz;
+      // a car already spinning hard is not spun harder: the impulse at its centre of gravity instead
+      const spinUp = (rx * jz - rz * jx) * c.yaw > 0 && Math.abs(c.yaw) > 2.5;
+      c.applyImpulse(spinUp ? c.x : hit.px, spinUp ? c.z : hit.pz, jx, jz);
+      const sq = Math.abs(Math.cos(c.h) * hit.nx + Math.sin(c.h) * hit.nz);
+      events.push({ a: b, b: null, kind, vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, sq, crash: -vn > CRASH.wall && (kind !== 'wall' || sq > SQUARE) && !b.ghost, J });
     }
 
     // ---------------------------------------------------------------- car against car
@@ -4818,12 +4839,25 @@ const RaceWorld = (() => {
       const P = deepest(A, B);
       return { nx, nz, depth: best, px: P[0], pz: P[1] };
     }
-    function resolveCars(a, b, hit) {
-      const A = a.car, B = b.car, ma = a.kinematic ? Infinity : A.m, mb = b.kinematic ? Infinity : B.m;
-      const wa = a.kinematic ? 0 : 1, wb = b.kinematic ? 0 : 1;
-      const share = wa + wb ? 1 / (wa + wb) : 0;
-      A.x += hit.nx * (hit.depth + 0.002) * wa * share; A.z += hit.nz * (hit.depth + 0.002) * wa * share;
-      B.x -= hit.nx * (hit.depth + 0.002) * wb * share; B.z -= hit.nz * (hit.depth + 0.002) * wb * share;
+    // how far a car is steering toward the side where point (x, z) lies: 0..1 (its lock narrows with speed)
+    function steerToward(c, x, z) {
+      const side = (x - c.x) * -Math.sin(c.h) + (z - c.z) * Math.cos(c.h);
+      const lock = c.tune ? c.tune.steer / (1 + Math.abs(c.forward) / 14) + 0.035 : 0.5;
+      return Math.max(0, Math.min(1, Math.sign(side) * c.steer / lock));
+    }
+    function resolveCars(a, b, hit, dt) {
+      // a driving car meets a wreck as if it couldn't be moved: the wreck takes the push and the impulse
+      const fixA = a.kinematic || (b.wrecked && !a.wrecked), fixB = b.kinematic || (a.wrecked && !b.wrecked);
+      const A = a.car, B = b.car, ma = fixA ? Infinity : A.m, mb = fixB ? Infinity : B.m;
+      const wa = fixA ? 0 : 1, wb = fixB ? 0 : 1;
+      // the push-out shared by mass: the lighter car moves more
+      const sa = !wa ? 0 : !wb ? 1 : B.m / (A.m + B.m), sb = !wb ? 0 : !wa ? 1 : A.m / (A.m + B.m);
+      A.x += hit.nx * (hit.depth + 0.002) * sa; A.z += hit.nz * (hit.depth + 0.002) * sa;
+      B.x -= hit.nx * (hit.depth + 0.002) * sb; B.z -= hit.nz * (hit.depth + 0.002) * sb;
+      // a driver steering into the other car shoves it, for as long as it presses on it
+      const fa = wb && !a.wrecked ? steerToward(A, B.x, B.z) : 0, fb = wa && !b.wrecked ? steerToward(B, A.x, A.z) : 0;
+      if (fa > 0) B.applyImpulse(hit.px, hit.pz, -hit.nx * SHOVE * fa * A.m * dt, -hit.nz * SHOVE * fa * A.m * dt);
+      if (fb > 0) A.applyImpulse(hit.px, hit.pz, hit.nx * SHOVE * fb * B.m * dt, hit.nz * SHOVE * fb * B.m * dt);
       const rax = hit.px - A.x, raz = hit.pz - A.z, rbx = hit.px - B.x, rbz = hit.pz - B.z;
       const vax = A.vx - A.yaw * raz, vaz = A.vz + A.yaw * rax, vbx = B.vx - B.yaw * rbz, vbz = B.vz + B.yaw * rbx;
       const rvx = vax - vbx, rvz = vaz - vbz, vn = rvx * hit.nx + rvz * hit.nz;
@@ -4839,8 +4873,9 @@ const RaceWorld = (() => {
       const jx = J * hit.nx + Jt * tx, jz = J * hit.nz + Jt * tz;
       if (wa) A.applyImpulse(hit.px, hit.pz, jx, jz);
       if (wb) B.applyImpulse(hit.px, hit.pz, -jx, -jz);
-      const lim = a.kind === 'rival' && b.kind === 'rival' ? CRASH.pack : CRASH.car;
-      events.push({ a, b, kind: 'car', vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, crash: -vn > lim && !a.ghost && !b.ghost, J });
+      const lim = a.kind === 'rival' && b.kind === 'rival' && !a.wrecked && !b.wrecked ? CRASH.pack : CRASH.car;
+      // ua, ub: how fast each car was moving toward the other before the hit (who drove into whom)
+      events.push({ a, b, kind: 'car', vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, ua: -(vax * hit.nx + vaz * hit.nz), ub: vbx * hit.nx + vbz * hit.nz, crash: -vn > lim && !a.ghost && !b.ghost, J });
     }
 
     // ---------------------------------------------------------------- over hills and ramps
@@ -4916,7 +4951,7 @@ const RaceWorld = (() => {
           // a hit traffic car becomes a free body
           if (a.kinematic) a.kinematic = false;
           if (b.kinematic) b.kinematic = false;
-          resolveCars(a, b, hit);
+          resolveCars(a, b, hit, dt);
         }
       }
       tick++;
@@ -5205,7 +5240,7 @@ const RaceAI = (() => {
     function respawn(r, s) {
       const p = level.poseAt(s, r.lane);
       r.body.car.place(p.x, p.z, p.h, 12);
-      r.body.ghost = 2; r.wreck = 0; r.stuck = 0; r.l = r.laneT = r.lane;
+      r.body.ghost = 2; r.body.wrecked = false; r.wreck = 0; r.stuck = 0; r.l = r.laneT = r.lane;
       r.prog.prevS = s;
     }
     // drive another body the same way (the player's car once the player has finished)
@@ -5543,6 +5578,131 @@ const RaceProps = (() => {
   return { create, TYPES };
 })();
 if (typeof module === 'object' && module.exports) module.exports = RaceProps;
+
+</script>
+<script>/* js/race/rules.js */
+/* The Race game's rules for slams and takedowns, after Burnout 3's.
+ *
+ * A slam never wrecks a car by itself. A contact between the player and a rival is a rub, a light
+ * slam or a full slam, by how hard the player drove into it (the approach speed along the contact
+ * normal) and where it landed: the player's nose into the rival's tail is a shunt (rear), anything
+ * else a side slam. A full slam puts the rival out of control for a moment (the game does that) and
+ * makes it fragile: for a second, any solid touch wrecks it. For two seconds after any contact with
+ * the player, a hard hit on something wrecks it (the window). A wreck in the window is credited to
+ * the player half a second later, unless the player has crashed meanwhile. A slammed rival that
+ * touches something and comes through the window is "Takedown denied". Takedowns close together are doubles, and
+ * several within half a minute a spree. A rival that wrecks with no contact while the player is
+ * tailgating it is a psyche-out.
+ *
+ * The numbers are this game's own, tuned to its 240 Hz world (world.js) and real gravity.
+ *
+ * DOM-free: global RaceRules in the browser, module.exports in Node.
+ */
+const RaceRules = (() => {
+  'use strict';
+  const SLAM = {
+    rear: { light: 3, full: 7 },     // m/s along the contact normal: the player's nose into a rival's tail
+    side: { light: 2.5, full: 5 },   // anything else
+  };
+  const COOLDOWN = 1.0;    // s: no new slam between the same two cars
+  const WINDOW = 2.0;      // s after a contact in which the rival's wreck is the player's
+  const FRAGILE = 1.0;     // s after a full slam in which any solid touch wrecks the rival
+  const FRAGILE_VN = 1.5;  // m/s: a solid touch
+  const SHOVED_VN = 7;     // m/s: a hard enough hit to wreck a rival within the window
+  const COMMIT = 0.5;      // s from the wreck to the takedown counting
+  const DOUBLE = 1.5;      // s between two takedowns for a double
+  const SPREE = 30;        // s: takedowns within this make a spree (three or more)
+  const TAIL = 7;          // m: tailgating, for a psyche-out
+  const TAIL_T = 1.0;      // s: how recently
+
+  // where a point lies along a car's box: -1 at its tail, +1 at its nose
+  function along(c, x, z) {
+    const s = c.spec, off = s.xMin + s.length / 2 - c.cgX, ch = Math.cos(c.h), sh = Math.sin(c.h);
+    return ((x - c.x - ch * off) * ch + (z - c.z - sh * off) * sh) / (s.length / 2);
+  }
+  /* A contact event e (world.js, kind 'car') between bodies att and vic, att driving into vic:
+   * { type: 'rear'|'side', full } or null (a rub) */
+  function classify(e, att, vic) {
+    const rear = along(att.car, e.x, e.z) > 0.5 && along(vic.car, e.x, e.z) < -0.5;
+    const T = rear ? SLAM.rear : SLAM.side;
+    if (e.vn < T.light) return null;
+    return { type: rear ? 'rear' : 'side', full: e.vn >= T.full };
+  }
+  // which of a contact's two cars drove into the other: the one that was moving toward it faster
+  const attacker = (e) => (e.ua >= e.ub ? e.a : e.b);
+
+  function create() {
+    const st = new Map();   // rival -> its state
+    const S = (r) => { let s = st.get(r); if (!s) st.set(r, s = { hitAt: -1e9, slamAt: -1e9, fragileUntil: -1e9, armed: false, touched: false, tailAt: -1e9 }); return s; };
+    const pending = [];     // wrecks waiting to count: { r, at, psyche }
+    const done = [];        // times of the takedowns that counted
+    let crashedAt = -1e9;
+    return {
+      /* a contact between the player (body me) and rival r at time t: records the hit; returns the
+       * player's slam on the rival ({ type, full }) or null (a rub, the rival's own hit, or too soon
+       * after the last slam between them) */
+      contact(e, me, r, t) {
+        const s = S(r);
+        s.hitAt = t;
+        if (attacker(e) !== me || t - s.slamAt < COOLDOWN) return null;
+        const slam = classify(e, me, r.body);
+        if (!slam) return null;
+        s.slamAt = t;
+        if (slam.full) { s.fragileUntil = t + FRAGILE; s.armed = true; s.touched = false; }
+        return slam;
+      },
+      /* rival r touched something other than the player (event e) at time t: whether it wrecks (a
+       * crash anyway, or a solid touch while fragile, or a hard one within the window). A slammed
+       * rival that survives a touch is denied when its window ends (update). */
+      rivalContact(e, r, t) {
+        const s = S(r);
+        if (e.crash || (t < s.fragileUntil && e.vn > FRAGILE_VN) || (t - s.hitAt < WINDOW && e.vn > SHOVED_VN)) return true;
+        if (s.armed && t - s.slamAt < WINDOW && e.vn > 0.5) s.touched = true;
+        return false;
+      },
+      // whether the player touched rival r within the window (a spin-out then is a wreck the player caused)
+      hitRecently: (r, t) => t - S(r).hitAt < WINDOW,
+      // the player is close behind or beside rival r (body me): tailgating
+      tail(me, r, t) {
+        const a = me.car, b = r.body.car, dx = a.x - b.x, dz = a.z - b.z;
+        if (dx * dx + dz * dz < TAIL * TAIL && dx * Math.cos(b.h) + dz * Math.sin(b.h) < 1 && a.speed > 15 && b.speed > 15) S(r).tailAt = t;
+      },
+      /* rival r wrecked at time t: whether the player gets it (then it counts in COMMIT s, by update) */
+      wrecked(r, t) {
+        const s = S(r);
+        s.armed = false; s.touched = false; s.fragileUntil = -1e9;
+        const hit = t - s.hitAt < WINDOW, psyche = !hit && t - s.tailAt < TAIL_T;
+        if (!hit && !psyche) return false;
+        pending.push({ r, at: t + COMMIT, psyche });
+        return true;
+      },
+      playerCrashed(t) { crashedAt = t; },
+      /* what happens at time t: takedowns that count ({ kind: 'takedown', r, psyche, double, spree };
+       * spree: how many within SPREE s, this one included) and slammed rivals that touched something
+       * and came through their window ({ kind: 'denied', r }) */
+      update(t) {
+        const out = [];
+        for (let i = pending.length - 1; i >= 0; i--) {
+          const p = pending[i];
+          if (crashedAt > p.at - COMMIT) { pending.splice(i, 1); continue; }   // the player crashed after the wreck
+          if (t < p.at) continue;
+          pending.splice(i, 1);
+          const double = done.length > 0 && t - done[done.length - 1] < DOUBLE;
+          done.push(t);
+          out.push({ kind: 'takedown', r: p.r, psyche: p.psyche, double, spree: done.filter(d => t - d < SPREE).length });
+        }
+        for (const [r, s] of st) if (s.armed && t - s.slamAt >= WINDOW) {
+          s.armed = false;
+          if (s.touched) out.push({ kind: 'denied', r });
+          s.touched = false;
+        }
+        return out;
+      },
+    };
+  }
+  return { create, classify, attacker, along, SLAM, WINDOW, FRAGILE, COMMIT, DOUBLE, SPREE };
+})();
+if (typeof module === 'object' && module.exports) module.exports = RaceRules;
 
 </script>
 <script>/* media/race/assets.js */
@@ -8082,8 +8242,10 @@ float lnoise(vec3 p) {
  * going forward, having been round the rest of the loop. Position is laps plus distance.
  *
  * Boost fills from near misses (passing traffic within a metre), driving in the oncoming lanes,
- * drifting and takedowns (a rival that wrecks within two seconds of a hit from you), and is spent
- * holding the boost button.
+ * drifting, slams and takedowns, and is spent holding the boost button. Slams and takedowns follow
+ * Burnout 3's rules (rules.js): a slam never wrecks a rival by itself; a full one (side, or a shunt
+ * from behind) puts it out of control for a moment, and its wreck within two seconds of your hit is
+ * your takedown. A slam takes a little of the rival's boost for you.
  *
  * Crashes: when a hit is hard enough (world.js), the cars go back one step (to just before they
  * touched) and are handed to the full crash solver (crash.js), which runs in the background. The
@@ -8197,7 +8359,7 @@ const RaceGame = (() => {
 
   // ---------------------------------------------------------------- boost, near misses, takedowns
   let boost = 0.3, takedowns = 0, slowmo = 0;
-  const lastHit = new Map();   // rival -> race time of the player's last contact with it
+  const rules = RaceRules.create();   // slams, takedowns, doubles, sprees, psyche-outs
   function gainBoost(x, label) { boost = Math.min(1, boost + x); if (label) chip(label); }
 
   // ---------------------------------------------------------------- health
@@ -8231,13 +8393,14 @@ const RaceGame = (() => {
       if (kind) { gainBoost(kind === 'oncoming' ? 0.15 : 0.1, kind === 'oncoming' ? 'Oncoming near miss' : 'Near miss'); FX.hit(1500, [t.body.car.x, 0.6, t.body.car.z]); }
     }
   }
-  function takedown(r) {
+  // a takedown that counts (rules.update: half a second after the wreck): { r, psyche, double, spree }.
+  // The slow motion and the crunch came at the wreck itself.
+  function takedown(td) {
     takedowns++;
     gainBoost(1, null);
-    toast('Takedown!', 1600);
-    slowmo = 0.9;
+    toast(td.spree >= 3 ? `Takedown spree ×${td.spree}` : td.double ? 'Double takedown!' : td.psyche ? 'Psyche-out!' : 'Takedown!', 1600);
     RaceInput.rumble(0.8, 0.6, 300);
-    FX.crunch(1, [r.body.car.x, 0.6, r.body.car.z]);
+    if (TEST) (testOut.takedowns = testOut.takedowns || []).push({ t: +simT.toFixed(2), psyche: td.psyche, double: td.double, spree: td.spree });
   }
 
   // ---------------------------------------------------------------- crashes
@@ -8246,6 +8409,7 @@ const RaceGame = (() => {
   const testOut = (window.__race = { test: null }).test = { frames: [], aheadOfStream: 0 };
   function triggerCrash(e) {
     if (state !== 'race') return;
+    rules.playerCrashed(simT);   // a takedown not yet counted is lost
     const other = e.b && e.b !== me ? e.b : (e.a !== me ? e.a : null);
     // back to the start of this step: just before the cars touched
     world.restore(me, 1);
@@ -8609,7 +8773,14 @@ const RaceGame = (() => {
           if (car.boosting) boost = Math.max(0, boost - 0.22 * STEP);
           if (prog.l < -0.6 && car.forward > 20) boost = Math.min(1, boost + 0.07 * STEP);
           if (car.drift > 0.35 && car.speed > 15) boost = Math.min(1, boost + 0.14 * STEP);
-          if (stepN % 4 === 0) { nearMisses(); spinOuts(); }
+          if (stepN % 4 === 0) {
+            nearMisses(); spinOuts();
+            for (const r of ai.rivals) if (!(r.wreck > 0)) rules.tail(me, r, simT);   // for psyche-outs
+          }
+          for (const u of rules.update(simT)) {
+            if (u.kind === 'takedown') takedown(u);
+            else { chip('Takedown denied'); if (TEST) testOut.denied = (testOut.denied || 0) + 1; }
+          }
         }
       }
     }
@@ -8676,13 +8847,19 @@ const RaceGame = (() => {
       if (d > 0) hurt(d);
       if (health <= 0) { triggerCrash(e); return; }
     }
-    if (mine && other && other.rival) {
-      lastHit.set(other.rival, simT);
-      // a solid shunt unsettles the rival: a yaw kick away from the hit, and a moment out of control
-      if (e.vn > 3 && !(other.rival.stagger > 0)) {
-        const r = other.rival, c = r.body.car, side = Math.sign((c.x - car.x) * -Math.sin(c.h) + (c.z - car.z) * Math.cos(c.h)) || 1;
-        r.stagger = 0.4 + Math.min(0.6, e.vn * 0.08); r.kick = side * 0.8;
-        c.yaw += side * Math.min(2.2, 0.25 * e.vn);
+    if (mine && other && other.rival && !(other.rival.wreck > 0)) {
+      const r = other.rival, slam = rules.contact(e, me, r, simT);
+      if (slam) {
+        // a slam takes some of the rival's boost for the player; a full one also puts the rival out of
+        // control for a moment, steering away from the hit (the push itself is world.js's)
+        const x = slam.full ? 0.08 : 0.03;
+        gainBoost(x, slam.full ? (slam.type === 'rear' ? 'Shunt' : 'Side slam') : 'Slam');
+        r.boost = Math.max(0, r.boost - x);
+        if (slam.full && !(r.stagger > 0)) {
+          const c = r.body.car, side = Math.sign((c.x - car.x) * -Math.sin(c.h) + (c.z - car.z) * Math.cos(c.h)) || 1;
+          r.stagger = 0.4 + Math.min(0.6, e.vn * 0.08); r.kick = side * 0.8;
+        }
+        if (TEST) (testOut.slams = testOut.slams || []).push({ t: +simT.toFixed(2), type: slam.type, full: slam.full, vn: +e.vn.toFixed(1) });
       }
     }
     if (mine && other && other.traffic) other.traffic.touched = true;
@@ -8692,32 +8869,35 @@ const RaceGame = (() => {
       sparks.spawn(e.x, car.y + 0.45, e.z, Math.min(60, 8 + e.vn * 3), 'spark', [e.nx * 2 + car.vx * 0.3, 1.5, e.nz * 2 + car.vz * 0.3]);
       RaceInput.rumble(Math.min(1, e.vn / 15), 0.3, 120);
     }
-    // a rival wrecked (without wrecking the player): spun out; a takedown if the player hit it just
-    // before. A rival the player has just hit wrecks more easily (7 m/s into something, as in Burnout)
+    // a rival hitting anything but the player: wrecked when it's a crash, or easily when the player
+    // has just hit it (rules.js)
     for (const b of [e.a, e.b]) {
       if (!b || !b.rival || b.rival.wreck > 0 || mine) continue;
-      const r = b.rival, shoved = lastHit.has(r) && simT - lastHit.get(r) < 2;
-      if (!(e.crash || (shoved && e.vn > 7))) continue;
-      wreckRival(r, e.x, e.z);
+      if (rules.rivalContact(e, b.rival, simT)) wreckRival(b.rival, e);
     }
   }
-  function wreckRival(r, x, z) {
-    const b = r.body;
-    {
-      r.wreck = 3;
-      b.car.yaw += (Math.random() - 0.5) * 6;
-      sparks.spawn(x, 0.5, z, 40, 'spark', [0, 0.8, 0]);
-      const d = Math.hypot(b.car.x - car.x, b.car.z - car.z);
-      if (d < 80) FX.crunch(Math.max(0.3, 1 - d / 80), [x, 0.5, z]);
-      if (lastHit.has(r) && simT - lastHit.get(r) < 2 && state === 'race') takedown(r);
+  // rival r wrecks (from contact event e, or spun out with e null): it spins away from the hit and
+  // brakes to a stop (ai.js), and rejoins; the player's takedown if the rules say so
+  function wreckRival(r, e) {
+    const b = r.body, c = b.car;
+    r.wreck = 3; b.wrecked = true;
+    if (e) {
+      // the hit's turn: the normal points toward e.a; its moment about the rival's centre of gravity
+      const s = b === e.a ? 1 : -1, turn = (e.x - c.x) * e.nz * s - (e.z - c.z) * e.nx * s;
+      c.yaw += (Math.sign(turn) || (Math.random() < 0.5 ? -1 : 1)) * Math.min(3, 0.6 + 0.15 * e.vn);
     }
+    const x = e ? e.x : c.x, z = e ? e.z : c.z;
+    sparks.spawn(x, 0.5, z, 40, 'spark', [0, 0.8, 0]);
+    const d = Math.hypot(c.x - car.x, c.z - car.z);
+    if (state === 'race' && rules.wrecked(r, simT)) { slowmo = 0.9; FX.crunch(1, [x, 0.6, z]); }   // counts half a second later
+    else if (d < 80) FX.crunch(Math.max(0.3, 1 - d / 80), [x, 0.5, z]);
   }
   // a rival the player hit that spins out (past 60 degrees, still moving) is wrecked too
   function spinOuts() {
     for (const r of ai.rivals) {
-      if (r.wreck > 0 || !lastHit.has(r) || simT - lastHit.get(r) > 2) continue;
+      if (r.wreck > 0 || !rules.hitRecently(r, simT)) continue;
       const c = r.body.car;
-      if (Math.abs(c.sideSlip) > 1.05 && c.speed > 10) wreckRival(r, c.x, c.z);
+      if (Math.abs(c.sideSlip) > 1.05 && c.speed > 10) wreckRival(r, null);
     }
   }
 

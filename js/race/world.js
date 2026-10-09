@@ -4,9 +4,16 @@
  * envelope). Against the level's boxes (buildings, barriers) and cylinders (trees), and against
  * each other, contacts are found by the separating-axis test and
  * resolved with impulses: restitution and Coulomb friction at the contact point, so a glancing hit
- * scrapes and turns the car and a square one stops it. A hit is a crash when the approach speed
- * along the contact normal passes a limit (CRASH); then the game hands the cars over to the full
- * crash solver from their state one step earlier, just before they touched (history()).
+ * scrapes and turns the car and a square one stops it. Walls are slippery (as in Burnout), and a car
+ * already spinning hard is not spun harder by a wall, so it grinds along it. A hit is a crash when
+ * the approach speed along the contact normal passes a limit (CRASH), and on a wall only when the car
+ * meets it nose or tail first (within 45 degrees of square): sliding into a wall sideways is a
+ * bounce. Then the game hands the cars over to the full crash solver from their state one step
+ * earlier, just before they touched (history()).
+ *
+ * Car against car, the push-out is shared by mass, and a driver steering into the other car shoves
+ * it (a push on top of the impulse, growing with the steering). A wrecked car (body.wrecked) is
+ * shoved out of the way by a driving car without slowing it.
  *
  * Cars are RaceCar bodies (vehicle.js). Traffic can be kinematic (set by its driver each step)
  * until something hits it; then it becomes a free body. Cars follow the level's hills and ramps and
@@ -21,7 +28,9 @@ const RaceWorld = (() => {
   'use strict';
   // m/s of approach along the contact normal that wrecks a car; rivals jostling each other (pack) take more
   const CRASH = { wall: 13, car: 13.5, pack: 20 };
-  const E_WALL = 0.12, E_CAR = 0.2, MU_WALL = 0.35, MU_CAR = 0.3;
+  const E_WALL = 0.12, E_CAR = 0.2, MU_WALL = 0.15, MU_CAR = 0.3;
+  const SQUARE = 0.7;       // |cos| of the angle between the car's heading and a wall's normal: nose or tail first
+  const SHOVE = 12;         // m/s² of push from a car steering fully into another (times its mass)
   const HISTORY = 12;                       // steps kept for the crash hand-over
   const G = 9.81, FLAT = { h: 0, gx: 0, gz: 0 };
   // the player's damage (a share of the health bar) from a hit that changes the car's speed by dv
@@ -29,17 +38,19 @@ const RaceWorld = (() => {
   // 13 m/s (47 km/h), all of it from about 25 m/s (90 km/h)
   const damage = (dv) => Math.max(0, dv - 2.5) ** 2 / 650;
   // ... from a contact event, at its first touch: the approach speed along the normal, with the
-  // bounce; against another car, the share of the change of speed this car takes (by mass)
+  // bounce; against another car, the share of the change of speed this car takes (by mass); against
+  // a wall, full nose or tail first, down to 0.4 of it sliding in sideways
   function hitDamage(e, b) {
     if (e.kind === 'land') return 0;
     let dv = e.vn * (e.kind === 'car' ? 1 + E_CAR : 1 + E_WALL);
     if (e.kind === 'car') { const o = e.a === b ? e.b : e.a; dv *= o.car.m / (o.car.m + b.car.m); }
+    if (e.kind === 'wall') dv *= 0.4 + 0.6 * Math.min(1, e.sq / SQUARE);
     return damage(dv);
   }
 
   function create(level) {
     const bodies = [];
-    const events = [];        // contacts this step: { a, b (body or null), kind: 'wall'|'post'|'car', vn, x, z, nx, nz, crash }
+    const events = [];        // contacts this step: { a, b (body or null), kind: 'wall'|'post'|'car'|'land', vn, x, z, nx, nz, crash, J; walls: sq; cars: ua, ub }
     const hist = [];          // ring of snapshots
     let tick = 0;
 
@@ -79,14 +90,20 @@ const RaceWorld = (() => {
       const dx = px - X.x, dz = pz - X.z;
       return Math.max(Math.abs(dx * X.ux + dz * X.uz) - X.hx, Math.abs(-dx * X.uz + dz * X.ux) - X.hz);
     }
-    // the contact point of two overlapping boxes: the corner of either lying deepest inside the other
-    const CORNERS = [[1, 1], [1, -1], [-1, 1], [-1, -1]], PT = [0, 0];
+    // the contact point of two overlapping boxes: the corner of either lying deepest inside the other,
+    // or the middle of the corners within 2 cm of that (a side flat against a wall: its middle, not
+    // one end or the other from step to step)
+    const CORNERS = [[1, 1], [1, -1], [-1, 1], [-1, -1]], PT = [0, 0], CD = new Float64Array(24);
     function deepest(A, B) {
-      let best = Infinity;
+      let best = Infinity, n = 0;
       for (const [X, Y] of [[A, B], [B, A]]) for (const [u, w] of CORNERS) {
         const x = X.x + X.ux * u * X.hx - X.uz * w * X.hz, z = X.z + X.uz * u * X.hx + X.ux * w * X.hz, d = boxDist(Y, x, z);
-        if (d < best) { best = d; PT[0] = x; PT[1] = z; }
+        CD[n++] = x; CD[n++] = z; CD[n++] = d;
+        if (d < best) best = d;
       }
+      let sx = 0, sz = 0, k = 0;
+      for (let i = 0; i < n; i += 3) if (CD[i + 2] < best + 0.02) { sx += CD[i]; sz += CD[i + 1]; k++; }
+      PT[0] = sx / k; PT[1] = sz / k;
       return PT;
     }
     function vsCyl(b, A, q) {
@@ -108,8 +125,12 @@ const RaceWorld = (() => {
       const J = -(1 + E_WALL) * vn / kn;
       const tx = -hit.nz, tz = hit.nx, vt = vx * tx + vz * tz, rt = rx * tz - rz * tx, kt = 1 / c.m + rt * rt / c.Izz;
       const Jt = Math.max(-MU_WALL * J, Math.min(MU_WALL * J, -vt / kt));
-      c.applyImpulse(hit.px, hit.pz, J * hit.nx + Jt * tx, J * hit.nz + Jt * tz);
-      events.push({ a: b, b: null, kind, vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, crash: -vn > CRASH.wall && !b.ghost, J });
+      const jx = J * hit.nx + Jt * tx, jz = J * hit.nz + Jt * tz;
+      // a car already spinning hard is not spun harder: the impulse at its centre of gravity instead
+      const spinUp = (rx * jz - rz * jx) * c.yaw > 0 && Math.abs(c.yaw) > 2.5;
+      c.applyImpulse(spinUp ? c.x : hit.px, spinUp ? c.z : hit.pz, jx, jz);
+      const sq = Math.abs(Math.cos(c.h) * hit.nx + Math.sin(c.h) * hit.nz);
+      events.push({ a: b, b: null, kind, vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, sq, crash: -vn > CRASH.wall && (kind !== 'wall' || sq > SQUARE) && !b.ghost, J });
     }
 
     // ---------------------------------------------------------------- car against car
@@ -127,12 +148,25 @@ const RaceWorld = (() => {
       const P = deepest(A, B);
       return { nx, nz, depth: best, px: P[0], pz: P[1] };
     }
-    function resolveCars(a, b, hit) {
-      const A = a.car, B = b.car, ma = a.kinematic ? Infinity : A.m, mb = b.kinematic ? Infinity : B.m;
-      const wa = a.kinematic ? 0 : 1, wb = b.kinematic ? 0 : 1;
-      const share = wa + wb ? 1 / (wa + wb) : 0;
-      A.x += hit.nx * (hit.depth + 0.002) * wa * share; A.z += hit.nz * (hit.depth + 0.002) * wa * share;
-      B.x -= hit.nx * (hit.depth + 0.002) * wb * share; B.z -= hit.nz * (hit.depth + 0.002) * wb * share;
+    // how far a car is steering toward the side where point (x, z) lies: 0..1 (its lock narrows with speed)
+    function steerToward(c, x, z) {
+      const side = (x - c.x) * -Math.sin(c.h) + (z - c.z) * Math.cos(c.h);
+      const lock = c.tune ? c.tune.steer / (1 + Math.abs(c.forward) / 14) + 0.035 : 0.5;
+      return Math.max(0, Math.min(1, Math.sign(side) * c.steer / lock));
+    }
+    function resolveCars(a, b, hit, dt) {
+      // a driving car meets a wreck as if it couldn't be moved: the wreck takes the push and the impulse
+      const fixA = a.kinematic || (b.wrecked && !a.wrecked), fixB = b.kinematic || (a.wrecked && !b.wrecked);
+      const A = a.car, B = b.car, ma = fixA ? Infinity : A.m, mb = fixB ? Infinity : B.m;
+      const wa = fixA ? 0 : 1, wb = fixB ? 0 : 1;
+      // the push-out shared by mass: the lighter car moves more
+      const sa = !wa ? 0 : !wb ? 1 : B.m / (A.m + B.m), sb = !wb ? 0 : !wa ? 1 : A.m / (A.m + B.m);
+      A.x += hit.nx * (hit.depth + 0.002) * sa; A.z += hit.nz * (hit.depth + 0.002) * sa;
+      B.x -= hit.nx * (hit.depth + 0.002) * sb; B.z -= hit.nz * (hit.depth + 0.002) * sb;
+      // a driver steering into the other car shoves it, for as long as it presses on it
+      const fa = wb && !a.wrecked ? steerToward(A, B.x, B.z) : 0, fb = wa && !b.wrecked ? steerToward(B, A.x, A.z) : 0;
+      if (fa > 0) B.applyImpulse(hit.px, hit.pz, -hit.nx * SHOVE * fa * A.m * dt, -hit.nz * SHOVE * fa * A.m * dt);
+      if (fb > 0) A.applyImpulse(hit.px, hit.pz, hit.nx * SHOVE * fb * B.m * dt, hit.nz * SHOVE * fb * B.m * dt);
       const rax = hit.px - A.x, raz = hit.pz - A.z, rbx = hit.px - B.x, rbz = hit.pz - B.z;
       const vax = A.vx - A.yaw * raz, vaz = A.vz + A.yaw * rax, vbx = B.vx - B.yaw * rbz, vbz = B.vz + B.yaw * rbx;
       const rvx = vax - vbx, rvz = vaz - vbz, vn = rvx * hit.nx + rvz * hit.nz;
@@ -148,8 +182,9 @@ const RaceWorld = (() => {
       const jx = J * hit.nx + Jt * tx, jz = J * hit.nz + Jt * tz;
       if (wa) A.applyImpulse(hit.px, hit.pz, jx, jz);
       if (wb) B.applyImpulse(hit.px, hit.pz, -jx, -jz);
-      const lim = a.kind === 'rival' && b.kind === 'rival' ? CRASH.pack : CRASH.car;
-      events.push({ a, b, kind: 'car', vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, crash: -vn > lim && !a.ghost && !b.ghost, J });
+      const lim = a.kind === 'rival' && b.kind === 'rival' && !a.wrecked && !b.wrecked ? CRASH.pack : CRASH.car;
+      // ua, ub: how fast each car was moving toward the other before the hit (who drove into whom)
+      events.push({ a, b, kind: 'car', vn: -vn, x: hit.px, z: hit.pz, nx: hit.nx, nz: hit.nz, ua: -(vax * hit.nx + vaz * hit.nz), ub: vbx * hit.nx + vbz * hit.nz, crash: -vn > lim && !a.ghost && !b.ghost, J });
     }
 
     // ---------------------------------------------------------------- over hills and ramps
@@ -225,7 +260,7 @@ const RaceWorld = (() => {
           // a hit traffic car becomes a free body
           if (a.kinematic) a.kinematic = false;
           if (b.kinematic) b.kinematic = false;
-          resolveCars(a, b, hit);
+          resolveCars(a, b, hit, dt);
         }
       }
       tick++;

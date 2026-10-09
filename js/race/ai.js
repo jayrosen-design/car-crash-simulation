@@ -251,7 +251,7 @@ const RaceAI = (() => {
     function respawn(r, s) {
       const p = level.poseAt(s, r.lane);
       r.body.car.place(p.x, p.z, p.h, 12);
-      r.body.ghost = 2; r.wreck = 0; r.stuck = 0; r.l = r.laneT = r.lane;
+      r.body.ghost = 2; r.body.wrecked = false; r.wreck = 0; r.stuck = 0; r.l = r.laneT = r.lane;
       r.prog.prevS = s;
     }
     // drive another body the same way (the player's car once the player has finished)

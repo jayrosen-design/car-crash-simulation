@@ -185,13 +185,20 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
 - **The circuit.** A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, street lights, trees and closed side streets, rolling hills on three stretches and three jump ramps across the street. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
 - **Eight cars.** You start sixth on the grid, against seven rivals in Lexus and Mustang models, each with a name, a paint colour and a skill level.
 - **Traffic, both ways.** Cars keep to their lanes and follow the car ahead with the Intelligent Driver Model \[[77](#ref-77)\]: $\dot v = a\big[1 - (v/v_0)^4 - (s^*/s)^2\big]$, $s^* = s_0 + vT + \frac{v\,\Delta v}{2\sqrt{ab}}$. Here $s$ is the gap to the car ahead and $\Delta v$ the closing speed. The game uses $a = 1.6$ m/s², $b = 3$ m/s², $s_0 = 4$ m, a time gap $T = 1.4$ s, and cruising speeds $v_0$ of 13–19 m/s (47–68 km/h). They are added ahead of you and removed behind you, so the street is busy wherever the race is. They move on rails until something hits them, then become free cars that brake to a stop.
-- **Boost.** Hold Shift for 1.65× engine power. It fills from near misses (passing a traffic car within a metre; more for oncoming ones), driving in the oncoming lanes, drifting and takedowns.
-- **Takedowns.** A rival counts as taken down if it wrecks within two seconds of a hit from you: an impact over 7 m/s, or a spin past 60°. Without your help, a rival needs 13 m/s into a wall and 20 m/s into another rival, so the pack can jostle. Wrecked rivals spin out as rigid bodies and rejoin three seconds later.
+- **Boost.** Hold Shift for 1.65× engine power. It fills from near misses (passing a traffic car within a metre; more for oncoming ones), driving in the oncoming lanes, drifting, slams and takedowns.
+- **Slams and takedowns,** as in Burnout 3 (`rules.js`). A slam never wrecks a rival by itself.
+  - **Slams.** Each contact you make with a rival is a rub, a light slam or a full slam, by how hard you drove into it along the contact normal. Your nose into its tail is a shunt (light from 3 m/s, full from 7 m/s); anything else is a side slam (2.5 and 5 m/s). A slam takes a little of the rival's boost for you. Two cars can't slam each other again within a second.
+  - **Out of control.** A full slam takes the rival's steering away for 0.4–1 s, and for a second any solid touch (1.5 m/s) wrecks it.
+  - **Takedowns.** A rival that wrecks within two seconds of your hit is yours: a wall, traffic or another car at over 7 m/s, a crash anyway, or a spin past 60°. It counts half a second later, and is lost if you crash first. Two within 1.5 s are a double; three or more within 30 s a spree.
+  - **Psyche-outs.** A rival that wrecks with no contact while you're tailgating it (within 7 m, in the last second) is a takedown too.
+  - **Takedown denied.** A rival you slammed that touches something and comes through its two seconds.
+  - Without your help, a rival needs 13 m/s into a wall (nose or tail first) and 20 m/s into another rival, so the pack can jostle. Wrecked rivals spin away from the hit and rejoin three seconds later.
+- **Collisions.** Walls are slippery, and a car already spinning hard isn't spun harder by one, so a scrape along a wall keeps most of your speed (91% after a 26° scrape at 108 km/h). Sliding into a wall sideways is a bounce, not a wreck. Car against car, the lighter car is pushed out more, and steering into a car alongside shoves it (an extra push of 12 m/s² at full lock, on top of the contact). A wreck is shoved out of the way without slowing the car that hits it.
 - **Health, then the crash.** Your car has a health bar rather than crashing at the first hard hit.
-  - **Damage.** Each hit takes damage by how hard it is. That is the change of speed it gives the car, $\Delta v = (1+e)\,v_n$ from the approach speed along the contact normal and the bounce. Against another car it is the share $m_o/(m+m_o)$ of that. Damage $= \max(0,\ \Delta v - 2.5)^2/650$ of the bar.
+  - **Damage.** Each hit takes damage by how hard it is. That is the change of speed it gives the car, $\Delta v = (1+e)\,v_n$ from the approach speed along the contact normal and the bounce. Against another car it is the share $m_o/(m+m_o)$ of that. Against a wall it is the full amount nose or tail first, down to 0.4 of it sliding in sideways. Damage $= \max(0,\ \Delta v - 2.5)^2/650$ of the bar.
   - **What hits cost.** Scrapes and nudges are free, and bumping rivals costs little: an 8 m/s nudge is about 1%. A square hit on a wall at 47 km/h takes about a fifth. From about 90 km/h a single hit empties the bar.
   - **The crash.** When the bar is empty, the crash camera starts (below). Then you're put back on the road with full health, and the traffic just ahead is cleared. The race goes on meanwhile, so the rivals gain time.
-  - **Rivals** have no health bar. They still wreck at fixed impact speeds (13 m/s into a wall, 20 m/s into another rival).
+  - **Rivals** have no health bar. They still wreck at fixed impact speeds (13 m/s into a wall nose or tail first, 20 m/s into another rival).
 - **Things to knock over.** Street lights and signal posts break off their bases and topple. Cones, bins, newspaper boxes, hydrants, benches, crates and barrels fly and tumble. They are along the pavements, in roadworks by the kerb and stacked at the side streets' barriers. A burst hydrant sprays water. They cost no health and little speed: a street light about 5 km/h, a cone almost none. Each one you hit adds a little boost. Trees, buildings and the concrete barriers stay solid.
 - **Hills and jumps.** The ramps are 1.3–1.5 m high. From 144 km/h, the first one gives 1.2 s and about 50 m in the air. Taken slowly, you only hop. Over the crest of the steepest hill you stay on the road at 108 km/h and fly at 180 km/h and up. In the air there's no grip, so steer before the lip. A car in the air clears the barriers, the props and the other cars.
 - **Results.** Positions, lap times and takedowns. Rivals still racing get an estimated time from their pace. **Watch your last crash** replays it with the simulator's bullet-time.
@@ -248,13 +255,17 @@ node tools/headless-check.js world      the crash solver's world barrier
   - **props:** each kind is driven into on its own. It must be knocked more than 3 m (the poles past 45°), with no crash, the car less than 8 km/h slower, and the prop settled again within 12 s;
   - **jump:** airtime off the first ramp from 144 km/h (0.8–1.6 s, and it lands), less from 43 km/h; over the steepest crest none at 108 km/h, but a take-off at 216 km/h;
   - **damage:** a scrape is free, an 8 m/s nudge into a car costs under 3%, a 13 m/s wall 12–35%, and 28 m/s is a wreck;
+  - **walls:** 18 m/s along a wall's normal is a crash nose first and not 60° off square, which also costs less health. A car pushed broadside into a wall touches it mid-side. A 26° scrape at 108 km/h keeps over 88% of the speed and leaves the car running along the wall;
+  - **slams:** real contacts are classified: a shunt from behind (full and light), side slams (full and light), a rub, and a rival's own hit on you (not your slam);
+  - **takedown rules:** the timeline of `rules.js`: a fragile rival wrecks on a light touch, the takedown counts half a second later, a second soon after is a double, a crash before it counts loses it, a slammed rival that touches something and comes through is denied (not without a touch), a tailgated rival's wreck is a psyche-out, and three in 30 s are a spree;
+  - **shove:** steering into a car alongside pushes it at least 1.5 times as far as holding straight, and faster than the contacts alone would;
   - **a full race:** eight AI cars race three laps through traffic and the props, all finish, the winner takes 150–210 s (about 3 minutes), none is stuck for more than 5 s, and lane-bound traffic never overlaps.
 - **The `world` checks** in `headless-check.js`:
   - a one-cylinder world reproduces the pole barrier exactly;
   - a box wall agrees with the rigid barrier (peak deceleration and crush), also when turned 30°;
   - glass streamed live matches the batch result;
   - two cars at 160 km/h stay finite and gain no energy.
-- **In the browser,** `game.html?test=wall150`, `?test=headon` and `?test=takedown` run scripted crashes and a takedown. The results go in `window.__race.test`: time to the first frame, frame times, the respawn time and the parts that came off. `?worker=0` forces the main-thread fallback.
+- **In the browser,** `game.html?test=wall150`, `?test=headon` and `?test=takedown` run scripted crashes and a takedown. The results go in `window.__race.test`: time to the first frame, frame times, the respawn time and the parts that came off, and the slams, takedowns and denials. `?worker=0` forces the main-thread fallback.
 
 ---
 
@@ -2233,6 +2244,7 @@ js/
     vehicle.js    driving physics: rigid body, Magic Formula tyres, engine, brakes, assists
     world.js      collisions between cars and with the city, hills, jumps and flight, damage, step history
     props.js      street lights, cones, bins, hydrants, benches, crates ...: rigid bodies to knock over
+    rules.js      slams and takedowns: rubs, light and full slams, the window, doubles, sprees, psyche-outs
     ai.js         traffic (Intelligent Driver Model) and the rivals
     input.js      keyboard and gamepad, rumble
     crash.js      the crash solver in a Web Worker, streaming frames to the crash camera
@@ -2243,7 +2255,7 @@ media/            the home page's trailers (crash tests and Race), background lo
 media/race/       the Race game's textures and sky (generated by fetch-race-assets.py)
 tools/
   headless-check.js     physics and lab checks in Node
-  race-check.js         the Race game's level, cars, near misses and a full AI race, in Node
+  race-check.js         the Race game's level, cars, near misses, walls, slams, takedown rules and a full AI race, in Node
   gpu-check.js          the GPU solver against the CPU solver, in headless Chrome
   build-standalone.js   builds the three single-file pages
   build-site.js         builds physics.html and sources.html from this README

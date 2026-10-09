@@ -5,8 +5,10 @@
  * going forward, having been round the rest of the loop. Position is laps plus distance.
  *
  * Boost fills from near misses (passing traffic within a metre), driving in the oncoming lanes,
- * drifting and takedowns (a rival that wrecks within two seconds of a hit from you), and is spent
- * holding the boost button.
+ * drifting, slams and takedowns, and is spent holding the boost button. Slams and takedowns follow
+ * Burnout 3's rules (rules.js): a slam never wrecks a rival by itself; a full one (side, or a shunt
+ * from behind) puts it out of control for a moment, and its wreck within two seconds of your hit is
+ * your takedown. A slam takes a little of the rival's boost for you.
  *
  * Crashes: when a hit is hard enough (world.js), the cars go back one step (to just before they
  * touched) and are handed to the full crash solver (crash.js), which runs in the background. The
@@ -120,7 +122,7 @@ const RaceGame = (() => {
 
   // ---------------------------------------------------------------- boost, near misses, takedowns
   let boost = 0.3, takedowns = 0, slowmo = 0;
-  const lastHit = new Map();   // rival -> race time of the player's last contact with it
+  const rules = RaceRules.create();   // slams, takedowns, doubles, sprees, psyche-outs
   function gainBoost(x, label) { boost = Math.min(1, boost + x); if (label) chip(label); }
 
   // ---------------------------------------------------------------- health
@@ -154,13 +156,14 @@ const RaceGame = (() => {
       if (kind) { gainBoost(kind === 'oncoming' ? 0.15 : 0.1, kind === 'oncoming' ? 'Oncoming near miss' : 'Near miss'); FX.hit(1500, [t.body.car.x, 0.6, t.body.car.z]); }
     }
   }
-  function takedown(r) {
+  // a takedown that counts (rules.update: half a second after the wreck): { r, psyche, double, spree }.
+  // The slow motion and the crunch came at the wreck itself.
+  function takedown(td) {
     takedowns++;
     gainBoost(1, null);
-    toast('Takedown!', 1600);
-    slowmo = 0.9;
+    toast(td.spree >= 3 ? `Takedown spree ×${td.spree}` : td.double ? 'Double takedown!' : td.psyche ? 'Psyche-out!' : 'Takedown!', 1600);
     RaceInput.rumble(0.8, 0.6, 300);
-    FX.crunch(1, [r.body.car.x, 0.6, r.body.car.z]);
+    if (TEST) (testOut.takedowns = testOut.takedowns || []).push({ t: +simT.toFixed(2), psyche: td.psyche, double: td.double, spree: td.spree });
   }
 
   // ---------------------------------------------------------------- crashes
@@ -169,6 +172,7 @@ const RaceGame = (() => {
   const testOut = (window.__race = { test: null }).test = { frames: [], aheadOfStream: 0 };
   function triggerCrash(e) {
     if (state !== 'race') return;
+    rules.playerCrashed(simT);   // a takedown not yet counted is lost
     const other = e.b && e.b !== me ? e.b : (e.a !== me ? e.a : null);
     // back to the start of this step: just before the cars touched
     world.restore(me, 1);
@@ -532,7 +536,14 @@ const RaceGame = (() => {
           if (car.boosting) boost = Math.max(0, boost - 0.22 * STEP);
           if (prog.l < -0.6 && car.forward > 20) boost = Math.min(1, boost + 0.07 * STEP);
           if (car.drift > 0.35 && car.speed > 15) boost = Math.min(1, boost + 0.14 * STEP);
-          if (stepN % 4 === 0) { nearMisses(); spinOuts(); }
+          if (stepN % 4 === 0) {
+            nearMisses(); spinOuts();
+            for (const r of ai.rivals) if (!(r.wreck > 0)) rules.tail(me, r, simT);   // for psyche-outs
+          }
+          for (const u of rules.update(simT)) {
+            if (u.kind === 'takedown') takedown(u);
+            else { chip('Takedown denied'); if (TEST) testOut.denied = (testOut.denied || 0) + 1; }
+          }
         }
       }
     }
@@ -599,13 +610,19 @@ const RaceGame = (() => {
       if (d > 0) hurt(d);
       if (health <= 0) { triggerCrash(e); return; }
     }
-    if (mine && other && other.rival) {
-      lastHit.set(other.rival, simT);
-      // a solid shunt unsettles the rival: a yaw kick away from the hit, and a moment out of control
-      if (e.vn > 3 && !(other.rival.stagger > 0)) {
-        const r = other.rival, c = r.body.car, side = Math.sign((c.x - car.x) * -Math.sin(c.h) + (c.z - car.z) * Math.cos(c.h)) || 1;
-        r.stagger = 0.4 + Math.min(0.6, e.vn * 0.08); r.kick = side * 0.8;
-        c.yaw += side * Math.min(2.2, 0.25 * e.vn);
+    if (mine && other && other.rival && !(other.rival.wreck > 0)) {
+      const r = other.rival, slam = rules.contact(e, me, r, simT);
+      if (slam) {
+        // a slam takes some of the rival's boost for the player; a full one also puts the rival out of
+        // control for a moment, steering away from the hit (the push itself is world.js's)
+        const x = slam.full ? 0.08 : 0.03;
+        gainBoost(x, slam.full ? (slam.type === 'rear' ? 'Shunt' : 'Side slam') : 'Slam');
+        r.boost = Math.max(0, r.boost - x);
+        if (slam.full && !(r.stagger > 0)) {
+          const c = r.body.car, side = Math.sign((c.x - car.x) * -Math.sin(c.h) + (c.z - car.z) * Math.cos(c.h)) || 1;
+          r.stagger = 0.4 + Math.min(0.6, e.vn * 0.08); r.kick = side * 0.8;
+        }
+        if (TEST) (testOut.slams = testOut.slams || []).push({ t: +simT.toFixed(2), type: slam.type, full: slam.full, vn: +e.vn.toFixed(1) });
       }
     }
     if (mine && other && other.traffic) other.traffic.touched = true;
@@ -615,32 +632,35 @@ const RaceGame = (() => {
       sparks.spawn(e.x, car.y + 0.45, e.z, Math.min(60, 8 + e.vn * 3), 'spark', [e.nx * 2 + car.vx * 0.3, 1.5, e.nz * 2 + car.vz * 0.3]);
       RaceInput.rumble(Math.min(1, e.vn / 15), 0.3, 120);
     }
-    // a rival wrecked (without wrecking the player): spun out; a takedown if the player hit it just
-    // before. A rival the player has just hit wrecks more easily (7 m/s into something, as in Burnout)
+    // a rival hitting anything but the player: wrecked when it's a crash, or easily when the player
+    // has just hit it (rules.js)
     for (const b of [e.a, e.b]) {
       if (!b || !b.rival || b.rival.wreck > 0 || mine) continue;
-      const r = b.rival, shoved = lastHit.has(r) && simT - lastHit.get(r) < 2;
-      if (!(e.crash || (shoved && e.vn > 7))) continue;
-      wreckRival(r, e.x, e.z);
+      if (rules.rivalContact(e, b.rival, simT)) wreckRival(b.rival, e);
     }
   }
-  function wreckRival(r, x, z) {
-    const b = r.body;
-    {
-      r.wreck = 3;
-      b.car.yaw += (Math.random() - 0.5) * 6;
-      sparks.spawn(x, 0.5, z, 40, 'spark', [0, 0.8, 0]);
-      const d = Math.hypot(b.car.x - car.x, b.car.z - car.z);
-      if (d < 80) FX.crunch(Math.max(0.3, 1 - d / 80), [x, 0.5, z]);
-      if (lastHit.has(r) && simT - lastHit.get(r) < 2 && state === 'race') takedown(r);
+  // rival r wrecks (from contact event e, or spun out with e null): it spins away from the hit and
+  // brakes to a stop (ai.js), and rejoins; the player's takedown if the rules say so
+  function wreckRival(r, e) {
+    const b = r.body, c = b.car;
+    r.wreck = 3; b.wrecked = true;
+    if (e) {
+      // the hit's turn: the normal points toward e.a; its moment about the rival's centre of gravity
+      const s = b === e.a ? 1 : -1, turn = (e.x - c.x) * e.nz * s - (e.z - c.z) * e.nx * s;
+      c.yaw += (Math.sign(turn) || (Math.random() < 0.5 ? -1 : 1)) * Math.min(3, 0.6 + 0.15 * e.vn);
     }
+    const x = e ? e.x : c.x, z = e ? e.z : c.z;
+    sparks.spawn(x, 0.5, z, 40, 'spark', [0, 0.8, 0]);
+    const d = Math.hypot(c.x - car.x, c.z - car.z);
+    if (state === 'race' && rules.wrecked(r, simT)) { slowmo = 0.9; FX.crunch(1, [x, 0.6, z]); }   // counts half a second later
+    else if (d < 80) FX.crunch(Math.max(0.3, 1 - d / 80), [x, 0.5, z]);
   }
   // a rival the player hit that spins out (past 60 degrees, still moving) is wrecked too
   function spinOuts() {
     for (const r of ai.rivals) {
-      if (r.wreck > 0 || !lastHit.has(r) || simT - lastHit.get(r) > 2) continue;
+      if (r.wreck > 0 || !rules.hitRecently(r, simT)) continue;
       const c = r.body.car;
-      if (Math.abs(c.sideSlip) > 1.05 && c.speed > 10) wreckRival(r, c.x, c.z);
+      if (Math.abs(c.sideSlip) > 1.05 && c.speed > 10) wreckRival(r, null);
     }
   }
 
