@@ -22,6 +22,9 @@ const RaceProps = (() => {
   const TYPES = {
     lamp: { hx: 0.14, hy: 4.0, hz: 0.14, m: 140, e: 0.05, mu: 0.6, pole: true, metal: true },
     signal: { hx: 0.15, hy: 3.0, hz: 0.15, m: 110, e: 0.05, mu: 0.6, pole: true, metal: true },
+    // a street tree (Race): snaps at its base and falls like a pole; its box is wider than the trunk
+    // so the crown doesn't sink far into the ground once it lies there
+    tree: { hx: 0.8, hy: 2.8, hz: 0.8, m: 180, e: 0.05, mu: 0.8, pole: true },
     cone: { hx: 0.21, hy: 0.36, hz: 0.21, m: 4, e: 0.35, mu: 0.7 },
     bin: { hx: 0.3, hy: 0.5, hz: 0.3, m: 28, e: 0.3, mu: 0.5, metal: true },
     newsbox: { hx: 0.26, hy: 0.55, hz: 0.24, m: 35, e: 0.25, mu: 0.5, metal: true },
@@ -248,7 +251,7 @@ const RaceProps = (() => {
       const M = b.kinematic ? Infinity : c.m, m = T.m;
       let J;
       if (T.pole && pr.hit === 0) {
-        // a street light or signal breaks off its base and topples away from the car
+        // a street light, signal or tree breaks off its base and topples away from the car
         const vb = 0.45 * vrel;
         pr.v[0] += nx * vb; pr.v[2] += nz * vb; pr.v[1] += 1.2;
         const ax = cross([0, 1, 0], [nx, 0, nz]), sp = Math.min(5, 0.28 * vrel / (T.hy / 4));

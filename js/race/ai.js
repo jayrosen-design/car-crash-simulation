@@ -39,7 +39,9 @@ const RaceAI = (() => {
   function createTraffic(level, world, opts = {}) {
     const R = CrashLevel.rng(opts.seed || 99), cars = [], L = level.length;
     const specs = opts.specs;   // { lexus, mustang }
-    const AHEAD = opts.ahead || 520, BEHIND = opts.behind || 140, GAP = opts.gap || [90, 170];
+    // a car every 150-260 m in each lane ahead (about 40% fewer than the first 90-170 m: the street
+    // was so busy the player crashed into traffic too often)
+    const AHEAD = opts.ahead || 520, BEHIND = opts.behind || 140, GAP = opts.gap || [150, 260];
     function spawn(lane, s, v) {
       const key = R() < 0.6 ? 'lexus' : 'mustang';
       const car = RaceCar.create(specs[key]);

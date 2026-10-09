@@ -160,7 +160,7 @@ const RaceGame = (() => {
   // props knocked over: a sound, sparks or splinters, a little boost for the player; a burst hydrant
   // sprays for a few seconds
   const geysers = [];
-  const SPLINTERS = { crate: 'chip', bench: 'chip' };
+  const SPLINTERS = { crate: 'chip', bench: 'chip', tree: 'chip' };
   function propHit(h) {
     const mine = h.body === me, d = Math.hypot(h.x - car.x, h.z - car.z);
     if (d > 90) return;

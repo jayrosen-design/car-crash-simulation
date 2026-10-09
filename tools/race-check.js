@@ -41,6 +41,8 @@
  *          then throttle steering in, holds a 20-45 degree slide for at least 1.5 s keeping over 80%
  *          of the speed, and straightens up within 1.5 s of letting go (both cars); the same
  *          inputs don't make a rival's car drift
+ * reverse: the player's car holding the brake from a standstill backs up to 30 km/h within 2 s and
+ *          no faster than 60 km/h (both cars); a rival's car still takes over 2 s
  * shove:   steering into a car alongside pushes it away harder than holding the wheel straight, and
  *          faster than the contacts alone would (6.3 m/s sideways at most without world.js's shove)
  * Exits non-zero on any failure.
@@ -132,7 +134,7 @@ if (want('props')) {
   // no crash, the car only a little slower, and the prop settles again
   const results = [];
   let ok = true;
-  for (const [type, kmh] of [['lamp', 100], ['signal', 90], ['cone', 100], ['bin', 80], ['newsbox', 80], ['hydrant', 80], ['bench', 60], ['crate', 80], ['barrel', 80]]) {
+  for (const [type, kmh] of [['lamp', 100], ['signal', 90], ['tree', 100], ['cone', 100], ['bin', 80], ['newsbox', 80], ['hydrant', 80], ['bench', 60], ['crate', 80], ['barrel', 80]]) {
     const at = level.poseAt(380, 1.75), L2 = Object.assign({}, level, { props: [{ type, x: at.x, z: at.z, h: at.h + Math.PI / 2, y: 0 }] });
     const W = RaceWorld.create(level), P = RaceProps.create(L2), pr = P.list[0], car = RaceCar.create(Veh.get('lexus')), st = level.poseAt(350, 1.75);
     car.place(st.x, st.z, st.h, kmh / 3.6); W.add(car);
@@ -384,6 +386,21 @@ if (want('attack')) {
   };
   const hot = run(1), calm = run(0);
   check('attack', !!hot && !calm, `aggressive rival: ${hot ? `drove into the player at ${hot.t.toFixed(1)} s, ${hot.vn.toFixed(1)} m/s` : 'never touched the player'} (must); calm rival: ${calm ? `drove into the player at ${calm.t.toFixed(1)} s` : 'never did'} (must not)`);
+}
+
+if (want('reverse')) {
+  // brake held from a standstill: when 30 km/h backwards is reached, and the speed after 10 s
+  const flat = { collidersNear: () => [], groundAt: (x, z, o = {}) => { o.h = 0; o.gx = 0; o.gz = 0; return o; }, terrain: () => 0 };
+  const back = (key, arcade) => {
+    const W = RaceWorld.create(flat), car = RaceCar.create(Veh.get(key)); car.arcade = arcade;
+    car.place(0, 0, 0, 0); W.add(car);
+    let t30 = Infinity;
+    for (let i = 0; i < 240 * 10; i++) { W.step(1 / 240, () => ({ brake: 1 })); if (-car.forward * 3.6 >= 30 && t30 === Infinity) t30 = (i + 1) / 240; }
+    return { t30, top: -car.forward * 3.6 };
+  };
+  const L = back('lexus', true), M = back('mustang', true), rival = back('lexus', false);
+  check('reverse', L.t30 < 2 && M.t30 < 2 && L.top <= 60 && M.top <= 60 && rival.t30 > 2,
+    `the player's Lexus 30 km/h backwards in ${L.t30.toFixed(1)} s, the Mustang in ${M.t30.toFixed(1)} s (under 2), top ${L.top.toFixed(0)} and ${M.top.toFixed(0)} km/h (at most 60); a rival's Lexus ${rival.t30.toFixed(1)} s (over 2: unchanged)`);
 }
 
 if (want('drift')) {

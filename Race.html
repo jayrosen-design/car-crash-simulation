@@ -5022,7 +5022,7 @@ const CrashLevel = (() => {
 
     // ------------------------------------------------ side streets, buildings, street furniture
     const boxes = [], cyls = [];           // colliders (as the crash solver takes them)
-    const buildings = [], sideStreets = [], lamps = [], trees = [], signals = [], barriers = [], stops = [];
+    const buildings = [], sideStreets = [], lamps = [], trees = [], streetTrees = [], signals = [], barriers = [], stops = [];
     const START_S = 140;                   // the start line, on the first straight (the grid behind it too)
     // side streets every 130-200 m, away from the corners and the start
     for (let s = START_S + 120; s < L - 60;) {
@@ -5111,8 +5111,8 @@ const CrashLevel = (() => {
       skyline.push({ x: cx, z: cz, hx: 15 + R() * 25, hz: 15 + R() * 25, angle: R() * 0.4, height: 30 * D.skyline[1] / 160 + R() * R() * D.skyline[1], style: Math.floor(R() * 4) });
     }
 
-    // street furniture along the pavements (colliders: tree trunks; the street lights are props that
-    // break off their bases when hit, see below)
+    // street furniture along the pavements: street lights and trees, props that break off their
+    // bases when hit (see below)
     for (const side of [-1, 1]) {
       for (let s = 12; s < L - 6; s += 32) {
         if (nearSide(s, side, 4)) continue;
@@ -5120,13 +5120,14 @@ const CrashLevel = (() => {
         lamps.push({ x: p.x, z: p.z, h: p.h + (side > 0 ? -Math.PI / 2 : Math.PI / 2), side, s });
         const ts = s + 16;
         if (!nearSide(ts, side, 5) && Math.abs(C.k[sampleAt(ts)]) < 0.012) {
+          // a prop (props.js 'tree'): a car knocks it over rather than crashing into it
           const q = poseAt(ts, side * (ROAD_HALF + 2.2));
-          trees.push({ x: q.x, z: q.z, size: 0.8 + R() * 0.5, seed: Math.floor(R() * 1e6) });
-          cyls.push({ x: q.x, z: q.z, r: 0.22, height: 4 });
+          streetTrees.push({ x: q.x, z: q.z, h: p.h, size: 0.8 + R() * 0.5, seed: Math.floor(R() * 1e6) });
         }
       }
     }
-    // parks (hillside): trees in the open lots, clear of the street and the buildings
+    // parks (hillside): trees in the open lots, clear of the street and the buildings, behind the
+    // guard rails (solid: level.trees, drawn by render.js)
     for (const [gx, gz] of parkLots) for (let k = 0; k < 7; k++) {
       const x = gx + (R() - 0.5) * 40, z = gz + (R() - 0.5) * 40, size = 0.9 + R() * 0.8, seed = Math.floor(R() * 1e6);
       const f = nearest(x, z), p = poseAt(f.s, 0);
@@ -5188,6 +5189,7 @@ const CrashLevel = (() => {
     const nearRamp = (s, m) => ramps.some(r => { const u = wrapDiff(s, r.s); return u > -m && u < r.len + m; });
     for (const o of lamps) props.push({ type: 'lamp', x: o.x, z: o.z, h: o.h, y: 0 });
     for (const o of signals) props.push({ type: 'signal', x: o.x, z: o.z, h: o.h, y: 0 });
+    for (const o of streetTrees) props.push({ type: 'tree', x: o.x, z: o.z, h: o.seed * 1e-3, y: 0 });
     const KINDS = [['bin', 0.3], ['newsbox', 0.2], ['hydrant', 0.2], ['bench', 0.3]];
     for (const side of [-1, 1]) {
       for (let s = 20; s < L - 10; s += 22 + R() * 12) {
@@ -5365,8 +5367,8 @@ const RaceCar = (() => {
       const rate = (car.arcade ? 8 : 2.6) * dt;
       car.steer += Math.max(-rate, Math.min(rate, target - car.steer));
       if (car.arcade) drift(dt, inp, st, vx, slideAngle);
-      // reverse when the brake is held at a standstill
-      if (vx < 0.5 && (inp.brake || 0) > 0.5 && (inp.throttle || 0) < 0.1) car.reverse = true;
+      // reverse when the brake is held at a standstill (the player's car: from a crawl, 3 km/h)
+      if (vx < (car.arcade ? 0.95 : 0.5) && (inp.brake || 0) > 0.5 && (inp.throttle || 0) < 0.1) car.reverse = true;
       if ((inp.throttle || 0) > 0.1 || vx > 1) car.reverse = false;
       const thr = car.reverse ? (inp.brake || 0) : (inp.throttle || 0), brk = car.reverse ? 0 : (inp.brake || 0);
       car.throttle = thr; car.brake = brk; car.handbrake = inp.handbrake || 0;
@@ -5376,7 +5378,9 @@ const RaceCar = (() => {
       // engine: power-limited drive force, shared between the driven wheels
       const power = tune.power * (car.boosting ? BOOST * (1 + 0.4 * car.kick) : 1);
       let drive = thr * Math.min(m * G * 0.95, power / Math.max(4, Math.abs(vx)));
-      if (car.reverse) drive = -thr * Math.min(m * G * 0.5, 40e3 / Math.max(3, Math.abs(vx)));
+      // reverse: 0.5 g and 40 kW; the player's car backs up briskly instead (0.8 g, 90 kW, at most 58 km/h)
+      if (car.reverse) drive = car.arcade ? -thr * (vx < -16 ? 0 : Math.min(m * G * 0.8, 90e3 / Math.max(3, Math.abs(vx))))
+        : -thr * Math.min(m * G * 0.5, 40e3 / Math.max(3, Math.abs(vx)));
       // wheel loads: static plus the transfer from the last step's acceleration
       const hc = tune.hcg, mg = m * G;
       const front = mg * b / car.L - m * car.ax * hc / car.L, rear = mg * a / car.L + m * car.ax * hc / car.L;
@@ -5879,7 +5883,9 @@ const RaceAI = (() => {
   function createTraffic(level, world, opts = {}) {
     const R = CrashLevel.rng(opts.seed || 99), cars = [], L = level.length;
     const specs = opts.specs;   // { lexus, mustang }
-    const AHEAD = opts.ahead || 520, BEHIND = opts.behind || 140, GAP = opts.gap || [90, 170];
+    // a car every 150-260 m in each lane ahead (about 40% fewer than the first 90-170 m: the street
+    // was so busy the player crashed into traffic too often)
+    const AHEAD = opts.ahead || 520, BEHIND = opts.behind || 140, GAP = opts.gap || [150, 260];
     function spawn(lane, s, v) {
       const key = R() < 0.6 ? 'lexus' : 'mustang';
       const car = RaceCar.create(specs[key]);
@@ -6216,6 +6222,9 @@ const RaceProps = (() => {
   const TYPES = {
     lamp: { hx: 0.14, hy: 4.0, hz: 0.14, m: 140, e: 0.05, mu: 0.6, pole: true, metal: true },
     signal: { hx: 0.15, hy: 3.0, hz: 0.15, m: 110, e: 0.05, mu: 0.6, pole: true, metal: true },
+    // a street tree (Race): snaps at its base and falls like a pole; its box is wider than the trunk
+    // so the crown doesn't sink far into the ground once it lies there
+    tree: { hx: 0.8, hy: 2.8, hz: 0.8, m: 180, e: 0.05, mu: 0.8, pole: true },
     cone: { hx: 0.21, hy: 0.36, hz: 0.21, m: 4, e: 0.35, mu: 0.7 },
     bin: { hx: 0.3, hy: 0.5, hz: 0.3, m: 28, e: 0.3, mu: 0.5, metal: true },
     newsbox: { hx: 0.26, hy: 0.55, hz: 0.24, m: 35, e: 0.25, mu: 0.5, metal: true },
@@ -6442,7 +6451,7 @@ const RaceProps = (() => {
       const M = b.kinematic ? Infinity : c.m, m = T.m;
       let J;
       if (T.pole && pr.hit === 0) {
-        // a street light or signal breaks off its base and topples away from the car
+        // a street light, signal or tree breaks off its base and topples away from the car
         const vb = 0.45 * vrel;
         pr.v[0] += nx * vb; pr.v[2] += nz * vb; pr.v[1] += 1.2;
         const ax = cross([0, 1, 0], [nx, 0, nz]), sp = Math.min(5, 0.28 * vrel / (T.hy / 4));
@@ -9444,7 +9453,7 @@ float winMask; float frameMask; float litMask;`)
   function buildFurniture(group, level) {
     // on the ground at (x, z) facing h (street lights and signal posts are props: see prepareProps)
     const at = (x, z, h) => new T.Matrix4().makeRotationY(-h).setPosition(x, groundY(level, x, z), z);
-    // trees: trunk and a cluster of leafy blobs
+    // trees (the solid ones: the parks'; the street trees are props): trunk and a cluster of leafy blobs
     const bark = new T.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.95 });
     const leaf = leafMaterial();
     const trunk = new T.CylinderGeometry(0.12, 0.2, 3.2, 7); trunk.translate(0, 1.6, 0);
@@ -9598,6 +9607,13 @@ float lnoise(vec3 p) {
     switch (type) {
       case 'lamp': return [[window.mergeGeometries([cyl(0.09, 0.13, 8, 4, 10), box(2.2, 0.08, 0.08, 1.1, 7.9, 0)]), M.metal], [box(0.7, 0.14, 0.32, 2.1, 7.82, 0), M.lamp]];
       case 'signal': return [[cyl(0.1, 0.12, 6, 3, 8), M.metal], [box(0.35, 1.0, 0.35, 0, 4.3, 0), M.signal]];
+      case 'tree': {
+        // the street trees' look (buildFurniture), a little smaller, in one green
+        M.bark = M.bark || new T.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.95 });
+        if (!M.leaf) { M.leaf = leafMaterial(); M.leaf.color.setHSL(0.26, 0.5, 0.26); }
+        const crown = treeCrown(2); crown.scale(0.85, 0.85, 0.85);
+        return [[cyl(0.1, 0.17, 2.8, 1.4, 7), M.bark], [crown, M.leaf]];
+      }
       case 'cone': return painted([[cyl(0.03, 0.2, 0.66, 0.37), 0xf26a1b], [cyl(0.11, 0.14, 0.12, 0.35), 0xf2f2ee], [box(0.42, 0.04, 0.42, 0, 0.02, 0), 0x1d1e20]]);
       case 'bin': return painted([[cyl(0.3, 0.27, 0.92, 0.46), 0x2f4a36], [cyl(0.32, 0.32, 0.06, 0.95), 0x22352a]]);
       case 'newsbox': return painted([[box(0.5, 0.75, 0.45, 0, 0.62, 0), 0x1f4fa0], [box(0.3, 0.25, 0.3, 0, 0.125, 0), 0x2a2c30], [box(0.36, 0.22, 0.03, 0, 0.78, 0.23), 0xd9dde2]]);
@@ -9825,7 +9841,7 @@ const RaceGame = (() => {
   // props knocked over: a sound, sparks or splinters, a little boost for the player; a burst hydrant
   // sprays for a few seconds
   const geysers = [];
-  const SPLINTERS = { crate: 'chip', bench: 'chip' };
+  const SPLINTERS = { crate: 'chip', bench: 'chip', tree: 'chip' };
   function propHit(h) {
     const mine = h.body === me, d = Math.hypot(h.x - car.x, h.z - car.z);
     if (d > 90) return;

@@ -103,8 +103,8 @@ const RaceCar = (() => {
       const rate = (car.arcade ? 8 : 2.6) * dt;
       car.steer += Math.max(-rate, Math.min(rate, target - car.steer));
       if (car.arcade) drift(dt, inp, st, vx, slideAngle);
-      // reverse when the brake is held at a standstill
-      if (vx < 0.5 && (inp.brake || 0) > 0.5 && (inp.throttle || 0) < 0.1) car.reverse = true;
+      // reverse when the brake is held at a standstill (the player's car: from a crawl, 3 km/h)
+      if (vx < (car.arcade ? 0.95 : 0.5) && (inp.brake || 0) > 0.5 && (inp.throttle || 0) < 0.1) car.reverse = true;
       if ((inp.throttle || 0) > 0.1 || vx > 1) car.reverse = false;
       const thr = car.reverse ? (inp.brake || 0) : (inp.throttle || 0), brk = car.reverse ? 0 : (inp.brake || 0);
       car.throttle = thr; car.brake = brk; car.handbrake = inp.handbrake || 0;
@@ -114,7 +114,9 @@ const RaceCar = (() => {
       // engine: power-limited drive force, shared between the driven wheels
       const power = tune.power * (car.boosting ? BOOST * (1 + 0.4 * car.kick) : 1);
       let drive = thr * Math.min(m * G * 0.95, power / Math.max(4, Math.abs(vx)));
-      if (car.reverse) drive = -thr * Math.min(m * G * 0.5, 40e3 / Math.max(3, Math.abs(vx)));
+      // reverse: 0.5 g and 40 kW; the player's car backs up briskly instead (0.8 g, 90 kW, at most 58 km/h)
+      if (car.reverse) drive = car.arcade ? -thr * (vx < -16 ? 0 : Math.min(m * G * 0.8, 90e3 / Math.max(3, Math.abs(vx))))
+        : -thr * Math.min(m * G * 0.5, 40e3 / Math.max(3, Math.abs(vx)));
       // wheel loads: static plus the transfer from the last step's acceleration
       const hc = tune.hcg, mg = m * G;
       const front = mg * b / car.L - m * car.ax * hc / car.L, rear = mg * a / car.L + m * car.ax * hc / car.L;

@@ -873,7 +873,7 @@ float winMask; float frameMask; float litMask;`)
   function buildFurniture(group, level) {
     // on the ground at (x, z) facing h (street lights and signal posts are props: see prepareProps)
     const at = (x, z, h) => new T.Matrix4().makeRotationY(-h).setPosition(x, groundY(level, x, z), z);
-    // trees: trunk and a cluster of leafy blobs
+    // trees (the solid ones: the parks'; the street trees are props): trunk and a cluster of leafy blobs
     const bark = new T.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.95 });
     const leaf = leafMaterial();
     const trunk = new T.CylinderGeometry(0.12, 0.2, 3.2, 7); trunk.translate(0, 1.6, 0);
@@ -1027,6 +1027,13 @@ float lnoise(vec3 p) {
     switch (type) {
       case 'lamp': return [[window.mergeGeometries([cyl(0.09, 0.13, 8, 4, 10), box(2.2, 0.08, 0.08, 1.1, 7.9, 0)]), M.metal], [box(0.7, 0.14, 0.32, 2.1, 7.82, 0), M.lamp]];
       case 'signal': return [[cyl(0.1, 0.12, 6, 3, 8), M.metal], [box(0.35, 1.0, 0.35, 0, 4.3, 0), M.signal]];
+      case 'tree': {
+        // the street trees' look (buildFurniture), a little smaller, in one green
+        M.bark = M.bark || new T.MeshStandardMaterial({ color: 0x4a3b2e, roughness: 0.95 });
+        if (!M.leaf) { M.leaf = leafMaterial(); M.leaf.color.setHSL(0.26, 0.5, 0.26); }
+        const crown = treeCrown(2); crown.scale(0.85, 0.85, 0.85);
+        return [[cyl(0.1, 0.17, 2.8, 1.4, 7), M.bark], [crown, M.leaf]];
+      }
       case 'cone': return painted([[cyl(0.03, 0.2, 0.66, 0.37), 0xf26a1b], [cyl(0.11, 0.14, 0.12, 0.35), 0xf2f2ee], [box(0.42, 0.04, 0.42, 0, 0.02, 0), 0x1d1e20]]);
       case 'bin': return painted([[cyl(0.3, 0.27, 0.92, 0.46), 0x2f4a36], [cyl(0.32, 0.32, 0.06, 0.95), 0x22352a]]);
       case 'newsbox': return painted([[box(0.5, 0.75, 0.45, 0, 0.62, 0), 0x1f4fa0], [box(0.3, 0.25, 0.3, 0, 0.125, 0), 0x2a2c30], [box(0.36, 0.22, 0.03, 0, 0.78, 0.23), 0xd9dde2]]);

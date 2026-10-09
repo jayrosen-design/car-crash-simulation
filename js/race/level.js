@@ -214,7 +214,7 @@ const CrashLevel = (() => {
 
     // ------------------------------------------------ side streets, buildings, street furniture
     const boxes = [], cyls = [];           // colliders (as the crash solver takes them)
-    const buildings = [], sideStreets = [], lamps = [], trees = [], signals = [], barriers = [], stops = [];
+    const buildings = [], sideStreets = [], lamps = [], trees = [], streetTrees = [], signals = [], barriers = [], stops = [];
     const START_S = 140;                   // the start line, on the first straight (the grid behind it too)
     // side streets every 130-200 m, away from the corners and the start
     for (let s = START_S + 120; s < L - 60;) {
@@ -303,8 +303,8 @@ const CrashLevel = (() => {
       skyline.push({ x: cx, z: cz, hx: 15 + R() * 25, hz: 15 + R() * 25, angle: R() * 0.4, height: 30 * D.skyline[1] / 160 + R() * R() * D.skyline[1], style: Math.floor(R() * 4) });
     }
 
-    // street furniture along the pavements (colliders: tree trunks; the street lights are props that
-    // break off their bases when hit, see below)
+    // street furniture along the pavements: street lights and trees, props that break off their
+    // bases when hit (see below)
     for (const side of [-1, 1]) {
       for (let s = 12; s < L - 6; s += 32) {
         if (nearSide(s, side, 4)) continue;
@@ -312,13 +312,14 @@ const CrashLevel = (() => {
         lamps.push({ x: p.x, z: p.z, h: p.h + (side > 0 ? -Math.PI / 2 : Math.PI / 2), side, s });
         const ts = s + 16;
         if (!nearSide(ts, side, 5) && Math.abs(C.k[sampleAt(ts)]) < 0.012) {
+          // a prop (props.js 'tree'): a car knocks it over rather than crashing into it
           const q = poseAt(ts, side * (ROAD_HALF + 2.2));
-          trees.push({ x: q.x, z: q.z, size: 0.8 + R() * 0.5, seed: Math.floor(R() * 1e6) });
-          cyls.push({ x: q.x, z: q.z, r: 0.22, height: 4 });
+          streetTrees.push({ x: q.x, z: q.z, h: p.h, size: 0.8 + R() * 0.5, seed: Math.floor(R() * 1e6) });
         }
       }
     }
-    // parks (hillside): trees in the open lots, clear of the street and the buildings
+    // parks (hillside): trees in the open lots, clear of the street and the buildings, behind the
+    // guard rails (solid: level.trees, drawn by render.js)
     for (const [gx, gz] of parkLots) for (let k = 0; k < 7; k++) {
       const x = gx + (R() - 0.5) * 40, z = gz + (R() - 0.5) * 40, size = 0.9 + R() * 0.8, seed = Math.floor(R() * 1e6);
       const f = nearest(x, z), p = poseAt(f.s, 0);
@@ -380,6 +381,7 @@ const CrashLevel = (() => {
     const nearRamp = (s, m) => ramps.some(r => { const u = wrapDiff(s, r.s); return u > -m && u < r.len + m; });
     for (const o of lamps) props.push({ type: 'lamp', x: o.x, z: o.z, h: o.h, y: 0 });
     for (const o of signals) props.push({ type: 'signal', x: o.x, z: o.z, h: o.h, y: 0 });
+    for (const o of streetTrees) props.push({ type: 'tree', x: o.x, z: o.z, h: o.seed * 1e-3, y: 0 });
     const KINDS = [['bin', 0.3], ['newsbox', 0.2], ['hydrant', 0.2], ['bench', 0.3]];
     for (const side of [-1, 1]) {
       for (let s = 20; s < L - 10; s += 22 + R() * 12) {
