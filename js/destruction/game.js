@@ -99,10 +99,13 @@ const DestructionGame = (() => {
   // the Race game's last choice is the default here (read only); this mode keeps its own
   const saved = (() => { if (TEST) return null; try { return JSON.parse(localStorage.getItem('destruction-choice')) || JSON.parse(localStorage.getItem('race-choice')); } catch (e) { return null; } })() || {};
   let carKey = CARS[q.get('car')] ? q.get('car') : CARS[saved.car] ? saved.car : 'lexus';
-  // a car's paints: its signature paint (if it has one) first, then the eight
-  const paintsOf = (key) => CARS[key].paint ? [{ name: CARS[key].paint.name[0].toUpperCase() + CARS[key].paint.name.slice(1), hex: CARS[key].paint.hex }, ...PAINTS] : PAINTS;
-  let paintIdx = paintsOf(carKey)[saved.paint] ? +saved.paint : 0;
-  const paintNow = () => paintsOf(carKey)[paintIdx];
+  // one palette for every car, in one order: the eight, then the garage's signature paints. A car
+  // starts in its signature paint (the Lexus and Mustang in red) and keeps the paint picked for it.
+  for (const v of CrashGarage.LIST) if (v.paint) PAINTS.push({ name: v.paint.name[0].toUpperCase() + v.paint.name.slice(1), hex: v.paint.hex });
+  const homePaint = (key) => Math.max(0, PAINTS.findIndex((p) => CARS[key].paint && p.hex === CARS[key].paint.hex));
+  let paintIdx = PAINTS[saved.paint] ? +saved.paint : homePaint(carKey);
+  const paintFor = { [carKey]: paintIdx };
+  const paintNow = () => PAINTS[paintIdx];
   let car = RaceCar.create(specs[carKey]);
   const me = world.add(car, { kind: 'player' });
   const P0 = level.player;
@@ -666,10 +669,10 @@ const DestructionGame = (() => {
     $('#sel-title').textContent = level.name;
     $('#btn-start').addEventListener('click', () => { $('#btn-start').blur(); startAttempt(); });
   }
-  // the paint swatches: the car's own paints (rebuilt when the car changes)
+  // the paint swatches, in two rows
   function buildSwatches() {
-    $('#sel-swatches').innerHTML = paintsOf(carKey).map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
-    $('#sel-swatches').style.gridTemplateColumns = `repeat(${paintsOf(carKey).length}, 1fr)`;
+    $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
+    $('#sel-swatches').style.gridTemplateColumns = `repeat(${Math.ceil(PAINTS.length / 2)}, 1fr)`;
     document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
   }
   function showSelect() {
@@ -686,7 +689,7 @@ const DestructionGame = (() => {
     if (!CARS[key] || (key === carKey && !selBusy)) return;
     const token = ++selToken;
     carKey = key;
-    paintIdx = 0; buildSwatches();   // a car starts in its signature paint
+    paintIdx = key in paintFor ? paintFor[key] : homePaint(key);
     car = RaceCar.create(specs[key]); me.car = car;
     world.respec(me);
     placeCar(SHOW);
@@ -698,7 +701,7 @@ const DestructionGame = (() => {
     R.player.setPaint(paintNow().hex);
     selBusy = false; showSelect();
   }
-  function pickPaint(i) { const n = paintsOf(carKey).length; paintIdx = (i + n) % n; if (!selBusy) R.player.setPaint(paintNow().hex); showSelect(); }
+  function pickPaint(i) { const n = PAINTS.length; paintIdx = paintFor[carKey] = (i + n) % n; if (!selBusy) R.player.setPaint(paintNow().hex); showSelect(); }
   // another junction: the page again with ?level= (the car and paint kept), once the music has faded out
   // (the menu song picks up where it was)
   function pickLevel(key) {

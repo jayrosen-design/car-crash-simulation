@@ -140,6 +140,7 @@ body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
 .lineup-svg .tick.major { stroke: #8f949e; }
 .lineup-svg text { font-family: var(--mono); font-size: 0.42px; fill: #8f949e; }
 .lineup-svg .pick { fill: #8c64f4; }
+.lineup-svg .ring { fill: none; stroke: #8c64f4; stroke-width: 1.5px; pointer-events: none; }
 /* the spec card: the name big, the class line, the figures in orange mono, a violet rule */
 .sel-card { margin-bottom: 12px; }
 .sel-card .card-name { margin: 0 0 4px; font-size: 30px; font-weight: 800; line-height: 1.05; text-transform: none; letter-spacing: 0; color: var(--text); }
@@ -507,9 +508,9 @@ body.destruction { font-family: "Barlow", system-ui, -apple-system, "Segoe UI", 
  * models/<key>.glb.js and .phys.js from tools/build-rig.py, and `rig` holds their mass, tuning and armour.
  *
  * Per entry: key, name, kind (the select list's tag), line (the class line under the name), type,
- * size [L, W, H] (m), paint ({ name, hex }: the signature paint, first on the select screen; null: the
- * shared paints only), targets (the design's numbers: top km/h, t100 s, lateralG g), note (the design's
- * one-liner), race ('ranked' | 'unranked' | false), destruction (bool), rival (AI rivals may drive it).
+ * size [L, W, H] (m), paint ({ name, hex }: the signature paint, the one it starts in, added to the
+ * select screen's palette; null: it starts in crimson red), targets (the design's numbers: top km/h,
+ * t100 s, lateralG g), note (the design's one-liner), race ('ranked' | 'unranked' | false), destruction (bool), rival (AI rivals may drive it).
  */
 (function (root) {
 'use strict';
@@ -634,8 +635,8 @@ const GarageUI = (() => {
     const at = {};
     items.forEach((it, i) => {
       const s = shapes[i];
-      at[it.key] = { x, L: s.L };
-      out += `<g class="lineup-car" data-car="${it.key}" role="radio" aria-label="${esc(it.name)}" tabindex="-1" transform="translate(${x.toFixed(3)},0)">` +
+      at[it.key] = { x, L: s.L, H: s.H };
+      out += `<g class="lineup-car" data-car="${it.key}" role="radio" aria-label="${esc(it.name)}" transform="translate(${x.toFixed(3)},0)">` +
         `<title>${esc(it.name)}</title><rect class="hit" x="-0.3" y="${-Hm}" width="${(s.L + 0.6).toFixed(3)}" height="${Hm + 0.1}"/>` +
         `<polygon points="${s.pts}" fill="${hex(it.paint)}"/>` +
         s.wheels.map(([u, y, r, rr]) => `<circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${r.toFixed(3)}" class="tyre"/><circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${rr.toFixed(3)}" class="rim"/>`).join('') +
@@ -646,16 +647,22 @@ const GarageUI = (() => {
     out += `<line class="ground" x1="0" y1="0" x2="${total.toFixed(3)}" y2="0"/>`;
     for (let m = 0; m <= Math.floor(total); m++) out += `<line class="tick${m % 5 ? '' : ' major'}" x1="${m}" y1="0" x2="${m}" y2="${m % 5 ? 0.12 : 0.24}"/>` + (m % 5 ? '' : `<text x="${m + 0.08}" y="0.62">${m === 0 ? '0 m' : m}</text>`);
     out += `<rect class="pick" x="0" y="0.05" width="1" height="0.08"/>`;
+    // the chosen car's outline (a thin line however the strip is scaled)
+    out += `<rect class="ring" x="0" y="0" width="1" height="1" rx="0.22" vector-effect="non-scaling-stroke"/>`;
     svg.innerHTML = out;
     el.innerHTML = '';
     el.appendChild(svg);
     svg.querySelectorAll('.lineup-car').forEach(g => g.addEventListener('click', () => onPick(g.dataset.car)));
-    const pick = svg.querySelector('.pick');
+    const pick = svg.querySelector('.pick'), ring = svg.querySelector('.ring');
     return {
       select(key) {
         svg.querySelectorAll('.lineup-car').forEach(g => g.setAttribute('aria-checked', String(g.dataset.car === key)));
         const a = at[key];
-        if (a) { pick.setAttribute('x', a.x.toFixed(3)); pick.setAttribute('width', a.L.toFixed(3)); }
+        if (a) {
+          pick.setAttribute('x', a.x.toFixed(3)); pick.setAttribute('width', a.L.toFixed(3));
+          const set = { x: a.x - 0.25, y: -a.H - 0.2, width: a.L + 0.5, height: a.H + 0.45 };
+          for (const k in set) ring.setAttribute(k, set[k].toFixed(3));
+        }
       },
     };
   }
@@ -667,7 +674,7 @@ const GarageUI = (() => {
     const dims = v.type === 'hover' ? `${f2(v.size[1])} m span · ${f2(v.size[2])} m tall` : `${f2(v.size[0])} × ${f2(v.size[1])} × ${f2(v.size[2])} m`;
     const top = v.targets && v.targets.top || (perf ? Math.round(perf.top) : 0);
     const modes = [v.race && v.race !== 'unranked' ? 'race' : null, v.destruction ? 'destruction' : null, v.race === 'unranked' ? 'race unranked' : null].filter(Boolean).join(' · ');
-    const paint = v.paint ? v.paint.name : 'eight finishes';
+    const paint = v.paint ? v.paint.name : 'crimson red';
     // (the video's high-speed camera tag: a frame time from the vehicle's name, so it stays put)
     let h = 0; for (const c of v.key) h = (h * 31 + c.charCodeAt(0)) % 997;
     el.innerHTML = `<h3 class="card-name">${esc(v.name)}</h3><p class="card-line">${esc(v.line)}</p>` +
@@ -11548,10 +11555,13 @@ const DestructionGame = (() => {
   // the Race game's last choice is the default here (read only); this mode keeps its own
   const saved = (() => { if (TEST) return null; try { return JSON.parse(localStorage.getItem('destruction-choice')) || JSON.parse(localStorage.getItem('race-choice')); } catch (e) { return null; } })() || {};
   let carKey = CARS[q.get('car')] ? q.get('car') : CARS[saved.car] ? saved.car : 'lexus';
-  // a car's paints: its signature paint (if it has one) first, then the eight
-  const paintsOf = (key) => CARS[key].paint ? [{ name: CARS[key].paint.name[0].toUpperCase() + CARS[key].paint.name.slice(1), hex: CARS[key].paint.hex }, ...PAINTS] : PAINTS;
-  let paintIdx = paintsOf(carKey)[saved.paint] ? +saved.paint : 0;
-  const paintNow = () => paintsOf(carKey)[paintIdx];
+  // one palette for every car, in one order: the eight, then the garage's signature paints. A car
+  // starts in its signature paint (the Lexus and Mustang in red) and keeps the paint picked for it.
+  for (const v of CrashGarage.LIST) if (v.paint) PAINTS.push({ name: v.paint.name[0].toUpperCase() + v.paint.name.slice(1), hex: v.paint.hex });
+  const homePaint = (key) => Math.max(0, PAINTS.findIndex((p) => CARS[key].paint && p.hex === CARS[key].paint.hex));
+  let paintIdx = PAINTS[saved.paint] ? +saved.paint : homePaint(carKey);
+  const paintFor = { [carKey]: paintIdx };
+  const paintNow = () => PAINTS[paintIdx];
   let car = RaceCar.create(specs[carKey]);
   const me = world.add(car, { kind: 'player' });
   const P0 = level.player;
@@ -12115,10 +12125,10 @@ const DestructionGame = (() => {
     $('#sel-title').textContent = level.name;
     $('#btn-start').addEventListener('click', () => { $('#btn-start').blur(); startAttempt(); });
   }
-  // the paint swatches: the car's own paints (rebuilt when the car changes)
+  // the paint swatches, in two rows
   function buildSwatches() {
-    $('#sel-swatches').innerHTML = paintsOf(carKey).map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
-    $('#sel-swatches').style.gridTemplateColumns = `repeat(${paintsOf(carKey).length}, 1fr)`;
+    $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
+    $('#sel-swatches').style.gridTemplateColumns = `repeat(${Math.ceil(PAINTS.length / 2)}, 1fr)`;
     document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
   }
   function showSelect() {
@@ -12135,7 +12145,7 @@ const DestructionGame = (() => {
     if (!CARS[key] || (key === carKey && !selBusy)) return;
     const token = ++selToken;
     carKey = key;
-    paintIdx = 0; buildSwatches();   // a car starts in its signature paint
+    paintIdx = key in paintFor ? paintFor[key] : homePaint(key);
     car = RaceCar.create(specs[key]); me.car = car;
     world.respec(me);
     placeCar(SHOW);
@@ -12147,7 +12157,7 @@ const DestructionGame = (() => {
     R.player.setPaint(paintNow().hex);
     selBusy = false; showSelect();
   }
-  function pickPaint(i) { const n = paintsOf(carKey).length; paintIdx = (i + n) % n; if (!selBusy) R.player.setPaint(paintNow().hex); showSelect(); }
+  function pickPaint(i) { const n = PAINTS.length; paintIdx = paintFor[carKey] = (i + n) % n; if (!selBusy) R.player.setPaint(paintNow().hex); showSelect(); }
   // another junction: the page again with ?level= (the car and paint kept), once the music has faded out
   // (the menu song picks up where it was)
   function pickLevel(key) {

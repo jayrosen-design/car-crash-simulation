@@ -11,9 +11,9 @@
  * models/<key>.glb.js and .phys.js from tools/build-rig.py, and `rig` holds their mass, tuning and armour.
  *
  * Per entry: key, name, kind (the select list's tag), line (the class line under the name), type,
- * size [L, W, H] (m), paint ({ name, hex }: the signature paint, first on the select screen; null: the
- * shared paints only), targets (the design's numbers: top km/h, t100 s, lateralG g), note (the design's
- * one-liner), race ('ranked' | 'unranked' | false), destruction (bool), rival (AI rivals may drive it).
+ * size [L, W, H] (m), paint ({ name, hex }: the signature paint, the one it starts in, added to the
+ * select screen's palette; null: it starts in crimson red), targets (the design's numbers: top km/h,
+ * t100 s, lateralG g), note (the design's one-liner), race ('ranked' | 'unranked' | false), destruction (bool), rival (AI rivals may drive it).
  */
 (function (root) {
 'use strict';

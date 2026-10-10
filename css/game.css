@@ -132,6 +132,7 @@ body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
 .lineup-svg .tick.major { stroke: #8f949e; }
 .lineup-svg text { font-family: var(--mono); font-size: 0.42px; fill: #8f949e; }
 .lineup-svg .pick { fill: #8c64f4; }
+.lineup-svg .ring { fill: none; stroke: #8c64f4; stroke-width: 1.5px; pointer-events: none; }
 /* the spec card: the name big, the class line, the figures in orange mono, a violet rule */
 .sel-card { margin-bottom: 12px; }
 .sel-card .card-name { margin: 0 0 4px; font-size: 30px; font-weight: 800; line-height: 1.05; text-transform: none; letter-spacing: 0; color: var(--text); }

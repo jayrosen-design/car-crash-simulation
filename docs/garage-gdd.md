@@ -183,7 +183,9 @@ The select screen of both games becomes the video's garage:
 - **Measured figures.** The bars (top speed, 0–100, braking, cornering) and the specs (power, weight,
   drive, gearbox) are measured by driving each vehicle in the game's physics, as now, with labels that
   fit (tracked, single-speed, "—" for a 0–100 the tank never reaches).
-- **Paint.** The signature paint first, then the eight shared paints.
+- **Paint.** One palette for every vehicle, in one order: the eight shared paints, then the ten signature
+  paints. Each vehicle starts in its own (the Lexus and Mustang in crimson red) and keeps a paint picked
+  for it while the screen is open.
 - **The 3D street** behind still shows the chosen vehicle, the camera pulled back for long ones.
 - **Loading.** The model loads when you stop on a vehicle (a quarter-second pause), not on every step.
 - **Layout.** It fits 1280 × 720 without scrolling, and phones in landscape (it stacks, then scrolls, on

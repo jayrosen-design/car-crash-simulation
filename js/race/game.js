@@ -23,8 +23,8 @@
  * (the rivals gain time); the camera shows the street as it was. Then the car is put back on the
  * road. Rivals that crash on their own spin out as rigid bodies and rejoin.
  *
- * Before the race, a car-select screen: the garage's cars (js/garage.js), each in its signature paint
- * or one of eight others, and each car's performance as measured by driving it (RaceCar.measure).
+ * Before the race, a car-select screen: the garage's cars (js/garage.js), each starting in its signature
+ * paint from one palette of eighteen, and each car's performance as measured by driving it (RaceCar.measure).
  * The choice is remembered for the next race in this browser. The motorcycle and the drone crash as
  * rigid bodies (rigs.js) instead of on the crash solver; the drone hops on the handbrake; the tank
  * doesn't crash (it stalls) and races unranked: no place, no best, done when the last rival is.
@@ -77,10 +77,13 @@ const RaceGame = (() => {
   const LEVEL_NOTES = { downtown: 'Towers, hills and three jumps', harbour: 'Flat out past the docks, after dark', hillside: 'Big hills and fast bends at midday' };
   const saved = (() => { if (SCRIPTED) return null; try { return JSON.parse(localStorage.getItem('race-choice')); } catch (e) { return null; } })() || {};
   let carKey = CARS[q.get('car')] ? q.get('car') : CARS[saved.car] ? saved.car : 'lexus';
-  // a car's paints: its signature paint (if it has one) first, then the eight
-  const paintsOf = (key) => CARS[key].paint ? [{ name: CARS[key].paint.name[0].toUpperCase() + CARS[key].paint.name.slice(1), hex: CARS[key].paint.hex }, ...PAINTS] : PAINTS;
-  let paintIdx = paintsOf(carKey)[saved.paint] ? +saved.paint : 0;
-  const paintNow = () => paintsOf(carKey)[paintIdx];
+  // one palette for every car, in one order: the eight, then the garage's signature paints. A car
+  // starts in its signature paint (the Lexus and Mustang in red) and keeps the paint picked for it.
+  for (const v of CrashGarage.LIST) if (v.paint) PAINTS.push({ name: v.paint.name[0].toUpperCase() + v.paint.name.slice(1), hex: v.paint.hex });
+  const homePaint = (key) => Math.max(0, PAINTS.findIndex((p) => CARS[key].paint && p.hex === CARS[key].paint.hex));
+  let paintIdx = PAINTS[saved.paint] ? +saved.paint : homePaint(carKey);
+  const paintFor = { [carKey]: paintIdx };
+  const paintNow = () => PAINTS[paintIdx];
 
   // ---------------------------------------------------------------- the grid
   // aggr: how readily a rival picks a fight (ai.js), 0 to 1
@@ -517,10 +520,10 @@ const RaceGame = (() => {
   }
   // the touch screen's handbrake button: the drone hops with it
   function hopLabel() { const b = document.querySelector('#touch .t-hand'); if (b) b.textContent = car.kind === 'hover' ? 'Hop' : 'Drift'; }
-  // the paint swatches: the car's own paints (rebuilt when the car changes)
+  // the paint swatches, in two rows
   function buildSwatches() {
-    $('#sel-swatches').innerHTML = paintsOf(carKey).map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
-    $('#sel-swatches').style.gridTemplateColumns = `repeat(${paintsOf(carKey).length}, 1fr)`;
+    $('#sel-swatches').innerHTML = PAINTS.map((p, i) => `<button type="button" class="swatch" role="radio" data-i="${i}" title="${p.name}" aria-label="${p.name}" style="background: #${p.hex.toString(16).padStart(6, '0')}"></button>`).join('');
+    $('#sel-swatches').style.gridTemplateColumns = `repeat(${Math.ceil(PAINTS.length / 2)}, 1fr)`;
     document.querySelectorAll('.swatch').forEach((b) => b.addEventListener('click', () => { b.blur(); selRow = 1; pickPaint(+b.dataset.i); }));
   }
   function showSelect() {
@@ -540,7 +543,7 @@ const RaceGame = (() => {
     if (!specs[key] || (key === carKey && !selBusy)) return;
     const token = ++selToken;
     carKey = key;
-    paintIdx = 0; buildSwatches();   // a car starts in its signature paint
+    paintIdx = key in paintFor ? paintFor[key] : homePaint(key);
     car = RaceCar.create(specs[key]);
     car.arcade = true;
     me.car = car;
@@ -556,8 +559,8 @@ const RaceGame = (() => {
     selBusy = false; showSelect();
   }
   function pickPaint(i) {
-    const n = paintsOf(carKey).length;
-    paintIdx = (i + n) % n;
+    const n = PAINTS.length;
+    paintIdx = paintFor[carKey] = (i + n) % n;
     if (!selBusy) R.player.setPaint(paintNow().hex);   // else chooseCar paints the new model
     showSelect();
   }

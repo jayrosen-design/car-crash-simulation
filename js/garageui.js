@@ -39,8 +39,8 @@ const GarageUI = (() => {
     const at = {};
     items.forEach((it, i) => {
       const s = shapes[i];
-      at[it.key] = { x, L: s.L };
-      out += `<g class="lineup-car" data-car="${it.key}" role="radio" aria-label="${esc(it.name)}" tabindex="-1" transform="translate(${x.toFixed(3)},0)">` +
+      at[it.key] = { x, L: s.L, H: s.H };
+      out += `<g class="lineup-car" data-car="${it.key}" role="radio" aria-label="${esc(it.name)}" transform="translate(${x.toFixed(3)},0)">` +
         `<title>${esc(it.name)}</title><rect class="hit" x="-0.3" y="${-Hm}" width="${(s.L + 0.6).toFixed(3)}" height="${Hm + 0.1}"/>` +
         `<polygon points="${s.pts}" fill="${hex(it.paint)}"/>` +
         s.wheels.map(([u, y, r, rr]) => `<circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${r.toFixed(3)}" class="tyre"/><circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${rr.toFixed(3)}" class="rim"/>`).join('') +
@@ -51,16 +51,22 @@ const GarageUI = (() => {
     out += `<line class="ground" x1="0" y1="0" x2="${total.toFixed(3)}" y2="0"/>`;
     for (let m = 0; m <= Math.floor(total); m++) out += `<line class="tick${m % 5 ? '' : ' major'}" x1="${m}" y1="0" x2="${m}" y2="${m % 5 ? 0.12 : 0.24}"/>` + (m % 5 ? '' : `<text x="${m + 0.08}" y="0.62">${m === 0 ? '0 m' : m}</text>`);
     out += `<rect class="pick" x="0" y="0.05" width="1" height="0.08"/>`;
+    // the chosen car's outline (a thin line however the strip is scaled)
+    out += `<rect class="ring" x="0" y="0" width="1" height="1" rx="0.22" vector-effect="non-scaling-stroke"/>`;
     svg.innerHTML = out;
     el.innerHTML = '';
     el.appendChild(svg);
     svg.querySelectorAll('.lineup-car').forEach(g => g.addEventListener('click', () => onPick(g.dataset.car)));
-    const pick = svg.querySelector('.pick');
+    const pick = svg.querySelector('.pick'), ring = svg.querySelector('.ring');
     return {
       select(key) {
         svg.querySelectorAll('.lineup-car').forEach(g => g.setAttribute('aria-checked', String(g.dataset.car === key)));
         const a = at[key];
-        if (a) { pick.setAttribute('x', a.x.toFixed(3)); pick.setAttribute('width', a.L.toFixed(3)); }
+        if (a) {
+          pick.setAttribute('x', a.x.toFixed(3)); pick.setAttribute('width', a.L.toFixed(3));
+          const set = { x: a.x - 0.25, y: -a.H - 0.2, width: a.L + 0.5, height: a.H + 0.45 };
+          for (const k in set) ring.setAttribute(k, set[k].toFixed(3));
+        }
       },
     };
   }
@@ -72,7 +78,7 @@ const GarageUI = (() => {
     const dims = v.type === 'hover' ? `${f2(v.size[1])} m span · ${f2(v.size[2])} m tall` : `${f2(v.size[0])} × ${f2(v.size[1])} × ${f2(v.size[2])} m`;
     const top = v.targets && v.targets.top || (perf ? Math.round(perf.top) : 0);
     const modes = [v.race && v.race !== 'unranked' ? 'race' : null, v.destruction ? 'destruction' : null, v.race === 'unranked' ? 'race unranked' : null].filter(Boolean).join(' · ');
-    const paint = v.paint ? v.paint.name : 'eight finishes';
+    const paint = v.paint ? v.paint.name : 'crimson red';
     // (the video's high-speed camera tag: a frame time from the vehicle's name, so it stays put)
     let h = 0; for (const c of v.key) h = (h * 31 + c.charCodeAt(0)) % 997;
     el.innerHTML = `<h3 class="card-name">${esc(v.name)}</h3><p class="card-line">${esc(v.line)}</p>` +
