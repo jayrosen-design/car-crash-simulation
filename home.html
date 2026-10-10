@@ -164,42 +164,46 @@
 
       <h3 class="games-head" id="games">Game modes</h3>
       <p class="sub">Take the wheel yourself. Crashes go through the same crash physics as the simulations.</p>
-      <div class="race-trailer">
-        <video id="race" src="media/race-trailer.mp4" poster="media/race-poster.jpg" playsinline preload="none"
-          data-portrait="media/race-trailer-mobile.mp4" data-portrait-poster="media/race-poster-mobile.jpg"
-          aria-label="One-minute trailer of the Race game mode at dusk: the start, the pack, near misses with oncoming traffic, a takedown, a jump in slow motion and a head-on crash"></video>
-        <button class="race-play" id="race-play" type="button"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg><span>Watch the Race trailer<small>1:00 · with sound</small></span></button>
-      </div>
-      <a class="card game" href="Race.html"><div class="in">
+      <div class="card game"><div class="in">
         <div class="shot">
           <img src="media/race.jpg" alt="Race mode: the player's Lexus in a pack of rival cars on a city street, with a rival spun round by a takedown">
+          <video id="race" src="media/race-trailer.mp4" muted playsinline preload="none" data-preview="4,53"
+            data-portrait="media/race-trailer-mobile.mp4"
+            aria-label="One-minute trailer of the Race game mode at dusk: the start, the pack, near misses with oncoming traffic, a takedown, a jump in slow motion and a head-on crash"></video>
           <span class="tag">Race</span>
         </div>
         <div class="body">
           <h3>Race</h3>
           <ul class="specs"><li>12 vehicles</li><li>8 cars a race</li><li>3 tracks</li><li>Two-way traffic</li><li>Jumps and hills</li><li>Keyboard or Xbox controller</li></ul>
           <p>Three laps against seven rivals on one of three street circuits: downtown at dusk, the harbour at night or the hillside at noon, through traffic going both ways. Jump the ramps, and knock over street lights, cones, bins and hydrants on the way. Near misses, drifts, driving in the oncoming lane and takedowns fill your boost. Every hit wears your health down. When it runs out, the full crash physics works out the damage in the background while a slow-motion crash camera plays it back. The race carries on meanwhile, and at the end you can watch your last crash again.</p>
-          <span class="go">Play Race &rarr;</span>
+          <div class="actions">
+            <a class="btn primary" href="Race.html">Play Race</a>
+            <button class="btn" type="button" data-trailer="race"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l15 9-15 9z" fill="currentColor"/></svg>Watch the trailer<small>1:00</small></button>
+          </div>
         </div>
-          </div></a>
-      <div class="race-trailer">
-        <video id="destruction" src="media/destruction-trailer.mp4" poster="media/destruction-poster.jpg" playsinline preload="none"
-          data-portrait="media/destruction-trailer-mobile.mp4" data-portrait-poster="media/destruction-poster-mobile.jpg"
-          aria-label="One-minute trailer of the Destruction game mode: a flight over the junction at dusk, then a run over the ramp into the traffic, the crash in slow motion, exploding tankers, the Crashbreaker and a gold medal"></video>
-        <button class="race-play" id="destruction-play" type="button"><svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg><span>Watch the Destruction trailer<small>1:00 · with sound</small></span></button>
-      </div>
-      <a class="card game" href="Destruction.html"><div class="in">
+      </div></div>
+      <div class="card game"><div class="in">
         <div class="shot">
           <img src="media/destruction.jpg" alt="Destruction mode: a gas tanker exploding in a busy junction at dusk, a wrecked car flipped over in front, the damage adding up in dollars">
+          <video id="destruction" src="media/destruction-trailer.mp4" muted playsinline preload="none" data-preview="3,53"
+            data-portrait="media/destruction-trailer-mobile.mp4"
+            aria-label="One-minute trailer of the Destruction game mode: a flight over the junction at dusk, then a run over the ramp into the traffic, the crash in slow motion, exploding tankers, the Crashbreaker and a gold medal"></video>
           <span class="tag">Destruction</span>
         </div>
         <div class="body">
           <h3>Destruction</h3>
           <ul class="specs"><li>12 vehicles</li><li>3 junctions</li><li>Gas tankers</li><li>Crashbreaker</li><li>Bronze, silver, gold</li><li>Keyboard or Xbox controller</li></ul>
           <p>Drive down into a busy junction (a crossroads at dusk, the docklands at night or a downtown boulevard at noon) and cause as much damage as you can. Your car's impact runs through the full crash physics in slow motion; then the wrecks tumble on as the traffic piles in. Every car, bus and tanker you wreck pays out, tankers and fuel pumps explode, and the Crashbreaker blows up your own wreck. Your boost starts full: spend it on speed, or save it for a bigger blast. Beat the bronze, silver and gold targets and your own best.</p>
-          <span class="go">Play Destruction &rarr;</span>
+          <div class="actions">
+            <a class="btn primary" href="Destruction.html">Play Destruction</a>
+            <button class="btn" type="button" data-trailer="destruction"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l15 9-15 9z" fill="currentColor"/></svg>Watch the trailer<small>1:00</small></button>
+          </div>
         </div>
-          </div></a>
+      </div></div>
+      <dialog class="trailer-box" id="trailer-box" aria-label="Trailer">
+        <button class="trailer-close" type="button" aria-label="Close the trailer">&times;</button>
+        <video playsinline controls></video>
+      </dialog>
       <p class="hint">Needs an internet connection: the 3D engine loads from a public CDN. Works best in a recent Chrome, Edge, Firefox or Safari on a laptop or desktop.</p>
     </div>
   </section>
@@ -304,8 +308,8 @@
 <script>
   // Behind the title runs a silent loop of crash footage (unless the visitor prefers reduced
   // motion). "Watch the trailer" swaps it for the trailer, with its soundtrack and the controls.
-  // The game trailers play in place, with sound, when their buttons are pressed; on a phone held
-  // upright they are the 9:16 cuts (data-portrait). In the single-file
+  // The game cards preview their trailers silently on hover and open them, with sound, in a box over
+  // the page; on a phone held upright they are the 9:16 cuts (data-portrait). In the single-file
   // build (Car Crash Simulation.html) the videos are embedded as base64 (#<video id>-data) and
   // turned into blob URLs here.
   (function () {
@@ -318,11 +322,10 @@
       for (var i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
       v.src = URL.createObjectURL(new Blob([buf], { type: 'video/mp4' }));
     });
-    // on a phone held upright, the 9:16 cuts (data-portrait); the game trailers' players turn upright too
+    // on a phone held upright, the 9:16 cuts (data-portrait): the hero's here, the game trailers' in their box
     var upright = window.matchMedia && window.matchMedia('(orientation: portrait) and (max-width: 760px)').matches;
-    if (upright) Array.prototype.forEach.call(document.querySelectorAll('video[data-portrait]'), function (v) {
+    if (upright) Array.prototype.forEach.call(document.querySelectorAll('.hero video[data-portrait]'), function (v) {
       v.src = v.dataset.portrait; v.poster = v.dataset.portraitPoster;
-      if (v.parentNode.classList.contains('race-trailer')) v.parentNode.classList.add('portrait');
     });
     var hero = loop.closest('.hero'), watch = document.getElementById('reel-watch'), close = document.getElementById('reel-close');
     var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -341,16 +344,39 @@
     reel.addEventListener('ended', leave);
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && hero.classList.contains('cinema')) leave(); });
     if (!still) play(loop);
-    ['race', 'destruction'].forEach(function (id) {
-      var v = document.getElementById(id), btn = document.getElementById(id + '-play');
-      if (!v || !btn) return;
-      btn.addEventListener('click', function () {
-        btn.hidden = true; v.controls = true; v.muted = false;
+    // the game cards: while the pointer is over a card its trailer plays silently in the picture, looping
+    // the action (data-preview: from, to in s; not on touch screens or with reduced motion). The picture
+    // and "Watch the trailer" open the trailer with sound in a box over the page.
+    var box = document.getElementById('trailer-box'), boxVideo = box.querySelector('video');
+    var hover = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    Array.prototype.forEach.call(document.querySelectorAll('.card.game'), function (card) {
+      var v = card.querySelector('.shot video'), range = (v.dataset.preview || '0,1e9').split(',').map(Number);
+      v.addEventListener('playing', function () { card.classList.add('previewing'); });
+      v.addEventListener('timeupdate', function () { if (v.currentTime > range[1]) v.currentTime = range[0]; });
+      if (hover && !still) {
+        card.addEventListener('mouseenter', function () {
+          if (v.currentTime < range[0] || v.currentTime > range[1]) v.currentTime = range[0];
+          v.preload = 'auto'; play(v);
+        });
+        card.addEventListener('mouseleave', function () { v.pause(); card.classList.remove('previewing'); });
+      }
+      var open = function () {
         if (hero.classList.contains('cinema')) leave();
-        loop.pause(); play(v);
-      });
-      v.addEventListener('ended', function () { btn.hidden = false; v.controls = false; if (!still) play(loop); });
+        loop.pause(); v.pause(); card.classList.remove('previewing');
+        var tall = upright && v.dataset.portrait;
+        box.classList.toggle('portrait', !!tall);
+        boxVideo.src = tall || v.currentSrc || v.src;
+        box.showModal();
+        boxVideo.muted = false; if (!boxVideo.volume) boxVideo.volume = 1; play(boxVideo);
+      };
+      card.querySelector('.shot').addEventListener('click', open);
+      card.querySelector('[data-trailer]').addEventListener('click', open);
     });
+    var shut = function () { if (box.open) box.close(); };
+    box.addEventListener('close', function () { boxVideo.pause(); boxVideo.removeAttribute('src'); boxVideo.load(); if (!still) play(loop); });
+    box.addEventListener('click', function (e) { if (e.target === box) shut(); });   // outside the video
+    box.querySelector('.trailer-close').addEventListener('click', shut);
+    boxVideo.addEventListener('ended', shut);
   })();
 </script>
 </body>

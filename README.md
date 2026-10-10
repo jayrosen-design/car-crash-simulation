@@ -148,7 +148,7 @@ In playback:
 
 ## Race (game mode)
 
-<a href="https://car-crash-simulation.vercel.app/#games"><img src="media/readme/race.jpg" width="640" alt="The website's Race trailer player: a head-on crash in the city at dusk, with Watch the Race trailer, 1:00 with sound"></a>
+<a href="https://car-crash-simulation.vercel.app/#games"><img src="media/readme/race.jpg" width="640" alt="The website's Race card: a takedown in the city, the specs, and its buttons, Play Race and Watch the trailer"></a>
 
 `Race.html` puts you behind the wheel: three laps of a city street circuit against seven rivals, through traffic going both ways, in the spirit of arcade street racers. There are three tracks, each at its own time of day. A crash is worked out by the same lattice solver as the simulations, starting from your car's real position, speed and spin at the moment of impact. While it computes in the background, a slow-motion crash camera plays it back. Open it from the home page, the **Simulation** menu in the simulator, or `/race` on the website. For development, open `game.html`.
 
@@ -310,7 +310,7 @@ node tools/headless-check.js world      the crash solver's world barrier
 
 ## Destruction (game mode)
 
-<a href="https://car-crash-simulation.vercel.app/#games"><img src="media/readme/destruction.jpg" width="640" alt="The website's Destruction trailer player: a car flying off the ramp over the junction at dusk, toward a gas tanker and a bus, with Watch the Destruction trailer, 1:00 with sound"></a>
+<a href="https://car-crash-simulation.vercel.app/#games"><img src="media/readme/destruction.jpg" width="640" alt="The website's Destruction card: a gas tanker exploding in the junction at dusk, the specs, and its buttons, Play Destruction and Watch the trailer"></a>
 
 `Destruction.html` is a crash mode in the spirit of Burnout 3's. You drive down into a busy junction and cause as much damage as you can. There are three junctions (the **Junction** row on the select screen, or `?level=`): the crossroads at dusk (below), the docklands at night and a boulevard at noon.
 - **The impact.** The full crash solver works out your car's impact, as in Race, played back in slow motion.
@@ -2326,7 +2326,7 @@ The first wraps every `media/music/<song>.mp3` as `media/music/<song>.js`, the f
 node tools/readme-images.js
 ```
 
-Captures this README's pictures from the website itself (`home.html` in headless Chrome), so the README looks like the site: the home page's hero, the eight simulations' cards (without their descriptions) and the two game trailers' players, in `media/readme/`. Re-run it when the home page's pictures or posters change. `.vercelignore` keeps them off the website.
+Captures this README's pictures from the website itself (`home.html` in headless Chrome), so the README looks like the site: the home page's hero, the eight simulations' cards and the two game modes' cards (without their descriptions), in `media/readme/`. Re-run it when the home page's pictures or posters change. `.vercelignore` keeps them off the website.
 
 ### The website's reading pages
 

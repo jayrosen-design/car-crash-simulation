@@ -3,8 +3,9 @@
  *   media/readme/hero.jpg               the home page's hero: the title over the trailer's background
  *   media/readme/card-<n>.jpg           the eight simulations' cards (picture, tag, number, title,
  *                                       specs; the description and the link left out), n = 1..8
- *   media/readme/race.jpg               the Race trailer's player, poster and play button
- *   media/readme/destruction.jpg        the Destruction trailer's player
+ *   media/readme/race.jpg               the Race card (picture, tag, title, specs and its buttons:
+ *                                       Play Race, Watch the trailer; the description left out)
+ *   media/readme/destruction.jpg        the Destruction card, the same way
  *   node tools/readme-images.js [--chrome <chrome.exe>]
  * Re-run it after the home page's pictures or posters change. The pictures are only for the README
  * (.vercelignore keeps them off the website).
@@ -71,8 +72,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await ev(`(() => { const s = document.createElement('style'); s.textContent = '.labs .card .body > p, .labs .card .go { display: none !important; } .labs .card .body { padding-bottom: 20px !important; }'; document.head.appendChild(s); return true; })()`);
     const n = await ev(`document.querySelectorAll('.labs .card').length`);
     for (let i = 0; i < n; i++) await shoot(`.labs .card:nth-of-type(${i + 1})`, `card-${i + 1}.jpg`);
-    const trailers = await ev(`Array.from(document.querySelectorAll('.race-trailer video')).map(v => v.id)`);
-    for (const t of trailers) await shoot(`.race-trailer:has(#${t})`, `${t}.jpg`);
+    // the game modes' cards, named after their trailers (race, destruction), without the description
+    await ev(`(() => { const s = document.createElement('style'); s.textContent = '.card.game .body > p { display: none !important; }'; document.head.appendChild(s); return true; })()`);
+    const games = await ev(`Array.from(document.querySelectorAll('.card.game .shot video')).map(v => v.id)`);
+    for (let i = 0; i < games.length; i++) await shoot(`.card.game:has(#${games[i]})`, `${games[i]}.jpg`);
     if (errors.length) { console.log('page errors:\n' + errors.join('\n')); process.exitCode = 1; }
   } finally {
     try { ws.close(); } catch { /* closed */ }

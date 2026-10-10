@@ -158,7 +158,7 @@ img, video { display: block; max-width: 100%; }
 .specs li { padding: 4px 9px; font: 600 11.5px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--hz); background: rgba(255, 196, 0, 0.08); border: 1px solid rgba(255, 196, 0, 0.22); }
 .card .go { margin-top: auto; padding-top: 6px; font: italic 800 17px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--hz); transition: letter-spacing 0.22s; }
 .card:hover .go { letter-spacing: 0.2em; }
-/* the game modes: one wide card each */
+/* the game modes: one wide card each, with its trailer in the picture and buttons to play or watch */
 .card.game > .in { display: grid; grid-template-columns: 3fr 2fr; }
 .card.game .shot { aspect-ratio: auto; min-height: 340px; }
 .card.game .shot::after { background: linear-gradient(90deg, transparent 55%, rgba(19, 23, 30, 0.95) 100%); }
@@ -167,17 +167,22 @@ img, video { display: block; max-width: 100%; }
 .card.game + .card.game { margin-top: 26px; }
 @media (max-width: 860px) { .card.game > .in { grid-template-columns: 1fr; } .card.game .shot { aspect-ratio: 16 / 9; min-height: 0; } .card.game .shot::after { background: linear-gradient(0deg, rgba(19, 23, 30, 0.95) 0%, transparent 45%); } .card.game .body { padding: 4px 24px 26px; } .card.game h3 { font-size: 40px; } }
 
-/* the Race trailer: a poster with a play button, then the video in place */
-.race-trailer { position: relative; margin: 0 0 26px; aspect-ratio: 16 / 9; background: #000; clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut))); }
-.race-trailer video { width: 100%; height: 100%; object-fit: cover; }
-.race-trailer.portrait { aspect-ratio: 9 / 16; width: min(100%, calc(84vh * 9 / 16)); margin-inline: auto; }
-.race-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 22px; border: 0; cursor: pointer; color: #fff; background: linear-gradient(0deg, rgba(6, 7, 10, 0.55), rgba(6, 7, 10, 0.15)); }
-.race-play svg { width: clamp(64px, 9vw, 104px); height: clamp(64px, 9vw, 104px); padding: clamp(16px, 2.2vw, 26px); color: var(--ink); background: var(--hz); clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%); transition: transform 0.2s; }
-.race-play span { text-align: left; font: italic 900 clamp(28px, 4.4vw, 58px)/0.95 var(--display); text-transform: uppercase; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7); }
-.race-play small { display: block; margin-top: 10px; font: 600 13px/1 var(--mono); font-style: normal; letter-spacing: 0.18em; color: var(--hz); }
-.race-play:hover svg { transform: scale(1.08); }
-.race-play[hidden] { display: none; }
-@media (max-width: 560px) { .race-play { flex-direction: column; gap: 12px; } .race-play span { text-align: center; } }
+/* the game cards' trailers: a silent preview over the still while the pointer is on the card, and
+   the trailer with sound in a box over the page */
+.card.game .shot { cursor: pointer; }
+.card.game .shot video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.35s; }
+/* the trailers are letterboxed (6% bars) with a logo in the corner: in the wide card, enlarged past both */
+@media (min-width: 861px) { .card.game .shot video { transform: scale(1.15); } }
+.card.game.previewing .shot video { opacity: 1; }
+.card.game .actions { margin-top: auto; padding-top: 6px; }
+.card.game .btn small { font: 600 12px/1 var(--mono); font-style: normal; letter-spacing: 0.1em; opacity: 0.7; }
+.trailer-box { width: min(92vw, calc(84vh * 16 / 9)); max-width: none; max-height: none; padding: 0; border: 0; background: transparent; overflow: visible; }
+.trailer-box::backdrop { background: rgba(4, 5, 8, 0.88); }
+.trailer-box video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut))); }
+.trailer-box.portrait { width: min(92vw, calc(80vh * 9 / 16)); }
+.trailer-box.portrait video { aspect-ratio: 9 / 16; }
+.trailer-close { position: absolute; right: 0; bottom: calc(100% + 10px); width: 40px; height: 40px; border: 0; cursor: pointer; font: 400 30px/1 var(--display); color: var(--ink); background: var(--hz); clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
+.trailer-close:hover { background: var(--hz-2); }
 
 /* ---------------------------------------------------------------- home: under the hood */
 .tech { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: var(--line); border: 1px solid var(--line); }
