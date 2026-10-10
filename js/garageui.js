@@ -3,7 +3,9 @@
  * ruler, and the chosen one's spec card (big name, class line, orange figures, the violet rule).
  *
  * lineup(el, items, onPick) draws the strip into el (items: [{ key, name, paint (hex), phys }], phys
- * the model's data: CAR_PHYS or RIG_PHYS, for the profile and wheels) -> { select(key) }.
+ * the model's data: CAR_PHYS or RIG_PHYS, for the profile and wheels) -> { select(key) }. Each vehicle
+ * is its rendered side view (window.CAR_SIDES, models/sides.js from tools/render-sides.py), or, without
+ * one, a silhouette in its paint.
  * card(el, entry, perf) fills a spec card from a garage entry (js/garage.js) and, for the top speed
  * the design doesn't give, the measured figures.
  *
@@ -39,12 +41,13 @@ const GarageUI = (() => {
     let x = GAP, out = '';
     const at = {};
     items.forEach((it, i) => {
-      const s = shapes[i];
-      at[it.key] = { x, L: s.L, H: s.H };
+      const s = shapes[i], side = (typeof window !== 'undefined' && window.CAR_SIDES || {})[it.key];
+      at[it.key] = { x, L: s.L, H: side ? Math.max(s.H, side.H) : s.H };
       out += `<g class="lineup-car" data-car="${it.key}" role="radio" aria-label="${esc(it.name)}" transform="translate(${x.toFixed(3)},0)">` +
         `<title>${esc(it.name)}</title><rect class="hit" x="-0.3" y="${-Hm}" width="${(s.L + 0.6).toFixed(3)}" height="${Hm + 0.1}"/>` +
-        `<polygon points="${s.pts}" fill="${hex(it.paint)}"${dark(it.paint) ? ' stroke="#8a909c" stroke-width="1" vector-effect="non-scaling-stroke"' : ''}/>` +   // (a black car outlined, on the dark strip)
-        s.wheels.map(([u, y, r, rr]) => `<circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${r.toFixed(3)}" class="tyre"/><circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${rr.toFixed(3)}" class="rim"/>`).join('') +
+        (side ? `<image href="${side.src}" x="${side.x0}" y="${-side.H}" width="${side.L}" height="${side.H}" preserveAspectRatio="none"/>`
+          : `<polygon points="${s.pts}" fill="${hex(it.paint)}"${dark(it.paint) ? ' stroke="#8a909c" stroke-width="1" vector-effect="non-scaling-stroke"' : ''}/>` +   // (a black car outlined, on the dark strip)
+            s.wheels.map(([u, y, r, rr]) => `<circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${r.toFixed(3)}" class="tyre"/><circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${rr.toFixed(3)}" class="rim"/>`).join('')) +
         `</g>`;
       x += s.L + GAP;
     });

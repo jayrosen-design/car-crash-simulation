@@ -81,9 +81,10 @@ order is the lineup order on the garage screen.
 
 - **A blueprint.** A dark grid, a metre ruler along the ground, the label `high-speed cam · 1/40× · t =
   …` in the corner.
-- **The lineup.** All twelve as side silhouettes to the same scale, on the ruler: the armoured car 6.2 m,
-  the bike 2.1 m. The chosen one is outlined; left and right (or a tap) move along it. A near-black
-  paint (the police car's) gets a light outline on the dark strip.
+- **The lineup.** All twelve as rendered side views of their own models, in their signature paints, to
+  the same scale on the ruler: the armoured car 6.2 m, the bike 2.1 m (`tools/render-sides.py` writes
+  `models/sides.js`; without it the strip falls back to filled silhouettes). The chosen one is outlined;
+  left and right (or a tap) move along it.
 - **The spec card.** The name, big; a class line; then orange mono lines: mass and size, the real top
   speed and a note, the modes and the paint.
 - **Measured figures.** The bars (top speed, 0–100, braking, cornering) and the specs (power, weight,
