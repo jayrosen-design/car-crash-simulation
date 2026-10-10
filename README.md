@@ -172,7 +172,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
 
 **On a touch screen** (phones and tablets), on-screen buttons appear on their own while racing:
 - **Left thumb:** steer left and right.
-- **Right thumb:** gas, brake, boost and drift (the handbrake; on the drone it's Hop).
+- **Right thumb:** gas, brake, boost and drift (the handbrake).
 - **Top:** pause, camera, back on the road, and full screen where the browser allows it (Android Chrome; not iPhone Safari).
 - **Holding the phone:** race with it sideways. Held upright, the race pauses and asks you to turn it.
 - **Picture:** on a touch screen the game draws at a lower resolution, with a smaller shadow map, to suit a phone's graphics chip.
@@ -180,16 +180,16 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
 
 ### The race
 
-- **The garage: twelve vehicles** (`js/garage.js`; the design is in [docs/garage-gdd.md](docs/garage-gdd.md)). The Lexus RX 350 and the Ford Mustang GT500, and ten original designs from the garage design video:
-  - **Seven road cars**, generated from the video's side views by `tools/build-vehicle.py`: the Halcyon GT grand tourer, the Wren RS hot hatch, the Bastion full-size SUV, the Quasar LM endurance prototype, the Ridgeback crew-cab pickup, the Ember 440 land yacht and the Cadence SE sport sedan. Each is tuned to the video's figures (top speed, and 0–100 km/h or cornering grip where it gives them). They crash on the same lattice as the Lexus and Mustang: they crumple, shed panels and wheels, and break their glass.
-  - **The Kestrel 900 motorcycle** leans into corners (as the cornering force asks, up to 55°) and lifts its front wheel under hard acceleration. Its crash is rigid: the screen, mirrors and exhaust come off, and the crash-test-dummy rider is thrown.
-  - **The Osprey drone** hovers 0.6 m up, slides (it has no tyres to grip), and hops over traffic and barriers on the handbrake (Space, X, or Hop on a touch screen), once every 1.2 s. In a crash it loses its arms.
-  - **The Rampart tank** (11.8 t) is governed to 72 km/h, turns on the spot and shoves cars aside. Cars don't hurt it and walls only a quarter as much; worn out, it stalls for 1.5 s instead of crashing. It races unranked: no place and no best score, and its race ends when the last rival finishes.
-- **Car select.** A lineup of all twelve runs across the bottom of the screen, side views to one scale over a metre ruler as in the video: click one, or step through with ← →. Its card shows the name and class, mass and size, the design's target and the modes. All twelve share one palette of eighteen paints in one order; each starts in its signature paint (the Lexus and Mustang in crimson red) and keeps the one you pick for it. The vehicle waits on the street past the start line, facing the camera, while you choose; a model not loaded yet waits until you stop on it for 0.25 s.
+- **The garage: twelve vehicles** (`js/garage.js`; the design is in [docs/garage-gdd.md](docs/garage-gdd.md)), all from downloaded 3D models:
+  - **Ten road cars**: the Lexus RX 350, Ford Mustang GT500, Honda Civic Type R, Toyota GR Supra, Nissan 350Z, Nissan GT-R Nismo, Chevrolet Corvette Stingray (C7), Ferrari SF90 Stradale, Ford Crown Victoria Police Interceptor (in its black-and-white livery, light bar and all) and Ram 1500 TRX. Each was split into its panels, glass and lamps by `tools/export-car.py`, so they all crash on the same lattice: they crumple, shed panels and wheels, and break their glass. Each is tuned to the real car's top speed and 0–100 km/h time (the TRX with its 190 km/h speed limiter).
+  - **The Ducati Hypermotard** leans into corners (as the cornering force asks, up to 55°) and lifts its front wheel under hard acceleration. Its rider is a posed human figure. Its crash is rigid: the mirrors and exhaust come off and the rider is thrown.
+  - **The Type 87 Reconnaissance Vehicle** (a six-wheeled armoured car, 15 t) is governed to 100 km/h, turns on the spot and shoves cars aside. Cars don't hurt it and walls only a quarter as much; worn out, it stalls for 1.5 s instead of crashing. It races unranked: no place and no best score, and its race ends when the last rival finishes.
+  - **The Osprey drone** is the camera crew's: it isn't driven (it's in the garage list, out of the select screens).
+- **Car select.** A lineup of all twelve runs across the bottom of the screen, side views to one scale over a metre ruler: click one, or step through with ← →. Its card shows the name and class, mass and size, the real car's top speed and the modes. All twelve share one palette of eighteen paints in one order; each starts in its signature paint (the Lexus and Mustang in crimson red) and keeps the one you pick for it. The vehicle waits on the street past the start line, facing the camera, while you choose; a model not loaded yet waits until you stop on it for 0.25 s.
   - **Performance.** The screen shows each car's performance as bars and figures: top speed (and with boost), 0–100 km/h, 100–0 km/h braking distance and steady cornering grip. It also lists the car's power, weight, drive and gearbox.
   - **Where the figures come from.** They aren't typed in. `RaceCar.measure` works them out by driving each car on an empty road with the game's own physics, about 0.1 s each, the first time a car is shown. `tools/race-check.js` checks the same figures.
   - **The paint** covers the whole car, parts that break off it in a crash included.
-  - **Remembered choice.** The choice is kept in the browser for the next race. `?car=<key>` sets the vehicle the screen starts on: `lexus`, `mustang`, `halcyon`, `wren`, `bastion`, `quasar`, `ridgeback`, `ember`, `cadence`, `kestrel`, `osprey` or `rampart`.
+  - **Remembered choice.** The choice is kept in the browser for the next race. `?car=<key>` sets the vehicle the screen starts on: `lexus`, `mustang`, `civic`, `supra`, `z350`, `gtr`, `corvette`, `sf90`, `crownvic`, `trx`, `ducati` or `type87`.
 - **Three tracks** (`CrashLevel.LEVELS` in `js/race/level.js`; the **Track** row on the select screen, or `?level=`; the last pick is remembered). Picking one reloads the page with it. Each track keeps its own best score.
   - **Downtown at dusk** (`downtown`, below): towers, three hills and three jumps; 1.47 km.
   - **Harbour at night** (`harbour`): flat and fast, two long straights past a container quay (174 containers, stacked) with gantry cranes and dark water, a chicane, low sheds and warehouses (none over 43 m), half the windows lit, stars and a moon; 1.63 km, three jumps.
@@ -197,7 +197,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - Each is a set of corners, hills, ramps, building heights, open lots and a time of day; the city, its streets and its props are generated from them as for downtown.
   - **Frame time** (development machine, 12 s flat out with boost): the harbour p95 16.9 ms, the hillside p95 17.1 ms.
 - **The circuit** (downtown). A 1.47 km loop through a generated city: six corners from a fast sweeper to tight right-angles, four lanes (two each way) with pavements, guard rails along the kerbs (open at the side streets, so you can't drive off into the blocks between the streets), street lights, trees and closed side streets, rolling hills on three stretches and three jump ramps across the street. Three laps take the fastest rival about 3 minutes (3:06 in the AI-only test race). The same seed always gives the same city (`?seed=<n>` for another one).
-- **Eight cars.** You start sixth on the grid, against seven rivals in the Lexus and Mustang and three of the garage's cars (the Halcyon GT, the Cadence SE and the Bastion), each with a name, a paint colour, a skill level and an aggression level. The traffic drives the Lexus and Mustang.
+- **Eight cars.** You start sixth on the grid, against seven rivals in the Lexus and Mustang and three of the garage's cars (the Toyota GR Supra, the Honda Civic Type R and the Ram 1500 TRX), each with a name, a paint colour, a skill level and an aggression level. The traffic drives the Lexus and Mustang.
 - **Traffic, both ways.** Cars keep to their lanes and follow the car ahead with the Intelligent Driver Model \[[77](#ref-77)\]: $\dot v = a\big[1 - (v/v_0)^4 - (s^*/s)^2\big]$, $s^* = s_0 + vT + \frac{v\,\Delta v}{2\sqrt{ab}}$. Here $s$ is the gap to the car ahead and $\Delta v$ the closing speed. The game uses $a = 1.6$ m/s², $b = 3$ m/s², $s_0 = 4$ m, a time gap $T = 1.4$ s, and cruising speeds $v_0$ of 13–19 m/s (47–68 km/h). They are added ahead of you (a car every 150–260 m in each lane, sparser with the race than oncoming) and removed behind you, so there is traffic wherever the race is, but not so much that it's a wall. They move on rails until something hits them, then become free cars that brake to a stop.
 - **Boost.** Hold Shift for 1.65× engine power, with a surge as it kicks in (up to 1.4 times that, fading over 0.6 s) that also widens the view. It fills from near misses (passing a traffic car within 1.2 m at over 54 km/h; more for oncoming ones), slams and takedowns, and by the metre from runs in the oncoming lanes (from 40 m on), drifting (from 20 m) and in the air (from 5 m); once a run is long enough, the metres before count too.
 - **Drifting,** as in Burnout. Above 60 km/h, tap the brake or the handbrake while steering (or hold full lock above 135 km/h, or land a jump sideways), and the rear lets go. Then the steering sets the slide angle: steer in for up to about 40°, let go and the car straightens up, counter-steer to take it in faster, brake to widen it. On the throttle the tyres don't slow the car down (a drift keeps about 85% of its speed over 2.5 s). It ends when the slide swings the other way, when you let go with little slide left, below 43 km/h, on a hard hit or in the air.
@@ -276,14 +276,14 @@ node tools/headless-check.js world      the crash solver's world barrier
 - **`race-check.js`** checks:
   - **the level:** the circuit's length and tightest radius, that no building or post reaches into the road, and that the same seed gives the same city;
   - **the cars:** the car-select screen's figures (`RaceCar.measure`): 0–100 km/h, top speed, braking and cornering grip are in plausible bands, and boost raises the top speed. A head-on into a wall is a crash and a shallow scrape isn't;
-  - **the garage's road cars** (`car-<key>`): each against its design: top speed within 4%, 0–100 km/h within 10% and cornering grip within 0.04 g where the design gives them, and boost faster;
+  - **the garage's road cars** (`car-<key>`): each against the real car: top speed within 4%, 0–100 km/h within 10% (and cornering grip within 0.04 g where a target gives one), and boost faster;
   - **the rigs:**
-    - `rig-kestrel`: 0–100 km/h in 2.8–3.2 s, top 255–270 km/h, a lean of atan(ay/g) in a steady turn, a wheelie that comes and settles, nothing NaN after a hard slalom;
+    - `rig-ducati`: 0–100 km/h in 3.0–3.6 s, top 221–239 km/h, a lean of atan(ay/g) in a steady turn, a wheelie that comes and settles, nothing NaN after a hard slalom;
     - `rig-osprey`: hovers at 0.60 m (within 2 cm), follows the hills within 0.1 m, never airborne over the ramps, slides more than the Lexus, top 135–145 km/h;
     - `rig-hop`: hopping clears a stopped Lexus and a 1.1 m barrier but still hits a post, and the cooldown holds;
-    - `rig-rampart`: top 70–74 km/h, a 90° turn on the spot in 1.5–4 s, a stopped Lexus shoved over 3 m with over 70% of the speed kept, the right reach after a change of vehicle;
+    - `rig-type87`: top 96–104 km/h, a 90° turn on the spot in 1.5–4 s, a stopped Lexus shoved over 3 m with over 70% of the speed kept, the right reach after a change of vehicle;
     - `rig-armour`: no damage from cars, a quarter from walls;
-    - `rig-crash`: the motorcycle at 100 km/h into a parked car throws its rider and parts and stays above the ground, the same twice, in under 40 ms; at 262 km/h it isn't capped; the drone loses all six arms;
+    - `rig-crash`: the motorcycle at 100 km/h into a parked car throws its rider and parts and stays above the ground, the same twice, in under 40 ms; at 230 km/h it isn't capped; the drone loses all six arms;
   - **near misses:** passing within 1.2 m counts (0.8 and 1.1 m) and 1.5 m doesn't;
   - **score:** `score.js` on its own: near misses chain (and a crash loses the chain), the runs pay nothing before their minimum and then the metres before too (and the boost likewise), and bank when they end; takedown points add up; the breakdown sums to the score;
   - **props:** each kind (trees included) is driven into on its own. It must be knocked more than 3 m (the poles past 45°), with no crash, the car less than 8 km/h slower, and the prop settled again within 12 s;
@@ -339,8 +339,9 @@ On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once
 ### An attempt
 
 - **Vehicle and paint.** The same twelve vehicles and paints as Race. The select screen also shows the junction's targets and your best.
-  - **The motorcycle and the drone** skip the crash solver: their crash is the same rigid break-up as in Race, in the same slow motion, and what they hit is wrecked at once. Then their hull is your wreck in the pile-up (the Crashbreaker blows it up).
-  - **The tank's crash** starts at its first real contact (2 m/s into a vehicle, 4 m/s into a wall). A car it hits goes through the crash solver against the tank as a moving box with a roof. Into a bus, truck, tanker or wall, the tank goes straight into the pile-up.
+  - **The motorcycle** skips the crash solver: its crash is the same rigid break-up as in Race, in the same slow motion, and what it hits is wrecked at once. Then its hull is your wreck in the pile-up (the Crashbreaker blows it up).
+  - **The armoured car's crash** starts at its first real contact (2 m/s into a vehicle, 4 m/s into a wall). A car it hits goes through the crash solver against the armoured car as a moving box with a roof. Into a bus, truck, tanker or wall, it goes straight into the pile-up.
+- **The trucks.** The box trucks' cabs and the tankers' tractors are the cabover semi's model; the boxes, tanks and trailer axles are built in code.
 - **Three junctions** (`DestructionLevel.LEVELS` in `js/destruction/junction.js`). The same streets, each with its own time of day, city, traffic and specials; each keeps its own best.
   - **Crossroads at dusk** (`crossroads`, below).
   - **Docklands at night** (`docklands`): low warehouses (none over 32 m), container yards in the back lots, the docks and gantry cranes beyond the far end of Main St; freight traffic (33 box trucks among 131 vehicles) and three tankers. Targets $0.5M / $1.5M / $4M.
@@ -624,7 +625,7 @@ Three songs of the soundtrack's cue sheet aren't made yet; until they are, the s
 
 The games play recorded sound effects (licensed from Envato Elements; the recordings are in `media/audio`) where a recording fits, and the synthesized sounds of `js/fx.js` everywhere else: the crunches, glass, tearing metal, tyre bursts and explosions. The design document's [sound section](docs/garage-gdd.md#65-sound) lists which recording goes where.
 
-- **Engines.** Every vehicle has its own engine (its `sound` in `js/garage.js`): an idle loop and a loop under way, each pitched by the game's revs over the revs it was recorded at (measured from its firing frequency), the change squeezed to the power 0.6 so that no loop is pushed past about 2.5 times. The idle loop crossfades to the other between 1.15 and 2.2 times idle; the throttle makes it louder and brighter. The drone's rotors follow its thrust, and the tank's tracks follow its speed.
+- **Engines.** Every vehicle has its own engine (its `sound` in `js/garage.js`): an idle loop and a loop under way, each pitched by the game's revs over the revs it was recorded at (measured from its firing frequency), the change squeezed to the power 0.6 so that no loop is pushed past about 2.5 times. The idle loop crossfades to the other between 1.15 and 2.2 times idle; the throttle makes it louder and brighter. The armoured car uses a tank's diesel recording.
 - **Events.** The countdown's beeps and start; the menus (select screen, pause and results); a car flying past on a near miss; the bike's and the drone's own crash recordings at the first impact, slowed with the slow motion; a vehicle's engine starting or revving when it's picked in the garage, over its idle; in Destruction, the nearest two lorries, buses or tankers idling where they are.
 - **Switching.** The select screen's **Sound effects** button switches between the recordings and the synthesized sounds (remembered; `?sfx=synth` or `?sfx=recorded` for one visit). With the recordings off, every sound is as it was before them, and the menus are silent.
 - **Loading.** `tools/build-sfx.py` cuts the 27 clips, mixes them to mono, sets their loudness, crossfades each loop into itself (written with a little of itself either side, so it repeats without a click whatever delay the decoder adds) and encodes them as MP3 with Blender's FFmpeg. They're wrapped as base64 in one classic script, `media/sfx/sounds.js` (1.4 MB), so they load from disk too, and decoded when the sound starts; until then the synthesized sounds play.
@@ -2400,16 +2401,17 @@ It stops if the wheelbase, axle direction, glass-pane count or H-point come out 
 
 Parts follow a naming scheme that carries over to game engines: `DEFORM_` (panels that crumple), `RIGID_Cage_` (body structure), `RIGID_Mech_` (wheels, engine), `BRITTLE_` (glass, lamps) and `BREAKAWAY_` (mirrors).
 
-### Building the garage's own vehicles
+### Building the garage's vehicles
 
 ```
-blender -b -Y --factory-startup --python tools/build-vehicle.py -- tools/vehicles/cadence.json
-blender -b -Y --factory-startup --python tools/export-car.py -- tools/cars/cadence.json
-blender -b -Y --factory-startup --python tools/build-rig.py -- tools/vehicles/kestrel.json
+blender -b -Y --factory-startup --python tools/export-car.py -- tools/cars/civic.json
+blender -b -Y --factory-startup --python tools/export-rig.py -- tools/rigs/ducati.json
+blender -b -Y --factory-startup --python tools/build-rig.py -- tools/vehicles/osprey.json
 ```
 
-- **The road cars.** `build-vehicle.py` builds one from its side view in `tools/vehicles/<key>.json`: the profile, windows, wheels, lamps and trim traced from the garage design video, in metres. It lofts the body from the profile over a rounded cross-section that leans in above the beltline, cuts the wheel arches (and a pickup's bed) with booleans, and splits the body into the solver's parts (bumpers, hood, fenders, doors, trunk, cage). It lays the glass, lamps, mirrors and trim on it, and writes the `.blend` (in `tools/out/`, not committed) and the exporter's config, `tools/cars/<key>.json`. `export-car.py` then exports it as it does the photographed cars. A car's crash tuning that the profile can't give lives in `js/garage.js`: a lighter structure's stiffness (the Wren), the lattice over an open bed (the Ridgeback), an engine behind the seats (the Quasar).
-- **The motorcycle, drone and tank.** `build-rig.py` builds each from simple shapes (boxes, side-view prisms, tubes, wheels). There is one glTF node per part, with its origin at its pivot: `WHEEL_` spins, `STEER_` turns, `ROTOR_` spins, `TURRET_` and `GUN_` aim, `BREAK_` comes off in a crash and `RIDER_` is thrown. It writes `models/<key>.glb.js` and `models/<key>.phys.js` (`RIG_PHYS`: size, hubs, the parts' pivots, masses and break-off speeds, lamps, the side silhouette) itself. It stops if the size is more than 2% off the design, the vehicle doesn't stand on the ground, a bike's wheels aren't on its centre line, the drone's rotors aren't evenly spaced, the tank's sides don't mirror, or the parts weigh more than the vehicle.
+- **The road cars** go through `export-car.py` like the Lexus, one config each in `tools/cars/`. A config can also read an FBX or OBJ download, build the wheel from several objects (`wheelExtra`, cropped to the one wheel when an object holds all four), name the rim and tyre materials of the wheel alone (`wheelRim`, `wheelTire`), and turn a livery texture into flat paint and trim colours face by face (`textureSplit`, the police car's black and white). Where a model's windows are closed slabs, each pane's facing comes from its thinnest axis. The profiles that shape the crash lattice sample across big triangles as well as at vertices, so a decimated roof keeps its height. In `js/garage.js`, `frontK` stiffens a car's crush zone and `partLimit` raises a part's break-off strain, where a car needs it to keep its panels in a 56 km/h barrier test with 300–800 mm of crush and under 80 g.
+- **The motorcycle, the armoured car and the Destruction mode's semi tractor** go through `export-rig.py` (configs in `tools/rigs/`): the parts are lists of the download's objects (optionally only the pieces inside a box), each a glTF node with its origin at its pivot, with the names `build-rig.py` uses (`WHEEL_` spins, `STEER_` turns, `TURRET_` and `GUN_` hold, `BREAK_` comes off, `RIDER_` is thrown). Colours come from the textures (an average, or per face from a palette, as for the armoured car's camouflage). The motorcycle's rider is the human figure from the Lexus download, posed onto the bike with IK (feet on the pegs, hands on the bars). The semi's parts (cab, frame, drive axles) become the cab of the box truck and the tractor of the tanker (`js/destruction/look.js`).
+- **The drone** (`build-rig.py`, from simple shapes) is the one original design left: the camera crew's, not driven.
 
 ---
 
@@ -2495,9 +2497,9 @@ css/game.css                the Race game's HUD and menus (the Destruction mode'
 css/destruction.css         the Destruction mode's score, popups, medal targets and callouts
 js/
   vehicles.js     vehicle specs: lattice grid, zones, interior lines; the side-impact trolley
-  garage.js       the game modes' twelve vehicles: names, sizes, tuning, crash settings, what they play
+  garage.js       the game modes' vehicles: names, sizes, tuning, crash settings, what they play
   garageui.js     the garage screen's lineup of side views and its spec card
-  rigmodel.js     the motorcycle, drone and tank drawn: spinning and steering parts, rigid crash pieces
+  rigmodel.js     the motorcycle, armoured car and drone drawn: spinning and steering parts, rigid crash pieces
   physics.js      XPBD lattice, barriers (rigid, brick wall, offset + honeycomb, pole, and the game
                   modes' world of boxes and posts, which can move and have roofs), several
                   vehicles, contacts, destruction, recording, crash pulse, intrusion measurement,
@@ -2524,8 +2526,8 @@ js/
   race/
     level.js      the city: circuit, lanes, hills and ramps, buildings, street furniture, props, colliders
     vehicle.js    driving physics: rigid body, Magic Formula tyres, engine, brakes, assists; the motorcycle,
-                  the drone's hover and the tank's tracks
-    rigs.js       the motorcycle, drone and tank: their specs, and their crashes as rigid bodies
+                  the drone's hover and the armoured car's turn on the spot
+    rigs.js       the motorcycle, armoured car and drone: their specs, and their crashes as rigid bodies
     world.js      collisions between cars and with the city, hills, jumps and flight, damage, step history
     props.js      street lights, cones, bins, hydrants, benches, crates ...: rigid bodies to knock over
     rules.js      slams and takedowns: rubs, light and full slams, the window, doubles, sprees, psyche-outs, revenge
@@ -2571,10 +2573,12 @@ tools/
   destruction-trailer.js  the Destruction trailer: the flyover, the gold run and its shot list
   encode-video.py       encodes the video with Blender's FFmpeg
   export-car.py         Blender exporter for the car models
-  cars/*.json           per-car part rules for the exporter (the garage's own written by build-vehicle.py)
-  build-vehicle.py      builds a garage road car from its side view (Blender), for export-car.py
-  build-rig.py          builds the motorcycle, drone and tank (Blender)
-  vehicles/*.json       the garage's vehicles: side views traced from the design video, the rigs' parts
+  cars/*.json           per-car part rules for the exporter
+  export-rig.py         Blender exporter for the motorcycle, the armoured car and the semi tractor
+  rigs/*.json           their parts, pivots, colours and the motorcycle's posed rider
+  build-rig.py          builds the camera drone from simple shapes (Blender)
+  vehicles/*.json       the drone's parts (and the side views of the earlier placeholder vehicles)
+  build-vehicle.py      built the earlier placeholder road cars from side views (no longer in the games)
 ```
 
 ---
@@ -2583,9 +2587,10 @@ tools/
 
 - **Lexus RX 350:** "[Lexus RX 350 + rigged (+ rigged driver (human))](https://sketchfab.com/3d-models/lexus-rx-350-rigged-rigged-driver-human-6b9a1994b2dd445c8248270c81eead6b)" by menarzuw, CC BY 4.0.
 - **Ford Mustang GT500:** "[Ford Mustang Gt 500 With pro Rig FOR FREE!](https://sketchfab.com/3d-models/ford-mustang-gt-500-with-pro-rig-for-free-f26a29f766844f46910547d6d2cc291d)" by NoOb StUfFs, CC BY 4.0.
-- **The garage's other ten vehicles** are original designs, made for this project from its garage design video by `tools/build-vehicle.py` and `tools/build-rig.py`.
+- **The garage's other vehicles:** free models from [CGTrader](https://www.cgtrader.com/pages/terms-and-conditions), under its Royalty Free License: the Honda Civic Type R, Toyota GR Supra, Nissan 350Z, Nissan GT-R Nismo, Chevrolet Corvette Stingray, Ferrari SF90 Stradale, Ford Crown Victoria Police Interceptor, Ram 1500 TRX, Ducati Hypermotard, Type 87 RCV and a cabover semi tractor. The motorcycle's rider is the human figure from the Lexus model above.
+- **The camera drone** is an original design, made for this project by `tools/build-rig.py`.
 
-Both models are split into parts, re-oriented, scaled and simplified for this app.
+All the models are split into parts, re-oriented, scaled and simplified for this app.
 
 **Music:** seven songs made for this project's soundtrack (`media/music/`).
 

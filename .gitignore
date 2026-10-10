@@ -24,3 +24,6 @@ tools/out/
 
 # Licensed sound-effect recordings (Envato Elements); the games use the clips cut from them (media/sfx)
 media/audio/
+
+# The downloaded vehicle models (and what was unpacked from them); the games use the exports (models/*.js)
+models/*/

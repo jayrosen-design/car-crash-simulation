@@ -21,8 +21,19 @@ REPORT = '--report' in args
 ROOT = os.path.abspath(os.path.join(os.path.dirname(CFG_PATH), '..', '..'))
 cfg = json.load(open(CFG_PATH, encoding='utf-8'))
 NAME = cfg['name']
+cfg['blend'] = os.path.join(ROOT, cfg['blend'])   # (a path in the config may be relative to the project folder)
+for ts in cfg.get('textureSplit', {}).values():
+    ts['image'] = os.path.join(ROOT, ts['image'])
 
-bpy.ops.wm.open_mainfile(filepath=cfg['blend'], load_ui=False, use_scripts=False)
+ext = os.path.splitext(cfg['blend'])[1].lower()
+if ext == '.blend':
+    bpy.ops.wm.open_mainfile(filepath=cfg['blend'], load_ui=False, use_scripts=False)
+else:   # an FBX or OBJ download: imported into an empty scene
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    if ext == '.fbx':
+        bpy.ops.import_scene.fbx(filepath=cfg['blend'])
+    else:
+        bpy.ops.wm.obj_import(filepath=cfg['blend'])
 dg = bpy.context.evaluated_depsgraph_get()
 
 
@@ -79,6 +90,39 @@ def classify_material(name):
     return 'paint'
 
 
+def texture_split(me, mats):
+    """textureSplit {material: {image, palette: [[name, cls, rgb], ...]}}: a material whose colour is a
+    texture (a livery) becomes flat materials, each face taking the palette colour nearest the texture
+    at its UV centre."""
+    import numpy as np
+    for mname, ts in cfg.get('textureSplit', {}).items():
+        if mname not in mats or not me.uv_layers:
+            continue
+        img = bpy.data.images.load(ts['image'], check_existing=True)
+        if img.size[0] > 2048:
+            img.scale(2048, 2048 * img.size[1] // img.size[0])
+        w, h = img.size
+        px = np.empty(w * h * 4, np.float32)
+        img.pixels.foreach_get(px)
+        px = px.reshape(h, w, 4)
+        pal = np.array([p[2] for p in ts['palette']], np.float32)
+        base = len(mats)
+        for name, cls, rgb in ts['palette']:
+            full = '%s#%s' % (mname, name)
+            mats.append(full)
+            cfg['materials'].setdefault(cls, []).append(full)
+            cfg.setdefault('colors', {})[full] = rgb
+        mi = mats.index(mname)
+        uv = me.uv_layers.active.data
+        for p in me.polygons:
+            if p.material_index != mi:
+                continue
+            u = sum(uv[li].uv.x for li in p.loop_indices) / p.loop_total
+            v = sum(uv[li].uv.y for li in p.loop_indices) / p.loop_total
+            c = px[int((v % 1) * (h - 1)), int((u % 1) * (w - 1)), :3]
+            p.material_index = base + int(np.argmin(((pal - c) ** 2).sum(1)))
+
+
 sources = []   # (mesh, material names, fixed part or None)
 for obname in cfg['body']:
     ob = bpy.data.objects[obname]
@@ -86,6 +130,8 @@ for obname in cfg['body']:
 for obname, part in cfg.get('objects', {}).items():
     ob = bpy.data.objects[obname]
     sources.append((car_mesh(ob), mat_names(ob), part))
+for me, mats, _ in sources:
+    texture_split(me, mats)
 
 # body x extent (for centring) from the main body only
 xs = [v.co.x for v in sources[0][0].vertices]
@@ -312,6 +358,7 @@ def decimate(ob, ratio):
         old = ob.data
         ob.data = new
         bpy.data.meshes.remove(old)
+        new.name = ob.name   # the glTF mesh name is the part's (the game reads parts by name; 'Hood.001' wouldn't match)
     me = ob.data
     me.shade_smooth()
     me.set_sharp_from_angle(angle=math.radians(cfg.get('sharpAngle', 40)))
@@ -325,25 +372,47 @@ for part, objs in part_objs.items():
     decimate(ob, ratio_for(part))
     parts[part] = ob
 
-# wheel: one right-side wheel in its own frame (hub at the origin, axle along +z = outboard)
-wsrc = bpy.data.objects[cfg['wheels']['FR']]
-wme = car_mesh(wsrc)
+# wheel: one right-side wheel in its own frame (hub at the origin, axle along +z = outboard), from
+# the FR wheel object plus any wheelExtra objects (a tyre and rim modelled as separate objects)
 hfr = hub_car['FR']
-for v in wme.vertices:
-    v.co.x -= xc
-    v.co -= hfr
-for i, name in enumerate(mat_names(wsrc)):
-    wme.materials[i] = stand_in_material(name)   # in place: clear() would reset the face material indices
-wob = bpy.data.objects.new('RIGID_Mech_Wheel', wme)
-coll.objects.link(wob)
+wobs = []
+for obname in [cfg['wheels']['FR']] + cfg.get('wheelExtra', []):
+    wsrc = bpy.data.objects[obname]
+    wme = car_mesh(wsrc)
+    for v in wme.vertices:
+        v.co.x -= xc
+        v.co -= hfr
+    if obname != cfg['wheels']['FR']:   # keep only this wheel's share (one object may hold all four rims)
+        diam = S * (hub['FR'][2].z - hub['FR'][1].z)
+        bm = bmesh.new(); bm.from_mesh(wme)
+        far = [v for v in bm.verts if math.hypot(v.co.x, v.co.y) > 0.56 * diam or abs(v.co.z) > 0.25]
+        bmesh.ops.delete(bm, geom=far, context='VERTS')
+        bm.to_mesh(wme); bm.free()
+    for i, name in enumerate(mat_names(wsrc)):
+        wme.materials[i] = stand_in_material(name)   # in place: clear() would reset the face material indices
+    wob = bpy.data.objects.new('RIGID_Mech_Wheel', wme)
+    coll.objects.link(wob)
+    wobs.append(wob)
+wob = join(wobs)
+wob.name = wob.data.name = 'RIGID_Mech_Wheel'
 decimate(wob, cfg['decimate'].get('wheel', 0.1))
 parts['RIGID_Mech_Wheel'] = wob
-wmats = mat_names(wsrc)
+wmats = [m.name.split(':', 1)[1] for m in wob.data.materials]
 rad_t = rad_r = 0.0
 zmin = zmax = 0.0
 wme = wob.data
+
+def wheel_class(name):
+    """wheelTire / wheelRim: materials that are tyre or rim on the wheel only (shared with the body)"""
+    if name in cfg.get('wheelTire', []):
+        return 'tire'
+    if name in cfg.get('wheelRim', []):
+        return 'rim'
+    return classify_material(name)
+
+
 for p in wme.polygons:
-    cls = classify_material(wmats[p.material_index]) if p.material_index < len(wmats) else 'paint'
+    cls = wheel_class(wmats[p.material_index]) if p.material_index < len(wmats) else 'paint'
     for vi in p.vertices:
         co = wme.vertices[vi].co
         r = math.hypot(co.x, co.y)
@@ -394,6 +463,10 @@ def plane_frame(ob):
         c += p.center * p.area
         area += p.area
     c /= max(area, 1e-9)
+    if n.length < 0.3 * area:   # a closed slab (both faces modelled): the normals cancel, so the pane's thinnest axis
+        import numpy as np
+        P = np.array([v.co[:] for v in me.vertices]) - np.array(c[:])
+        n = Vector(np.linalg.eigh(P.T @ P)[1][:, 0].tolist())
     # outward: away from a point inside the cabin
     if n.dot(c - Vector((0, 0.9, 0))) < 0:
         n = -n
@@ -406,6 +479,7 @@ def plane_frame(ob):
     return c, n, a1, a2, area
 
 
+prof_extra = []
 phys = {'name': NAME, 'title': cfg.get('title', NAME), 'credit': cfg.get('credit'), 'parts': [], 'materials': mat_table}
 all_body = []
 for part, ob in sorted(parts.items()):
@@ -428,6 +502,18 @@ for part, ob in sorted(parts.items()):
     phys['parts'].append(entry)
     if not part.startswith('BREAKAWAY_Mirror'):
         all_body += vs
+        # points across big triangles too, for the profiles: a decimated roof can leave a 10 cm slice
+        # with no vertex in it, and the profile would dip to whatever is below
+        me = ob.data
+        me.calc_loop_triangles()
+        for tri in me.loop_triangles:
+            a_, b_, c_ = (me.vertices[i].co for i in tri.vertices)
+            e = max((a_ - b_).length, (b_ - c_).length, (c_ - a_).length)
+            if e > 0.1:
+                n = int(math.ceil(e / 0.07))
+                for i in range(n + 1):
+                    for j in range(n + 1 - i):
+                        prof_extra.append(a_ + (b_ - a_) * (i / n) + (c_ - a_) * (j / n))
 
 xs2 = [v.x for v in all_body]
 L = max(xs2) - min(xs2)
@@ -435,7 +521,7 @@ x0 = min(xs2)
 prof_top, prof_bot, prof_hw = [], [], []
 for i in range(int(L / 0.1) + 1):
     xa, xb = x0 + i * 0.1, x0 + (i + 1) * 0.1
-    col = [v for v in all_body if xa <= v.x < xb]
+    col = [v for v in all_body + prof_extra if xa <= v.x < xb]
     top = [v.y for v in col if abs(v.z) < 0.35]
     bot = [v.y for v in col if abs(v.z) < 0.6 and v.y > 0.05]
     side = [abs(v.z) for v in col if 0.45 < v.y < 1.0]
@@ -480,7 +566,7 @@ for ob in parts.values():
 tmp = os.path.join(os.environ.get('TEMP', '.'), 'crashlab-%s.glb' % NAME)
 with bpy.context.temp_override(scene=scn):
     bpy.ops.export_scene.gltf(filepath=tmp, export_format='GLB', use_active_scene=True, use_selection=False,
-                              export_texcoords=False, export_normals=True, export_materials='EXPORT',
+                              export_texcoords=False, export_normals=True, export_materials='EXPORT', export_vertex_color='NONE',
                               export_yup=True, export_apply=False, export_animations=False, export_skins=False,
                               export_morph=False, export_cameras=False, export_lights=False,
                               export_draco_mesh_compression_enable=True, export_draco_mesh_compression_level=6,

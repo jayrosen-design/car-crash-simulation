@@ -1,0 +1,687 @@
+{
+ "name": "crownvic",
+ "title": "Ford Crown Victoria Police Interceptor",
+ "credit": {
+  "title": "Ford Crown Victoria Police Interceptor",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "blend": "models/Police Ford Crown Intercepter/Ford+Crown+Victoria+Police+Interceptor.blend",
+ "wheelbase": 2.913,
+ "body": [
+  "CrownVic.Body",
+  "windows glass"
+ ],
+ "objects": {
+  "Roof light bar": "RIGID_Cage_Body",
+  "roof lights": "RIGID_Cage_Body"
+ },
+ "wheels": {
+  "FL": "CrownVic.Wheel.Bk.L.001",
+  "FR": "CrownVic.Wheel.Bk.L.002",
+  "RL": "CrownVic.Wheel.Bk.L",
+  "RR": "CrownVic.Wheel.Bk.L.003"
+ },
+ "textureSplit": {
+  "Material.004": {
+   "image": "models/Police Ford Crown Intercepter/extracted/crownvic-livery.png",
+   "palette": [
+    [
+     "black",
+     "paint",
+     [
+      0.0,
+      0.0,
+      0.0
+     ]
+    ],
+    [
+     "trimblack",
+     "trim",
+     [
+      0.0235,
+      0.0235,
+      0.0235
+     ]
+    ],
+    [
+     "gray",
+     "trim",
+     [
+      0.051,
+      0.051,
+      0.051
+     ]
+    ],
+    [
+     "white",
+     "trim",
+     [
+      0.8,
+      0.8,
+      0.8
+     ]
+    ],
+    [
+     "lens",
+     "light",
+     [
+      0.749,
+      0.7804,
+      0.851
+     ]
+    ],
+    [
+     "red",
+     "light",
+     [
+      0.702,
+      0.0314,
+      0.0314
+     ]
+    ],
+    [
+     "amber",
+     "light",
+     [
+      0.902,
+      0.4,
+      0.0
+     ]
+    ]
+   ]
+  },
+  "Material.003": {
+   "image": "models/Police Ford Crown Intercepter/extracted/crownvic-livery.png",
+   "palette": [
+    [
+     "black",
+     "paint",
+     [
+      0.0,
+      0.0,
+      0.0
+     ]
+    ],
+    [
+     "trimblack",
+     "trim",
+     [
+      0.0235,
+      0.0235,
+      0.0235
+     ]
+    ],
+    [
+     "gray",
+     "trim",
+     [
+      0.051,
+      0.051,
+      0.051
+     ]
+    ],
+    [
+     "white",
+     "trim",
+     [
+      0.8,
+      0.8,
+      0.8
+     ]
+    ],
+    [
+     "lens",
+     "light",
+     [
+      0.749,
+      0.7804,
+      0.851
+     ]
+    ],
+    [
+     "red",
+     "light",
+     [
+      0.702,
+      0.0314,
+      0.0314
+     ]
+    ],
+    [
+     "amber",
+     "light",
+     [
+      0.902,
+      0.4,
+      0.0
+     ]
+    ]
+   ]
+  },
+  "Material": {
+   "image": "models/Police Ford Crown Intercepter/extracted/crownvic-lightbar.png",
+   "palette": [
+    [
+     "red",
+     "light",
+     [
+      0.8,
+      0.051,
+      0.051
+     ]
+    ],
+    [
+     "blue",
+     "light",
+     [
+      0.051,
+      0.149,
+      0.851
+     ]
+    ],
+    [
+     "black",
+     "trim",
+     [
+      0.0235,
+      0.0235,
+      0.0235
+     ]
+    ]
+   ]
+  }
+ },
+ "materials": {
+  "drop": [
+   "Material.001",
+   "Material.002"
+  ],
+  "glass": [
+   "glass",
+   "body"
+  ],
+  "light": [
+   "roof lights"
+  ],
+  "trim": [
+   "Material.006",
+   "brake"
+  ],
+  "tire": [
+   "wheel"
+  ],
+  "rim": [
+   "Material.005"
+  ]
+ },
+ "colors": {
+  "glass": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "Material.006": [
+   0.75,
+   0.75,
+   0.75
+  ],
+  "roof lights": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "wheel": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "Material.005": [
+   0.6,
+   0.6,
+   0.62
+  ],
+  "brake": [
+   0.3,
+   0.3,
+   0.31
+  ]
+ },
+ "regions": [
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.5,
+    0.85
+   ],
+   "y": [
+    0.82,
+    1.1
+   ],
+   "z": [
+    -1.08,
+    -0.68
+   ],
+   "minTris": 100
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.5,
+    0.85
+   ],
+   "y": [
+    0.82,
+    1.1
+   ],
+   "z": [
+    0.68,
+    1.08
+   ],
+   "minTris": 100
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    -0.25,
+    0.85
+   ],
+   "y": [
+    0.85,
+    1.35
+   ],
+   "z": [
+    -0.9,
+    -0.55
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    -0.25,
+    0.85
+   ],
+   "y": [
+    0.85,
+    1.35
+   ],
+   "z": [
+    0.55,
+    0.9
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRL",
+   "x": [
+    -1.2,
+    -0.25
+   ],
+   "y": [
+    0.85,
+    1.35
+   ],
+   "z": [
+    -0.9,
+    -0.55
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRR",
+   "x": [
+    -1.2,
+    -0.25
+   ],
+   "y": [
+    0.85,
+    1.35
+   ],
+   "z": [
+    0.55,
+    0.9
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassWS",
+   "x": [
+    0.3,
+    1.05
+   ],
+   "y": [
+    0.85,
+    1.4
+   ],
+   "z": [
+    -0.8,
+    0.8
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -1.8,
+    -1.1
+   ],
+   "y": [
+    0.9,
+    1.4
+   ],
+   "z": [
+    -0.8,
+    0.8
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHL",
+   "x": [
+    1.9,
+    2.7
+   ],
+   "y": [
+    0.5,
+    0.9
+   ],
+   "z": [
+    -1.0,
+    -0.3
+   ],
+   "mats": [
+    "light"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHR",
+   "x": [
+    1.9,
+    2.7
+   ],
+   "y": [
+    0.5,
+    0.9
+   ],
+   "z": [
+    0.3,
+    1.0
+   ],
+   "mats": [
+    "light"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTL",
+   "x": [
+    -2.85,
+    -2.15
+   ],
+   "y": [
+    0.55,
+    1.05
+   ],
+   "z": [
+    -1.0,
+    -0.42
+   ],
+   "mats": [
+    "light"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTR",
+   "x": [
+    -2.85,
+    -2.15
+   ],
+   "y": [
+    0.55,
+    1.05
+   ],
+   "z": [
+    0.42,
+    1.0
+   ],
+   "mats": [
+    "light"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    2.3,
+    2.85
+   ],
+   "y": [
+    0.0,
+    0.9
+   ],
+   "z": [
+    -0.5,
+    0.5
+   ],
+   "minTris": 5000
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    2.05,
+    2.9
+   ],
+   "y": [
+    0.0,
+    0.56
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    0.98,
+    2.9
+   ],
+   "y": [
+    0.74,
+    1.1
+   ],
+   "z": [
+    -0.76,
+    0.76
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    2.35,
+    2.9
+   ],
+   "y": [
+    0.5,
+    0.85
+   ],
+   "z": [
+    -0.45,
+    0.45
+   ],
+   "notMats": [
+    "light"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    0.95,
+    2.6
+   ],
+   "y": [
+    0.2,
+    0.95
+   ],
+   "z": [
+    -1.1,
+    -0.55
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    0.95,
+    2.6
+   ],
+   "y": [
+    0.2,
+    0.95
+   ],
+   "z": [
+    0.55,
+    1.1
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFL",
+   "x": [
+    -0.27,
+    0.95
+   ],
+   "y": [
+    0.28,
+    1.33
+   ],
+   "z": [
+    -1.1,
+    -0.6
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFR",
+   "x": [
+    -0.27,
+    0.95
+   ],
+   "y": [
+    0.28,
+    1.33
+   ],
+   "z": [
+    0.6,
+    1.1
+   ]
+  },
+  {
+   "part": "DEFORM_DoorRL",
+   "x": [
+    -1.15,
+    -0.27
+   ],
+   "y": [
+    0.28,
+    1.33
+   ],
+   "z": [
+    -1.1,
+    -0.6
+   ]
+  },
+  {
+   "part": "DEFORM_DoorRR",
+   "x": [
+    -1.15,
+    -0.27
+   ],
+   "y": [
+    0.28,
+    1.33
+   ],
+   "z": [
+    0.6,
+    1.1
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.8,
+    -1.62
+   ],
+   "y": [
+    0.9,
+    1.35
+   ],
+   "z": [
+    -0.74,
+    0.74
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.85,
+    -2.4
+   ],
+   "y": [
+    0.58,
+    0.93
+   ],
+   "z": [
+    -0.5,
+    0.5
+   ]
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -2.9,
+    -2.15
+   ],
+   "y": [
+    0.0,
+    0.6
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ]
+  }
+ ],
+ "splitPolygons": [
+  "paint",
+  "trim",
+  "light"
+ ],
+ "splitSize": 0.8,
+ "reportMin": 100,
+ "dropTiny": 0.012,
+ "decimate": {
+  "RIGID_Cage": 0.35,
+  "DEFORM": 0.4,
+  "BREAKAWAY": 0.35,
+  "BRITTLE_Light": 0.3,
+  "BRITTLE_Glass": 1.0,
+  "wheel": 0.15,
+  "DEFORM_BumperF": 0.2
+ },
+ "hPoint": [
+  0.1,
+  0.57,
+  -0.38
+ ],
+ "expectGlass": 6
+}

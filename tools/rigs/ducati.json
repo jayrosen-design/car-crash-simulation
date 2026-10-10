@@ -1,0 +1,450 @@
+{
+ "key": "ducati",
+ "title": "Ducati Hypermotard",
+ "type": "bike",
+ "credit": {
+  "title": "Ducati Hypermotard",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "source": "models/Motorcycle Ducati/extracted/ducati.blend",
+ "textures": "models/Motorcycle Ducati/extracted/textures",
+ "wheelbase": 1.5,
+ "massKg": 204,
+ "riderKg": 80,
+ "frame": {
+  "front": [
+   "ban_depan"
+  ],
+  "rear": [
+   "ban_belakang"
+  ]
+ },
+ "reportMin": 1500,
+ "parts": [
+  {
+   "name": "BODY",
+   "mass": 120,
+   "objects": [
+    "chassis",
+    "mesin",
+    "head",
+    "footstep",
+    "penghubung",
+    "radiator",
+    "rantai",
+    "rasio",
+    "shock",
+    "silincer",
+    "spakbor_belakang",
+    "swing_arm",
+    "rem_belakang",
+    "lampu_belakang",
+    "mika_belakang"
+   ]
+  },
+  {
+   "name": "WHEEL_R",
+   "parent": "BODY",
+   "mass": 12,
+   "objects": [
+    "ban_belakang",
+    "cakram_belakang",
+    "gear"
+   ]
+  },
+  {
+   "name": "BREAK_MirrorL",
+   "parent": "STEER_Fork",
+   "mass": 0.5,
+   "breakDv": 4,
+   "objects": [
+    "cockpit"
+   ],
+   "box": {
+    "x": [
+     0.2,
+     0.55
+    ],
+    "y": [
+     1.1,
+     1.4
+    ],
+    "z": [
+     -0.45,
+     -0.18
+    ]
+   },
+   "weld": 0.0005
+  },
+  {
+   "name": "BREAK_MirrorR",
+   "parent": "STEER_Fork",
+   "mass": 0.5,
+   "breakDv": 4,
+   "objects": [
+    "cockpit"
+   ],
+   "box": {
+    "x": [
+     0.2,
+     0.55
+    ],
+    "y": [
+     1.1,
+     1.4
+    ],
+    "z": [
+     0.18,
+     0.45
+    ]
+   },
+   "weld": 0.0005
+  },
+  {
+   "name": "STEER_Fork",
+   "parent": "BODY",
+   "mass": 14,
+   "pivot": [
+    0.466,
+    0.95,
+    0
+   ],
+   "axis": [
+    0.405,
+    -0.914,
+    0
+   ],
+   "objects": [
+    "tabung_depan",
+    "rem_depan",
+    "as_roda",
+    "lampu_depan",
+    "mika_depan",
+    "cockpit"
+   ],
+   "weld": 0.0005
+  },
+  {
+   "name": "WHEEL_F",
+   "parent": "STEER_Fork",
+   "mass": 9,
+   "objects": [
+    "ban_depan"
+   ]
+  },
+  {
+   "name": "BREAK_Exhaust",
+   "parent": "BODY",
+   "mass": 6,
+   "breakDv": 9,
+   "objects": [
+    "muffler"
+   ]
+  },
+  {
+   "name": "RIDER_Rider",
+   "parent": "BODY",
+   "mass": 80,
+   "pivot": [
+    -0.22,
+    0.95,
+    0
+   ],
+   "graft": {
+    "blend": "C:/Users/studi/Downloads/lexus-rx-350-rigged-rigged-driver-human/source/RX 350.blend",
+    "armature": "Armature.002",
+    "objects": [
+     "Ch33_Body.002",
+     "Ch33_Hair.002",
+     "Ch33_Pants.002",
+     "Ch33_Shirt.002",
+     "Ch33_Shoes.002",
+     "Ch33_Suit.002",
+     "Ch33_Tie.002"
+    ],
+    "scale": {
+     "wheels": [
+      "LCVXR.Wheel.Ft.L.002",
+      "LCVXR.Wheel.Bk.L.002"
+     ],
+     "wheelbase": 2.79
+    },
+    "hips": "mixamorig7:Hips",
+    "forward": [
+     -1,
+     0,
+     0
+    ],
+    "at": [
+     -0.22,
+     0.95,
+     0
+    ],
+    "ik": {
+     "mixamorig7:LeftLeg": [
+      -0.36,
+      0.58,
+      -0.22
+     ],
+     "mixamorig7:RightLeg": [
+      -0.36,
+      0.58,
+      0.22
+     ],
+     "mixamorig7:LeftForeArm": [
+      0.34,
+      1.07,
+      -0.3
+     ],
+     "mixamorig7:RightForeArm": [
+      0.34,
+      1.07,
+      0.3
+     ],
+     "mixamorig7:Neck": {
+      "to": [
+       0.02,
+       1.42,
+       0
+      ],
+      "chain": 4
+     }
+    },
+    "pole": {
+     "mixamorig7:LeftLeg": [
+      0.5,
+      0.75,
+      -0.25
+     ],
+     "mixamorig7:RightLeg": [
+      0.5,
+      0.75,
+      0.25
+     ],
+     "mixamorig7:LeftForeArm": [
+      -0.1,
+      0.9,
+      -0.8
+     ],
+     "mixamorig7:RightForeArm": [
+      -0.1,
+      0.9,
+      0.8
+     ]
+    },
+    "images": {
+     "Ch33_body.003": "C:/Users/studi/Downloads/lexus-rx-350-rigged-rigged-driver-human/textures/Ch33_1001_Diffuse.png"
+    },
+    "palette": {
+     "Ch33_body.003": [
+      [
+       "navy",
+       "#1c2540"
+      ],
+      [
+       "denim",
+       "#3a4664"
+      ],
+      [
+       "skin",
+       "#cc9a82"
+      ],
+      [
+       "white",
+       "#d4d6d8"
+      ],
+      [
+       "brown",
+       "#5a3a22"
+      ],
+      [
+       "black",
+       "#0e0e0e"
+      ],
+      [
+       "red",
+       "#7a1820"
+      ]
+     ]
+    },
+    "decimate": 0.12,
+    "dropMats": [
+     "BrownInterior"
+    ]
+   }
+  }
+ ],
+ "paint": [
+  "warna"
+ ],
+ "paintHex": "#b0141c",
+ "paintEntry": {
+  "plastic": "red"
+ },
+ "textureSplit": {
+  "plastic": [
+   [
+    "red",
+    "#a8141c"
+   ],
+   [
+    "black",
+    "#161616"
+   ],
+   [
+    "grey",
+    "#707070"
+   ],
+   [
+    "white",
+    "#e6e6e6"
+   ]
+  ]
+ },
+ "look": {
+  "rangka": {
+   "hex": "#a8121a",
+   "metal": 0.3,
+   "rough": 0.4
+  },
+  "ban_depan": {
+   "hex": "#151515",
+   "rough": 0.9
+  },
+  "ban_belakang": {
+   "hex": "#151515",
+   "rough": 0.9
+  },
+  "velg_depan": {
+   "hex": "#1c1c1e",
+   "metal": 0.6,
+   "rough": 0.35
+  },
+  "as_belakang": {
+   "hex": "#1c1c1e",
+   "metal": 0.6,
+   "rough": 0.35
+  },
+  "chrome": {
+   "hex": "#c4c6c8",
+   "metal": 1.0,
+   "rough": 0.2
+  },
+  "jok": {
+   "hex": "#1e1e1e",
+   "rough": 0.8
+  },
+  "lampu": {
+   "hex": "#e8e8e8",
+   "emit": 0.6,
+   "rough": 0.15
+  },
+  "mika_depan": {
+   "hex": "#d8d8d8",
+   "rough": 0.1
+  },
+  "mika_belakang": {
+   "hex": "#9c0a0a",
+   "rough": 0.1,
+   "emit": 0.3
+  },
+  "lampu_rem": {
+   "hex": "#262626",
+   "rough": 0.5
+  },
+  "rantai": {
+   "hex": "#3a3a3a",
+   "metal": 0.6,
+   "rough": 0.5
+  },
+  "baut": {
+   "hex": "#2a2a2a",
+   "metal": 0.6
+  },
+  "selang_rem": {
+   "hex": "#101010"
+  },
+  "kabel": {
+   "hex": "#141414"
+  },
+  "speedometer": {
+   "hex": "#202020"
+  },
+  "rem": {
+   "hex": "#8c8c8c",
+   "metal": 0.8,
+   "rough": 0.35
+  },
+  "seal": {
+   "hex": "#202020"
+  },
+  "silincer": {
+   "hex": "#5a4632",
+   "metal": 0.6,
+   "rough": 0.4
+  },
+  "chassis": {
+   "hex": "#3c3c3f",
+   "metal": 0.5,
+   "rough": 0.45
+  },
+  "metal_grey": {
+   "hex": "#36363a",
+   "metal": 0.5,
+   "rough": 0.45
+  },
+  "gear_kecil": {
+   "hex": "#4a4a4c",
+   "metal": 0.6
+  },
+  "arm_depan": {
+   "hex": "#2c2c2e",
+   "metal": 0.5
+  },
+  "mesin": {
+   "hex": "#3a3a3c",
+   "metal": 0.4,
+   "rough": 0.5
+  },
+  "as_depan": {
+   "hex": "#3a3a3c",
+   "metal": 0.5
+  },
+  "as": {
+   "hex": "#3a3a3c",
+   "metal": 0.5
+  },
+  "Ch33_hair.003": {
+   "hex": "#121212",
+   "rough": 0.8
+  },
+  "BrownInterior": {
+   "hex": "#1c2540"
+  }
+ },
+ "decimate": {
+  "BODY": 0.008,
+  "WHEEL": 0.012,
+  "STEER": 0.012,
+  "BREAK": 0.05
+ },
+ "lamps": {
+  "head": [
+   [
+    0.68,
+    0.9,
+    0
+   ]
+  ],
+  "tail": [
+   [
+    -0.66,
+    0.98,
+    0
+   ]
+  ]
+ },
+ "dropTiny": 0.025
+}

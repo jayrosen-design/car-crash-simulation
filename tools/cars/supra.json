@@ -1,0 +1,370 @@
+{
+ "name": "supra",
+ "title": "Toyota GR Supra",
+ "credit": {
+  "title": "Toyota GR Supra",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "blend": "models/2020 Toyota Supra MK5 A90/MKVA90.blend",
+ "wheelbase": 2.47,
+ "body": [
+  "MKV.Body"
+ ],
+ "objects": {
+  "MKV.Bumper.Ft": "DEFORM_BumperF",
+  "MKV.Splitter": "DEFORM_BumperF",
+  "MKV.Bumper.Bk": "DEFORM_BumperR",
+  "MKV.Exhaust": "DEFORM_BumperR",
+  "MKV.Hood": "DEFORM_Hood",
+  "MKV.Door.L": "DEFORM_DoorFL",
+  "MKV.Door.R": "DEFORM_DoorFR",
+  "MKV.Tailgate": "DEFORM_Trunk",
+  "MKV.Wing": "DEFORM_Trunk",
+  "MKV.Badge": "DEFORM_Trunk",
+  "MKV.Headlight.L": "BRITTLE_LightHL",
+  "MKV.HeadlightGlass.L": "BRITTLE_LightHL",
+  "MKV.Headlight.R": "BRITTLE_LightHR",
+  "MKV.HeadlightGlass.R": "BRITTLE_LightHR",
+  "MKV.Taillight.L": "BRITTLE_LightTL",
+  "MKV.TaillightGlass.L": "BRITTLE_LightTL",
+  "MKV.Taillight.R": "BRITTLE_LightTR",
+  "MKV.TaillightGlass.R": "BRITTLE_LightTR",
+  "MKV.Windshield": "BRITTLE_GlassWS",
+  "MKV.Backlight": "BRITTLE_GlassRear",
+  "MKV.Doorglass.L": "BRITTLE_GlassFL",
+  "MKV.Doorglass.R": "BRITTLE_GlassFR",
+  "MKV.Quarterglass.L": "BRITTLE_GlassQL",
+  "MKV.Quarterglass.R": "BRITTLE_GlassQR",
+  "MKV.WheelBrake.Ft.L": "RIGID_Cage_Body",
+  "MKV.WheelBrake.Ft.R": "RIGID_Cage_Body",
+  "MKV.WheelBrake.Bk.L": "RIGID_Cage_Body",
+  "MKV.WheelBrake.Bk.R": "RIGID_Cage_Body",
+  "MKV.Hub.Ft": "RIGID_Cage_Body",
+  "MKV.Hub.Bk": "RIGID_Cage_Body",
+  "MKV.Strut.Ft": "RIGID_Cage_Body",
+  "MKV.Shock.Bk": "RIGID_Cage_Body",
+  "MKV.Spring.Bk": "RIGID_Cage_Body",
+  "MKV.Lowerarm.Ft.A": "RIGID_Cage_Body",
+  "MKV.Lowerarm.Ft.B": "RIGID_Cage_Body",
+  "MKV.Lowerarm.Bk": "RIGID_Cage_Body",
+  "MKV.Upperarm.Bk": "RIGID_Cage_Body",
+  "MKV.Subframe.Ft": "RIGID_Cage_Body",
+  "MKV.Subfrake.Bk": "RIGID_Cage_Body",
+  "MKV.Swaybar.Ft": "RIGID_Cage_Body",
+  "MKV.Swaybar.Bk": "RIGID_Cage_Body",
+  "MKV.Halfshaft.Ft": "RIGID_Cage_Body",
+  "MKV.Halfshaft.Bk": "RIGID_Cage_Body",
+  "MKV.Fueltank": "RIGID_Cage_Body",
+  "MKV.Diff.Bk": "RIGID_Cage_Body",
+  "MKV.Transmission": "RIGID_Cage_Body",
+  "MKV.Driveshaft": "RIGID_Cage_Body"
+ },
+ "wheels": {
+  "FL": "MKV.Wheel.Ft.L",
+  "FR": "MKV.Wheel.Ft.R",
+  "RL": "MKV.Wheel.Bk.L",
+  "RR": "MKV.Wheel.Bk.R"
+ },
+ "wheelRim": [
+  "MKV.Chrome",
+  "MKV.Metallic",
+  "MKV.BlackGloss",
+  "MKV.GrayChrome"
+ ],
+ "materials": {
+  "drop": [
+   "MKV.Leather",
+   "MKV.Alcantara",
+   "MKV.Carpet",
+   "MKV.Monitor",
+   "MKV.Screen",
+   "Dots Stroke"
+  ],
+  "glass": [
+   "MKV.Window"
+  ],
+  "light": [
+   "MKV.Headlight",
+   "MKV.HeadlightGlass",
+   "MKV.YellowGlass",
+   "MKV.Signal.L",
+   "MKV.Signal.R",
+   "MKV.Runninglight",
+   "MKV.Taillight",
+   "MKV.TaillightGlass",
+   "MKV.BrakeLight",
+   "MKV.Reverselight",
+   "pickup_taillightglass_lowhighbeam_R"
+  ],
+  "chrome": [
+   "MKV.Chrome",
+   "MKV.Metallic"
+  ],
+  "trim": [
+   "MKV.BlackMatt",
+   "MKV.BlackGloss",
+   "MKV.Badges",
+   "MKV.Brake.Caliper",
+   "MKV.BrakeDisc"
+  ],
+  "mech": [
+   "MKV.GrayChrome",
+   "MKV.RedGloss"
+  ],
+  "tire": [
+   "MKV.Tire"
+  ]
+ },
+ "colors": {
+  "MKV.BlackMatt": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "MKV.BlackGloss": [
+   0.012,
+   0.012,
+   0.012
+  ],
+  "MKV.Badges": [
+   0.6,
+   0.6,
+   0.62
+  ],
+  "MKV.Brake.Caliper": [
+   0.6,
+   0.03,
+   0.03
+  ],
+  "MKV.BrakeDisc": [
+   0.35,
+   0.35,
+   0.36
+  ],
+  "MKV.GrayChrome": [
+   0.09,
+   0.09,
+   0.09
+  ],
+  "MKV.Metallic": [
+   0.55,
+   0.55,
+   0.57
+  ],
+  "MKV.Chrome": [
+   0.8,
+   0.8,
+   0.82
+  ],
+  "MKV.Tire": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "MKV.Headlight": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "MKV.HeadlightGlass": [
+   0.75,
+   0.78,
+   0.8
+  ],
+  "MKV.Runninglight": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "MKV.Signal.L": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "MKV.Signal.R": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "MKV.YellowGlass": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "MKV.Taillight": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "MKV.TaillightGlass": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "MKV.BrakeLight": [
+   0.75,
+   0.04,
+   0.04
+  ],
+  "pickup_taillightglass_lowhighbeam_R": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "MKV.Reverselight": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "MKV.Window": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "MKV.RedGloss": [
+   0.5,
+   0.03,
+   0.03
+  ]
+ },
+ "regions": [
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.05,
+    0.4
+   ],
+   "y": [
+    0.84,
+    1.0
+   ],
+   "z": [
+    -1.0,
+    -0.65
+   ],
+   "notMats": [
+    "glass"
+   ],
+   "override": true
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.05,
+    0.4
+   ],
+   "y": [
+    0.84,
+    1.0
+   ],
+   "z": [
+    0.65,
+    1.0
+   ],
+   "notMats": [
+    "glass"
+   ],
+   "override": true
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -1.15,
+    -0.9
+   ],
+   "y": [
+    1.0,
+    1.2
+   ],
+   "z": [
+    -0.3,
+    0.3
+   ],
+   "mats": [
+    "light"
+   ],
+   "override": true
+  },
+  {
+   "part": null,
+   "x": [
+    -0.95,
+    0.45
+   ],
+   "y": [
+    0.15,
+    1.12
+   ],
+   "z": [
+    -0.62,
+    0.62
+   ],
+   "notMats": [
+    "glass",
+    "paint",
+    "light"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    0.4,
+    2.0
+   ],
+   "y": [
+    0.1,
+    0.95
+   ],
+   "z": [
+    -1.0,
+    -0.6
+   ],
+   "mats": [
+    "paint"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    0.4,
+    2.0
+   ],
+   "y": [
+    0.1,
+    0.95
+   ],
+   "z": [
+    0.6,
+    1.0
+   ],
+   "mats": [
+    "paint"
+   ]
+  }
+ ],
+ "splitPolygons": [],
+ "reportMin": 400,
+ "dropTiny": 0.02,
+ "decimate": {
+  "RIGID_Cage": 0.1,
+  "DEFORM": 0.12,
+  "DEFORM_BumperF": 0.07,
+  "DEFORM_BumperR": 0.1,
+  "DEFORM_Hood": 0.22,
+  "DEFORM_Fender": 0.3,
+  "DEFORM_Trunk": 0.13,
+  "BREAKAWAY": 0.15,
+  "BRITTLE_Light": 0.12,
+  "BRITTLE_LightT": 0.25,
+  "BRITTLE_Glass": 1.0,
+  "wheel": 0.09
+ },
+ "hPoint": [
+  -0.1,
+  0.45,
+  -0.37
+ ],
+ "expectGlass": 6
+}

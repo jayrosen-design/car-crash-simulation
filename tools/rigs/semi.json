@@ -1,0 +1,140 @@
+{
+ "key": "semi",
+ "title": "Cabover semi tractor",
+ "type": "heavy",
+ "credit": {
+  "title": "Big Sleeper Cabover (3 axle)",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "source": "models/Semi truck Cabover/extracted/Big_Sleeper_Cabover_3axle.blend",
+ "restPose": true,
+ "wheelbase": 5.71,
+ "massKg": 9000,
+ "frame": {
+  "front": [
+   "FL_315/80R22.5",
+   "FR_315/80R22.5"
+  ],
+  "rear": [
+   "RBL_315/80R22.5",
+   "RBR_315/80R22.5"
+  ]
+ },
+ "reportMin": 40,
+ "parts": [
+  {
+   "name": "CAB",
+   "pivot": [
+    0,
+    0,
+    0
+   ],
+   "box": {
+    "x": [
+     -0.9,
+     9
+    ]
+   },
+   "objects": [
+    "BSC_Body",
+    "SC_LDoor",
+    "SC_RDoor",
+    "SC_LDoorWNDS",
+    "SC_RDoorWNDS",
+    "Top_Horn",
+    "BSC_Exhaust_pipes",
+    "FL_315/80R22.5",
+    "FR_315/80R22.5"
+   ]
+  },
+  {
+   "name": "FRAME",
+   "pivot": [
+    0,
+    0,
+    0
+   ],
+   "objects": [
+    "BSC_Body"
+   ]
+  },
+  {
+   "name": "REAR",
+   "pivot": [
+    0,
+    0,
+    0
+   ],
+   "objects": [
+    "RFL_315/80R22.5",
+    "RFR_315/80R22.5",
+    "RBL_315/80R22.5",
+    "RBR_315/80R22.5"
+   ]
+  }
+ ],
+ "paint": [
+  "Paint"
+ ],
+ "paintHex": "#c8c8c8",
+ "look": {
+  "BSC_Windows": {
+   "name": "glass",
+   "hex": "#141a20"
+  },
+  "Chrome": {
+   "name": "metal",
+   "hex": "#b0b4b8",
+   "metal": 0.9
+  },
+  "Mirrors": {
+   "name": "metal",
+   "hex": "#b0b4b8"
+  },
+  "BSC_Fenders": {
+   "name": "dark",
+   "hex": "#202020"
+  },
+  "BSC_Grills": {
+   "name": "dark",
+   "hex": "#202020"
+  },
+  "BSC_Black_parts": {
+   "name": "dark",
+   "hex": "#202020"
+  },
+  "Panel": {
+   "name": "dark",
+   "hex": "#202020"
+  },
+  "Interior": {
+   "name": "dark",
+   "hex": "#202020"
+  },
+  "Headlights": {
+   "name": "head",
+   "hex": "#fff4dc"
+  },
+  "Taillights": {
+   "name": "tail",
+   "hex": "#8a1010"
+  },
+  "Turnlights": {
+   "name": "sign",
+   "hex": "#f08a1a"
+  },
+  "Tyres": {
+   "name": "tyre",
+   "hex": "#141517"
+  },
+  "Tyres_dirty": {
+   "name": "tyre",
+   "hex": "#141517"
+  }
+ },
+ "decimate": {
+  "": 1.0
+ }
+}

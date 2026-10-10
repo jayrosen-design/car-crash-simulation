@@ -1,0 +1,566 @@
+{
+ "key": "type87",
+ "title": "Type 87 Reconnaissance Vehicle",
+ "type": "tracked",
+ "credit": {
+  "title": "Type 87 RCV",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "source": "models/Tank Japan Type 87 RCV/Type+87+RCV.blend",
+ "textures": "models/Tank Japan Type 87 RCV/extracted/textures",
+ "wheelbase": 2.95,
+ "massKg": 15000,
+ "frame": {
+  "front": [
+   "8",
+   "8.003"
+  ],
+  "rear": [
+   "8.002",
+   "8.005"
+  ],
+  "ground": [
+   "8",
+   "8.001",
+   "8.002",
+   "8.003",
+   "8.004",
+   "8.005"
+  ]
+ },
+ "reportMin": 600,
+ "parts": [
+  {
+   "name": "BODY",
+   "objects": [
+    "body",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15"
+   ],
+   "mass": 11000
+  },
+  {
+   "name": "WHEEL_R0",
+   "parent": "BODY",
+   "objects": [
+    "8"
+   ],
+   "mass": 150
+  },
+  {
+   "name": "WHEEL_R1",
+   "parent": "BODY",
+   "objects": [
+    "8.001"
+   ],
+   "mass": 150
+  },
+  {
+   "name": "WHEEL_R2",
+   "parent": "BODY",
+   "objects": [
+    "8.002"
+   ],
+   "mass": 150
+  },
+  {
+   "name": "WHEEL_L0",
+   "parent": "BODY",
+   "objects": [
+    "8.003"
+   ],
+   "mass": 150
+  },
+  {
+   "name": "WHEEL_L1",
+   "parent": "BODY",
+   "objects": [
+    "8.004"
+   ],
+   "mass": 150
+  },
+  {
+   "name": "WHEEL_L2",
+   "parent": "BODY",
+   "objects": [
+    "8.005"
+   ],
+   "mass": 150
+  },
+  {
+   "name": "TURRET_Main",
+   "parent": "BODY",
+   "objects": [
+    "3",
+    "4",
+    "5",
+    "6"
+   ],
+   "mass": 2400
+  },
+  {
+   "name": "GUN_Main",
+   "parent": "TURRET_Main",
+   "objects": [
+    "1",
+    "2"
+   ],
+   "mass": 400
+  }
+ ],
+ "textureSplit": {
+  "Axe1Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "Body41Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "Left1Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "Right1Mtl.002": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "RightHatch1Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "RightHatch21Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "RearHatch1Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "RearDoor1Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "LeftHatch1Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "GunnerHatch1Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "CommanderHatch1Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "RearHatch1Mtl.001": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "MgI37a11Mtl": [
+   [
+    "base",
+    "#4b5b72"
+   ],
+   [
+    "light",
+    "#9a9e8e"
+   ],
+   [
+    "olive",
+    "#3e4436"
+   ],
+   [
+    "white",
+    "#cfcfca"
+   ],
+   [
+    "dark",
+    "#24262a"
+   ]
+  ],
+  "FrWheel1Mtl": [
+   [
+    "tyre",
+    "#1a1a1a"
+   ],
+   [
+    "hub",
+    "#4b5b72"
+   ],
+   [
+    "dark",
+    "#2c2e32"
+   ]
+  ],
+  "FrWheel1Mtl.001": [
+   [
+    "tyre",
+    "#1a1a1a"
+   ],
+   [
+    "hub",
+    "#4b5b72"
+   ],
+   [
+    "dark",
+    "#2c2e32"
+   ]
+  ],
+  "FrWheel1Mtl.002": [
+   [
+    "tyre",
+    "#1a1a1a"
+   ],
+   [
+    "hub",
+    "#4b5b72"
+   ],
+   [
+    "dark",
+    "#2c2e32"
+   ]
+  ],
+  "FrWheel1Mtl.003": [
+   [
+    "tyre",
+    "#1a1a1a"
+   ],
+   [
+    "hub",
+    "#4b5b72"
+   ],
+   [
+    "dark",
+    "#2c2e32"
+   ]
+  ],
+  "FrWheel1Mtl.004": [
+   [
+    "tyre",
+    "#1a1a1a"
+   ],
+   [
+    "hub",
+    "#4b5b72"
+   ],
+   [
+    "dark",
+    "#2c2e32"
+   ]
+  ],
+  "FrWheel1Mtl.005": [
+   [
+    "tyre",
+    "#1a1a1a"
+   ],
+   [
+    "hub",
+    "#4b5b72"
+   ],
+   [
+    "dark",
+    "#2c2e32"
+   ]
+  ]
+ },
+ "textureFiles": {
+  "FrWheel1Mtl": "models/Tank Japan Type 87 RCV/extracted/textures/FrWheel1_diff.png",
+  "FrWheel1Mtl.001": "models/Tank Japan Type 87 RCV/extracted/textures/FrWheel1_diff.png",
+  "FrWheel1Mtl.002": "models/Tank Japan Type 87 RCV/extracted/textures/FrWheel1_diff.png",
+  "FrWheel1Mtl.003": "models/Tank Japan Type 87 RCV/extracted/textures/FrWheel1_diff.png",
+  "FrWheel1Mtl.004": "models/Tank Japan Type 87 RCV/extracted/textures/FrWheel1_diff.png",
+  "FrWheel1Mtl.005": "models/Tank Japan Type 87 RCV/extracted/textures/FrWheel1_diff.png",
+  "Right1Mtl.002": "models/Tank Japan Type 87 RCV/extracted/textures/Right1_diff.png",
+  "RearHatch1Mtl.001": "models/Tank Japan Type 87 RCV/extracted/textures/RearHatch1_diff.png"
+ },
+ "paintEntry": {
+  "Axe1Mtl": "base",
+  "Body41Mtl": "base",
+  "Left1Mtl": "base",
+  "Right1Mtl.002": "base",
+  "RightHatch1Mtl": "base",
+  "RightHatch21Mtl": "base",
+  "RearHatch1Mtl": "base",
+  "RearDoor1Mtl": "base",
+  "LeftHatch1Mtl": "base",
+  "GunnerHatch1Mtl": "base",
+  "CommanderHatch1Mtl": "base",
+  "RearHatch1Mtl.001": "base",
+  "MgI37a11Mtl": "base",
+  "FrWheel1Mtl": "hub",
+  "FrWheel1Mtl.001": "hub",
+  "FrWheel1Mtl.002": "hub",
+  "FrWheel1Mtl.003": "hub",
+  "FrWheel1Mtl.004": "hub",
+  "FrWheel1Mtl.005": "hub"
+ },
+ "paintHex": "#4b5b72",
+ "look": {
+  "Glass1Mtl": {
+   "hex": "#1a2028",
+   "rough": 0.1
+  },
+  "Barrel1Mtl": {
+   "hex": "#3a3e44",
+   "metal": 0.5,
+   "rough": 0.5
+  }
+ },
+ "decimate": {
+  "BODY": 0.12,
+  "TURRET": 0.2,
+  "WHEEL": 0.45,
+  "GUN": 0.4
+ },
+ "dropTiny": 0.03,
+ "lamps": {
+  "head": [
+   [
+    2.85,
+    1.35,
+    -1.0
+   ],
+   [
+    2.85,
+    1.35,
+    1.0
+   ]
+  ],
+  "tail": [
+   [
+    -2.95,
+    1.4,
+    -1.0
+   ],
+   [
+    -2.95,
+    1.4,
+    1.0
+   ]
+  ]
+ }
+}

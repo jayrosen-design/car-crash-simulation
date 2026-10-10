@@ -4,8 +4,9 @@
  * haze, more windows lit).
  *
  * create(R, level, opts) adds to the Race renderer's scene:
- * - the bus, the box truck and the gas tanker: built from boxes and cylinders, one instanced set
- *   each (one draw call per material), painted per instance;
+ * - the bus, the box truck and the gas tanker: one instanced set each (one draw call per material),
+ *   painted per instance; the truck's cab and the tanker's tractor are the cabover semi's model
+ *   (models/semi.glb.js, when it's loaded), the rest built from boxes and cylinders;
  * - dents: every instanced vehicle (and the Race renderer's instanced cars) gets per-instance crush
  *   amounts (front, rear, left, right, roof) and a scorch, applied in the vertex and fragment
  *   shaders: the end that hit something is squashed back, a side pushed in, a roof flattened;
@@ -73,8 +74,10 @@ diffuseColor.rgb *= 1.0 - 0.25 * vCrush;`)
 
   // ---------------------------------------------------------------- the heavy vehicles' meshes
   // parts by material: [[geometry, material key], ...], the model's origin at its middle on the
-  // ground, x along it
-  function heavyParts(key, H) {
+  // ground, x along it. semi: the cabover tractor's parsed model (CAB: cab, sleeper, front wheels and
+  // frame rails; FRAME: the rear fenders and fifth wheel; REAR: the drive axles), or null
+  const SEMI_CAB = 3.1;   // the semi's cab and sleeper, from its front (m)
+  function heavyParts(key, H, semi) {
     const L = H.length, W = H.width, parts = { paint: [], white: [], glass: [], dark: [], metal: [], tank: [], head: [], tail: [], sign: [], tyre: [] };
     const box = (k, w, h, d, x, y, z) => { const g = new T.BoxGeometry(w, h, d); g.translate(x, y, z); parts[k].push(g); };
     const wheel = (x, z, r) => { const g = new T.CylinderGeometry(r, r, 0.32, 16); g.rotateX(Math.PI / 2); g.translate(x, r, z); parts.tyre.push(g); };
@@ -82,7 +85,41 @@ diffuseColor.rgb *= 1.0 - 0.25 * vCrush;`)
     const lamps = (xf, yH, yT) => {
       for (const z of [-(W / 2 - 0.3), W / 2 - 0.3]) { box('head', 0.06, 0.18, 0.32, xf + 0.02, yH, z); box('tail', 0.06, 0.24, 0.2, -L / 2 - 0.02, yT, z); }
     };
-    if (key === 'bus') {
+    const S = semi && window.RIG_PHYS && window.RIG_PHYS.semi;
+    // the semi's parts, its front at the vehicle's front; its materials are named after the slots here
+    const model = (names) => {
+      const dx = L / 2 - S.hi[0];
+      semi.scene.updateMatrixWorld(true);
+      semi.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        let top = o;
+        while (top.parent && !names.includes(top.name)) top = top.parent;
+        if (!names.includes(top.name)) return;
+        const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); g.translate(dx, 0, 0);
+        parts[parts[o.material.name] ? o.material.name : 'dark'].push(g);
+      });
+      return S.hi[0] - SEMI_CAB + dx;   // where the sleeper ends
+    };
+    const tails = (yT) => { for (const z of [-(W / 2 - 0.3), W / 2 - 0.3]) box('tail', 0.06, 0.24, 0.2, -L / 2 - 0.02, yT, z); };
+    if (key === 'truck' && S) {
+      const back = model(['CAB']), bl = back - 0.15 + L / 2, bx = (back - 0.15 - L / 2) / 2;
+      box('white', bl, 2.9, W, bx, 2.0, 0);                       // the box
+      box('paint', bl, 0.25, W + 0.03, bx, 1.3, 0);                // its stripe
+      box('dark', bl, 0.35, W - 0.4, bx, 0.55, 0);                 // its floor
+      axles([-L / 2 + 2.0, -L / 2 + 3.2], 0.48);
+      tails(0.9);
+    } else if (key === 'tanker' && S) {
+      const back = model(['CAB', 'FRAME', 'REAR']), rear = S.lo[0] + L / 2 - S.hi[0];
+      box('dark', rear + L / 2 - 0.15, 0.4, 1.2, (rear - L / 2 + 0.15) / 2, 0.75, 0);   // the trailer's frame
+      const t0 = -L / 2 + 0.25, t1 = back - 0.2, tl = t1 - t0, tx = (t0 + t1) / 2, r = 1.15;
+      const tank = new T.CylinderGeometry(r, r, tl, 28, 1); tank.rotateZ(Math.PI / 2); tank.translate(tx, 2.25, 0); parts.tank.push(tank);
+      for (const s of [-1, 1]) { const cap = new T.SphereGeometry(r, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2); cap.scale(0.35, 1, 1); cap.rotateZ(-s * Math.PI / 2); cap.translate(tx + s * tl / 2, 2.25, 0); parts.tank.push(cap); }
+      box('dark', tl * 0.6, 0.18, 0.5, tx, 3.43, 0);               // the catwalk on top
+      for (const s of [-1, 1]) box('sign', 0.04, 0.5, 0.5, tx + s * (tl / 2 - 0.8), 2.25, 0);
+      for (const z of [-1.16, 1.16]) box('sign', 0.6, 0.6, 0.03, tx - tl * 0.3, 2.0, z);
+      axles([-L / 2 + 1.0, -L / 2 + 2.3], 0.52);
+      tails(1.0);
+    } else if (key === 'bus') {
       box('paint', L, 1.0, W, 0, 0.85, 0);                       // lower body
       box('glass', L - 0.3, 1.15, W + 0.02, -0.1, 1.95, 0);        // the window band
       box('paint', 0.1, 1.15, W - 0.1, L / 2 - 0.08, 1.95, 0);    // (front pillar)
@@ -162,10 +199,10 @@ diffuseColor.rgb *= 1.0 - 0.25 * vCrush;`)
 
     // ------------------------------------------------ heavy vehicles: instanced sets
     const heavy = {};
-    function prepareHeavy(specs, capacity) {
+    function prepareHeavy(specs, capacity, semi) {
       const mats = heavyMaterials(env);
       for (const key of ['bus', 'truck', 'tanker']) {
-        const H = specs[key], parts = heavyParts(key, H), meshes = [];
+        const H = specs[key], parts = heavyParts(key, H, semi), meshes = [];
         for (const [mk, list] of Object.entries(parts)) {
           if (!list.length) continue;
           const g = window.mergeGeometries(list.map(x => x.index ? x.toNonIndexed() : x).map(x => { for (const k of Object.keys(x.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') x.deleteAttribute(k); if (!x.attributes.uv) x.setAttribute('uv', new T.Float32BufferAttribute(new Float32Array(2 * x.attributes.position.count), 2)); return x; }));

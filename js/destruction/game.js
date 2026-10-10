@@ -20,7 +20,7 @@
  *
  * The world steps at 240 Hz (the wrecks at 120 Hz); the traffic is the same every attempt.
  *
- * URL: ?car=<key> (lexus, mustang, halcyon ...: the garage's cars, js/garage.js), ?damage=dramatic, ?touch=1|0, ?worker=0, ?test=tbone|tanker|ramp|plain
+ * URL: ?car=<key> (lexus, mustang, civic ...: the garage's cars, js/garage.js), ?damage=dramatic, ?touch=1|0, ?worker=0, ?test=tbone|tanker|ramp|plain
  * (a scripted attempt at once; results in window.__destruction).
  */
 const DestructionGame = (() => {
@@ -1042,7 +1042,7 @@ const DestructionGame = (() => {
     const workerMode = RaceCrash.prepare();
     await R.preparePlayer(carKey, specs[carKey], paintNow().hex);
     await R.prepareCars(['lexus', 'mustang'], 72);
-    look.prepareHeavy(traffic.HEAVY, 16);
+    look.prepareHeavy(traffic.HEAVY, 16, window.CAR_ASSETS && window.CAR_ASSETS.semi ? await CarModels.parseGLB('semi') : null);   // (the semi tractor's model)
     look.patchCars(specs);
     R.prepareProps(props);
     await R.prepareWreck('lexus', specs.lexus);

@@ -47,17 +47,17 @@
  *          no faster than 60 km/h (both cars); a rival's car still takes over 2 s
  * shove:   steering into a car alongside pushes it away harder than holding the wheel straight, and
  *          faster than the contacts alone would (6.3 m/s sideways at most without world.js's shove)
- * rig-kestrel: the motorcycle: 0-100 km/h in 2.8-3.2 s, top 255-270 km/h, leaning by atan(ay/g) in a
+ * rig-ducati: the motorcycle: 0-100 km/h in 3.0-3.6 s, top 221-239 km/h, leaning by atan(ay/g) in a
  *          steady turn, a wheelie that comes and settles, nothing NaN after a hard slalom
  * rig-osprey: the drone hovers at 0.60 m (within 2 cm), follows the hills (within 0.1 m), never counts
  *          as airborne over the ramps, slides more than the Lexus, top 135-145 km/h
  * rig-hop: the drone hopping clears a stopped Lexus and a 1.1 m barrier, still hits a post, and
  *          can't hop again within its cooldown
- * rig-rampart: the tank's top 70-74 km/h, a 90 degree turn on the spot in 1.5-4 s, a stopped Lexus
- *          shoved over 3 m with over 70% of the tank's speed kept, and its reach after a respec
- * rig-armour: the tank takes no damage from cars and a quarter from walls
+ * rig-type87: the armoured car's top 96-104 km/h, a 90 degree turn on the spot in 1.5-4 s, a stopped
+ *          Lexus shoved over 3 m with over 70% of its speed kept, and its reach after a respec
+ * rig-armour: the armoured car takes no damage from cars and a quarter from walls
  * rig-crash: the motorcycle at 100 km/h into a parked car: the rider and parts come off, it stays
- *          above the ground, the same twice, worked out in under 40 ms (after a first run); at 262
+ *          above the ground, the same twice, worked out in under 40 ms (after a first run); at 230
  *          km/h it isn't slowed by a speed cap; the drone loses all six arms
  * Exits non-zero on any failure.
  */
@@ -480,8 +480,8 @@ if (want('score')) {
 
 // ---------------------------------------------------------------- the rigs (rigs.js)
 const FLATL = { groundAt: (x, z, o = {}) => { o.h = 0; o.gx = 0; o.gz = 0; return o; }, terrain: () => 0, collidersNear: () => [] };
-if (want('rig-kestrel')) {
-  const S = RaceRigs.spec('kestrel'), m = RaceCar.measure(S);
+if (want('rig-ducati')) {
+  const S = RaceRigs.spec('ducati'), m = RaceCar.measure(S);
   const b = RaceCar.create(S); b.place(0, 0, 0, 25);
   for (let i = 0; i < 240 * 4; i++) b.step(1 / 240, { steer: 0.4, throttle: b.forward < 25 ? 0.6 : 0.05 });
   const lean = b.lean, want2 = Math.atan(b.ay / 9.81);
@@ -490,8 +490,8 @@ if (want('rig-kestrel')) {
   for (let i = 0; i < 240 * 2; i++) w.step(1 / 240, { throttle: 0 });
   const sl = RaceCar.create(S); sl.place(0, 0, 0, 40); let nan = false;
   for (let i = 0; i < 240 * 8; i++) { sl.step(1 / 240, { steer: Math.sin(i / 60) > 0 ? 1 : -1, throttle: 1, brake: i % 480 < 30 ? 1 : 0 }); if (![sl.x, sl.z, sl.h, sl.lean, sl.wheelie].every(Number.isFinite)) nan = true; }
-  check('rig-kestrel', m.t100 >= 2.8 && m.t100 <= 3.2 && m.top >= 255 && m.top <= 270 && Math.abs(lean - want2) < 0.02 && wMax > 0.05 && w.wheelie < 0.01 && !nan,
-    `0-100 km/h ${m.t100.toFixed(2)} s (2.8-3.2), top ${m.top.toFixed(0)} km/h (255-270); lean ${(lean * 180 / Math.PI).toFixed(1)} deg at ${(b.ay / 9.81).toFixed(2)} g (atan: ${(want2 * 180 / Math.PI).toFixed(1)}); wheelie up to ${(wMax * 180 / Math.PI).toFixed(1)} deg, ${(w.wheelie * 180 / Math.PI).toFixed(1)} after (settled); slalom NaN: ${nan}`);
+  check('rig-ducati', m.t100 >= 3.0 && m.t100 <= 3.6 && m.top >= 221 && m.top <= 239 && Math.abs(lean - want2) < 0.02 && wMax > 0.05 && w.wheelie < 0.01 && !nan,
+    `0-100 km/h ${m.t100.toFixed(2)} s (3.0-3.6), top ${m.top.toFixed(0)} km/h (221-239); lean ${(lean * 180 / Math.PI).toFixed(1)} deg at ${(b.ay / 9.81).toFixed(2)} g (atan: ${(want2 * 180 / Math.PI).toFixed(1)}); wheelie up to ${(wMax * 180 / Math.PI).toFixed(1)} deg, ${(w.wheelie * 180 / Math.PI).toFixed(1)} after (settled); slalom NaN: ${nan}`);
 }
 if (want('rig-osprey')) {
   const S = RaceRigs.spec('osprey'), m = RaceCar.measure(S);
@@ -532,8 +532,8 @@ if (want('rig-hop')) {
   check('rig-hop', car0.hits > 0 && car1.hits === 0 && bar0.hits > 0 && bar1.hits === 0 && post1.hits > 0 && first && !again,
     `into a stopped Lexus: ${car0.hits} contacts, hopping ${car1.hits} (must be 0); a 1.1 m barrier: ${bar0.hits}, hopping ${bar1.hits} (must be 0); a post, hopping: ${post1.hits} (must hit); hops: ${first}, again within the cooldown: ${again} (must not)`);
 }
-if (want('rig-rampart')) {
-  const S = RaceRigs.spec('rampart'), m = RaceCar.measure(S);
+if (want('rig-type87')) {
+  const S = RaceRigs.spec('type87'), m = RaceCar.measure(S);
   const c = RaceCar.create(S); c.place(0, 0, 0, 0); let t = 0;
   while (c.h < Math.PI / 2 && t < 10) { c.step(1 / 240, { steer: 1 }); t += 1 / 240; }
   const moved = Math.hypot(c.x - c.cgX, c.z);
@@ -543,11 +543,11 @@ if (want('rig-rampart')) {
   const shoved = L.x - x0, kept = k.forward / 15;
   const W2 = RaceWorld.create(FLATL), a = RaceCar.create(Veh.get('lexus')), b2 = W2.add(a, { kind: 'player' }), reach0 = b2.reach;
   b2.car = RaceCar.create(S); W2.respec(b2);
-  check('rig-rampart', m.top >= 70 && m.top <= 74 && t >= 1.5 && t <= 4 && shoved > 3 && kept > 0.7 && b2.reach > reach0 + 0.5 && b2.top === S.height,
-    `top ${m.top.toFixed(1)} km/h (70-74); 90 degrees on the spot in ${t.toFixed(2)} s (1.5-4), drifting ${moved.toFixed(2)} m; a stopped Lexus shoved ${shoved.toFixed(1)} m (over 3) keeping ${(kept * 100).toFixed(0)}% of 54 km/h (over 70%); respec: reach ${reach0.toFixed(2)} -> ${b2.reach.toFixed(2)} m, height ${b2.top} m`);
+  check('rig-type87', m.top >= 96 && m.top <= 104 && t >= 1.5 && t <= 4 && shoved > 3 && kept > 0.7 && b2.reach > reach0 + 0.5 && b2.top === S.height,
+    `top ${m.top.toFixed(1)} km/h (96-104); 90 degrees on the spot in ${t.toFixed(2)} s (1.5-4), drifting ${moved.toFixed(2)} m; a stopped Lexus shoved ${shoved.toFixed(1)} m (over 3) keeping ${(kept * 100).toFixed(0)}% of 54 km/h (over 70%); respec: reach ${reach0.toFixed(2)} -> ${b2.reach.toFixed(2)} m, height ${b2.top} m`);
 }
 if (want('rig-armour')) {
-  const S = RaceRigs.spec('rampart'), tank = { car: RaceCar.create(S) }, lexus = { car: RaceCar.create(Veh.get('lexus')) };
+  const S = RaceRigs.spec('type87'), tank = { car: RaceCar.create(S) }, lexus = { car: RaceCar.create(Veh.get('lexus')) };
   const carHit = { kind: 'car', vn: 15, a: tank, b: lexus }, wall = { kind: 'wall', vn: 15, sq: 1 };
   const dCar = RaceWorld.hitDamage(carHit, tank), dWall = RaceWorld.hitDamage(wall, tank), dWallL = RaceWorld.hitDamage(wall, lexus), dCarL = RaceWorld.hitDamage(Object.assign({}, carHit, { a: lexus, b: tank }), lexus);
   check('rig-armour', dCar === 0 && Math.abs(dWall - 0.25 * dWallL) < 1e-12 && dCarL > 0,
@@ -561,15 +561,15 @@ if (want('rig-crash')) {
     const t0 = process.hrtime.bigint(), cr = RaceRigs.crash({ level, car: c, other, W: Wrecks });
     return { cr, ms: Number(process.hrtime.bigint() - t0) / 1e6 };
   };
-  mk('kestrel', 100);   // (warm up)
-  const a = mk('kestrel', 100), b = mk('kestrel', 100), fast = mk('kestrel', 262), drone = mk('osprey', 100);
+  mk('ducati', 100);   // (warm up)
+  const a = mk('ducati', 100), b = mk('ducati', 100), fast = mk('ducati', 230), drone = mk('osprey', 100);
   const V = a.cr.unitView(0), off = a.cr.debris.map(d => d.name);
   const lowest = Math.min(...V.frames.poses.flatMap(ps => ps.filter(Boolean).map(q => q[1] - level.groundAt(q[0], q[2], {}).h)));
   const same = JSON.stringify(V.frames.poses) === JSON.stringify(b.cr.unitView(0).frames.poses);
   const v0 = Math.hypot(...[0, 1].map(i => (fast.cr.F.axes[2][i * 2] - fast.cr.F.axes[1][i * 2]) / (fast.cr.F.t[2] - fast.cr.F.t[1])));
   const arms = drone.cr.debris.filter(d => d.name.startsWith('BREAK_Arm')).length;
-  check('rig-crash', off.includes('RIDER_Dummy') && off.length >= 3 && lowest > -0.2 && same && a.ms < 40 && v0 * 3.6 > 255 && arms === 6,
-    `motorcycle at 100 km/h into a parked car: off ${off.map(n => n.replace(/^[A-Z]+_/, '')).join(', ')}; lowest point ${lowest.toFixed(2)} m (above -0.2); the same twice: ${same}; ${a.ms.toFixed(1)} ms (under 40); at 262 km/h it moves at ${(v0 * 3.6).toFixed(0)} km/h before the hit (no cap under it); the drone lost ${arms} of 6 arms`);
+  check('rig-crash', off.includes('RIDER_Rider') && off.length >= 3 && lowest > -0.2 && same && a.ms < 40 && v0 * 3.6 > 225 && arms === 6,
+    `motorcycle at 100 km/h into a parked car: off ${off.map(n => n.replace(/^[A-Z]+_/, '')).join(', ')}; lowest point ${lowest.toFixed(2)} m (above -0.2); the same twice: ${same}; ${a.ms.toFixed(1)} ms (under 40); at 230 km/h it moves at ${(v0 * 3.6).toFixed(0)} km/h before the hit (no cap under it); the drone lost ${arms} of 6 arms`);
 }
 
 console.log(failures ? `\n${failures} check(s) with problems` : '\nall race checks passed');

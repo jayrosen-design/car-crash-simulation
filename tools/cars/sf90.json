@@ -1,0 +1,533 @@
+{
+ "name": "sf90",
+ "title": "Ferrari SF90 Stradale",
+ "credit": {
+  "title": "Ferrari SF90 Stradale",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "blend": "models/Ferrari SF90/sf90.fbx",
+ "wheelbase": 2.65,
+ "body": [
+  "sf90_body"
+ ],
+ "wheels": {
+  "FL": "sf90_wheel.ft.l",
+  "FR": "sf90_wheel.ft.r",
+  "RL": "sf90_wheel.bk.l",
+  "RR": "sf90_wheel.bk.r"
+ },
+ "materials": {
+  "drop": [
+   "sf90_interior",
+   "sf90_logosteer",
+   "sf90_eng"
+  ],
+  "glass": [
+   "sf90_glass",
+   "Glass"
+  ],
+  "light": [
+   "sf90_runninglight",
+   "Automotive led lights",
+   "Automotive led lights.001",
+   "Red glass",
+   "sf90_redglass",
+   "sf90_brakelight",
+   "sf90_flont_L"
+  ],
+  "chrome": [
+   "sf90_alum",
+   "logo"
+  ],
+  "trim": [
+   "sf90_genral_color",
+   "sf90_chrom",
+   "sf90_carbon",
+   "sf90_car_logo",
+   "agsos",
+   "Grill Cloth",
+   "Mesh drill",
+   "sf90_wigthe"
+  ],
+  "tire": [
+   "Rubber.001"
+  ],
+  "rim": [
+   "weel_silver"
+  ]
+ },
+ "regions": [
+  {
+   "part": "BRITTLE_GlassWS",
+   "x": [
+    0.15,
+    1.35
+   ],
+   "y": [
+    0.7,
+    1.25
+   ],
+   "z": [
+    -0.85,
+    0.85
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    -0.6,
+    0.6
+   ],
+   "y": [
+    0.75,
+    1.2
+   ],
+   "z": [
+    -0.9,
+    -0.45
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    -0.6,
+    0.6
+   ],
+   "y": [
+    0.75,
+    1.2
+   ],
+   "z": [
+    0.45,
+    0.9
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -2.1,
+    -1.3
+   ],
+   "y": [
+    0.85,
+    1.15
+   ],
+   "z": [
+    -0.5,
+    0.5
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHL",
+   "x": [
+    1.5,
+    2.25
+   ],
+   "y": [
+    0.4,
+    0.72
+   ],
+   "z": [
+    -0.98,
+    -0.45
+   ],
+   "mats": [
+    "light",
+    "glass",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHR",
+   "x": [
+    1.5,
+    2.25
+   ],
+   "y": [
+    0.4,
+    0.72
+   ],
+   "z": [
+    0.45,
+    0.98
+   ],
+   "mats": [
+    "light",
+    "glass",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTL",
+   "x": [
+    -2.35,
+    -1.95
+   ],
+   "y": [
+    0.75,
+    1.0
+   ],
+   "z": [
+    -0.95,
+    -0.4
+   ],
+   "mats": [
+    "light",
+    "sf90_genral_color",
+    "sf90_wigthe"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTR",
+   "x": [
+    -2.35,
+    -1.95
+   ],
+   "y": [
+    0.75,
+    1.0
+   ],
+   "z": [
+    0.4,
+    0.95
+   ],
+   "mats": [
+    "light",
+    "sf90_genral_color",
+    "sf90_wigthe"
+   ]
+  },
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.3,
+    0.75
+   ],
+   "y": [
+    0.6,
+    1.0
+   ],
+   "z": [
+    -1.2,
+    -0.85
+   ]
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.3,
+    0.75
+   ],
+   "y": [
+    0.6,
+    1.0
+   ],
+   "z": [
+    0.85,
+    1.2
+   ]
+  },
+  {
+   "part": null,
+   "x": [
+    -0.75,
+    1.1
+   ],
+   "y": [
+    0.1,
+    0.95
+   ],
+   "z": [
+    -0.72,
+    0.72
+   ],
+   "notMats": [
+    "glass",
+    "paint"
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    1.1,
+    2.25
+   ],
+   "y": [
+    0.55,
+    0.9
+   ],
+   "z": [
+    -0.75,
+    0.75
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    1.4,
+    2.5
+   ],
+   "y": [
+    0.0,
+    0.75
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    0.6,
+    1.95
+   ],
+   "y": [
+    0.15,
+    1.0
+   ],
+   "z": [
+    -1.15,
+    -0.55
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    0.6,
+    1.95
+   ],
+   "y": [
+    0.15,
+    1.0
+   ],
+   "z": [
+    0.55,
+    1.15
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFL",
+   "x": [
+    -0.6,
+    0.8
+   ],
+   "y": [
+    0.15,
+    1.1
+   ],
+   "z": [
+    -1.1,
+    -0.6
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFR",
+   "x": [
+    -0.6,
+    0.8
+   ],
+   "y": [
+    0.15,
+    1.1
+   ],
+   "z": [
+    0.6,
+    1.1
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.35,
+    -0.75
+   ],
+   "y": [
+    0.85,
+    1.3
+   ],
+   "z": [
+    -0.75,
+    0.75
+   ],
+   "mats": [
+    "paint"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -2.45,
+    -1.65
+   ],
+   "y": [
+    0.0,
+    0.85
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "notMats": [
+    "glass"
+   ]
+  }
+ ],
+ "splitPolygons": [],
+ "reportMin": 300,
+ "dropTiny": 0.015,
+ "decimate": {
+  "RIGID_Cage": 0.15,
+  "DEFORM_Bumper": 0.12,
+  "DEFORM_Hood": 0.15,
+  "DEFORM_Trunk": 0.2,
+  "DEFORM_Door": 0.3,
+  "DEFORM_Fender": 0.6,
+  "BREAKAWAY": 0.08,
+  "BRITTLE_Light": 0.06,
+  "BRITTLE_Glass": 1.0,
+  "wheel": 0.1
+ },
+ "hPoint": [
+  -0.3,
+  0.45,
+  -0.36
+ ],
+ "expectGlass": 4,
+ "colors": {
+  "Glass": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "sf90_glass": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "sf90_genral_color": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "sf90_carbon": [
+   0.03,
+   0.03,
+   0.035
+  ],
+  "Grill Cloth": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "Mesh drill": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "sf90_wigthe": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "agsos": [
+   0.25,
+   0.25,
+   0.26
+  ],
+  "sf90_chrom": [
+   0.03,
+   0.03,
+   0.032
+  ],
+  "logo": [
+   0.6,
+   0.6,
+   0.62
+  ],
+  "sf90_alum": [
+   0.6,
+   0.6,
+   0.62
+  ],
+  "Rubber.001": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "weel_silver": [
+   0.45,
+   0.45,
+   0.47
+  ],
+  "Automotive led lights": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "sf90_runninglight": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "sf90_flont_L": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "Automotive led lights.001": [
+   0.75,
+   0.04,
+   0.04
+  ],
+  "Red glass": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "sf90_redglass": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "sf90_brakelight": [
+   0.75,
+   0.04,
+   0.04
+  ]
+ }
+}

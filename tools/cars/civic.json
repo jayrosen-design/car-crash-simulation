@@ -1,0 +1,340 @@
+{
+ "name": "civic",
+ "title": "Honda Civic Type R",
+ "credit": {
+  "title": "2018 Honda Civic Type R (FK8)",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "blend": "models/2018 Honda Civic Type R/FK8.blend",
+ "wheelbase": 2.7,
+ "body": [
+  "Fk8.Body"
+ ],
+ "objects": {
+  "FK8.Bumper.Ft": "DEFORM_BumperF",
+  "FK8.Bumper.Bk": "DEFORM_BumperR",
+  "FK8.Hood": "DEFORM_Hood",
+  "FK8.Fender.L": "DEFORM_FenderL",
+  "FK8.Fender.R": "DEFORM_FenderR",
+  "FK8.Door.Ft.L": "DEFORM_DoorFL",
+  "FK8.Door.Ft.R": "DEFORM_DoorFR",
+  "FK8.Door.Bk.L": "DEFORM_DoorRL",
+  "FK8.Door.Bk.R": "DEFORM_DoorRR",
+  "FK8.Tailgate": "DEFORM_Trunk",
+  "FK8.Spoiler": "DEFORM_Trunk",
+  "FK8.Headlight.L": "BRITTLE_LightHL",
+  "FK8.HeadlightGlass.L": "BRITTLE_LightHL",
+  "FK8.Headlight.R": "BRITTLE_LightHR",
+  "FK8.HeadlightGlass.R": "BRITTLE_LightHR",
+  "FK8.Taillight.L": "BRITTLE_LightTL",
+  "FK8.TaillightGlass.L": "BRITTLE_LightTL",
+  "FK8.Taillight.R": "BRITTLE_LightTR",
+  "FK8.TaillightGlass.R": "BRITTLE_LightTR",
+  "FK8.Windshield": "BRITTLE_GlassWS",
+  "FK8.TailgateGlass": "BRITTLE_GlassRear",
+  "FK8.Wipers": "RIGID_Cage_Body"
+ },
+ "wheels": {
+  "FL": "FK8.Wheel.Ft.L",
+  "FR": "FK8.Wheel.Ft.R",
+  "RL": "FK8.Wheel.Bk.L",
+  "RR": "FK8.Wheel.Bk.R"
+ },
+ "wheelRim": [
+  "FK8.BlackGloss",
+  "FK8.Chrome",
+  "FK8.Red"
+ ],
+ "materials": {
+  "drop": [
+   "FK8.Interior",
+   "FK8.Engine",
+   "FK8.Interiorlights",
+   "Dots Stroke"
+  ],
+  "glass": [
+   "FK8.Windshield"
+  ],
+  "light": [
+   "FK8.Headlight",
+   "FK8.HighBeam",
+   "FK8.Signal.L",
+   "FK8.Signal.R",
+   "FK8.RunningLight",
+   "FK8.Taillight",
+   "FK8.Brakelight",
+   "FK8.ReverseLight",
+   "FK8.HeadlightGlass"
+  ],
+  "chrome": [
+   "FK8.Chrome"
+  ],
+  "trim": [
+   "FK8.BlackMatt",
+   "FK8.BlackGloss",
+   "FK8.Carbon",
+   "FK8.Grille",
+   "FK8.Gray",
+   "FK8.Badge",
+   "FK8.Brembo",
+   "FK8.RedGloss",
+   "FK8.Red",
+   "CivicFK8_black2",
+   "FK8.Brown",
+   "FK8.BrakeDisc"
+  ],
+  "tire": [
+   "FK8.Tire"
+  ]
+ },
+ "colors": {
+  "FK8.BlackMatt": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "FK8.BlackGloss": [
+   0.012,
+   0.012,
+   0.012
+  ],
+  "FK8.Carbon": [
+   0.03,
+   0.03,
+   0.035
+  ],
+  "FK8.Grille": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "FK8.Badge": [
+   0.6,
+   0.6,
+   0.62
+  ],
+  "FK8.Brembo": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "FK8.BrakeDisc": [
+   0.35,
+   0.35,
+   0.36
+  ],
+  "CivicFK8_black2": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "FK8.Brown": [
+   0.04,
+   0.02,
+   0.01
+  ],
+  "FK8.Tire": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "FK8.Headlight": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "FK8.HighBeam": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "FK8.RunningLight": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "FK8.HeadlightGlass": [
+   0.75,
+   0.78,
+   0.8
+  ],
+  "FK8.Signal.L": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "FK8.Signal.R": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "FK8.Taillight": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "FK8.Brakelight": [
+   0.75,
+   0.04,
+   0.04
+  ],
+  "FK8.ReverseLight": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "FK8.Windshield": [
+   0.02,
+   0.03,
+   0.04
+  ]
+ },
+ "regions": [
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.38,
+    0.82
+   ],
+   "y": [
+    0.9,
+    1.2
+   ],
+   "z": [
+    -1.12,
+    -0.82
+   ],
+   "override": true
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.38,
+    0.82
+   ],
+   "y": [
+    0.9,
+    1.2
+   ],
+   "z": [
+    0.82,
+    1.12
+   ],
+   "override": true
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    -0.4,
+    0.7
+   ],
+   "y": [
+    0.95,
+    1.45
+   ],
+   "z": [
+    -0.95,
+    -0.55
+   ],
+   "mats": [
+    "glass"
+   ],
+   "override": true
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    -0.4,
+    0.7
+   ],
+   "y": [
+    0.95,
+    1.45
+   ],
+   "z": [
+    0.55,
+    0.95
+   ],
+   "mats": [
+    "glass"
+   ],
+   "override": true
+  },
+  {
+   "part": "BRITTLE_GlassRL",
+   "x": [
+    -1.2,
+    -0.3
+   ],
+   "y": [
+    0.95,
+    1.45
+   ],
+   "z": [
+    -0.95,
+    -0.55
+   ],
+   "mats": [
+    "glass"
+   ],
+   "override": true
+  },
+  {
+   "part": "BRITTLE_GlassRR",
+   "x": [
+    -1.2,
+    -0.3
+   ],
+   "y": [
+    0.95,
+    1.45
+   ],
+   "z": [
+    0.55,
+    0.95
+   ],
+   "mats": [
+    "glass"
+   ],
+   "override": true
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -2.4,
+    -1.5
+   ],
+   "y": [
+    0.9,
+    1.5
+   ],
+   "z": [
+    -0.9,
+    0.9
+   ],
+   "mats": [
+    "glass"
+   ],
+   "override": true
+  }
+ ],
+ "splitPolygons": [],
+ "reportMin": 200,
+ "dropTiny": 0.012,
+ "decimate": {
+  "RIGID_Cage": 0.35,
+  "DEFORM": 0.4,
+  "BREAKAWAY": 0.35,
+  "BRITTLE_Light": 0.2,
+  "BRITTLE_Glass": 1.0,
+  "wheel": 0.12
+ },
+ "hPoint": [
+  -0.3,
+  0.5,
+  -0.38
+ ],
+ "expectGlass": 6
+}

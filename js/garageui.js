@@ -13,6 +13,7 @@ const GarageUI = (() => {
   'use strict';
   const NS = 'http://www.w3.org/2000/svg';
   const hex = (h) => '#' + h.toString(16).padStart(6, '0');
+  const dark = (h) => ((h >> 16) & 255) + ((h >> 8) & 255) + (h & 255) < 90;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // a side silhouette in metres (x from the rear, y up): the profile's top and bottom, and the wheels
@@ -42,7 +43,7 @@ const GarageUI = (() => {
       at[it.key] = { x, L: s.L, H: s.H };
       out += `<g class="lineup-car" data-car="${it.key}" role="radio" aria-label="${esc(it.name)}" transform="translate(${x.toFixed(3)},0)">` +
         `<title>${esc(it.name)}</title><rect class="hit" x="-0.3" y="${-Hm}" width="${(s.L + 0.6).toFixed(3)}" height="${Hm + 0.1}"/>` +
-        `<polygon points="${s.pts}" fill="${hex(it.paint)}"/>` +
+        `<polygon points="${s.pts}" fill="${hex(it.paint)}"${dark(it.paint) ? ' stroke="#8a909c" stroke-width="1" vector-effect="non-scaling-stroke"' : ''}/>` +   // (a black car outlined, on the dark strip)
         s.wheels.map(([u, y, r, rr]) => `<circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${r.toFixed(3)}" class="tyre"/><circle cx="${u.toFixed(3)}" cy="${(-y).toFixed(3)}" r="${rr.toFixed(3)}" class="rim"/>`).join('') +
         `</g>`;
       x += s.L + GAP;

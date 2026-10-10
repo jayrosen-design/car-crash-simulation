@@ -66,7 +66,7 @@ const MU_SLED = 0.03;   // tyres on the low-friction carrier of a pole test, sid
 // Realistic limits are set so that a 56 km/h full-width rigid-barrier test keeps its panels and
 // wheels (as real cars do), the bumper, fenders and front wheels come off around 100 km/h and the
 // hood by 150 km/h; doors stay on in frontal impacts.
-const DAMAGE = { realistic: 1, dramatic: 0.3 };
+const DAMAGE = { realistic: 1, dramatic: 0.3 };   // (a car's spec.partLimit { prefix: factor } can raise its own limits)
 const PART_RULES = [   // [name prefix, mass (kg), detach strain]
   ['DEFORM_BumperF', 9, 0.165], ['DEFORM_BumperR', 7, 0.15], ['DEFORM_Hood', 15, 0.25], ['DEFORM_Fender', 4, 0.18],
   ['DEFORM_DoorF', 24, 0.06], ['DEFORM_DoorR', 20, 0.06], ['DEFORM_Trunk', 14, 0.15], ['BREAKAWAY_Mirror', 1.5, 0.05],
@@ -145,7 +145,7 @@ function buildCar(massKg, stiffKey, spec, structure) {
       const u = 0.5 * (rest[3 * a] + rest[3 * b]) - xMin;
       let kf, ey;
       if (ghost[a] || ghost[b]) { kf = 0.15; ey = EY; }
-      else if (u >= C.firewallU) { kf = s; ey = EY; if (engine[a] && engine[b]) { kf *= 2.5; ey *= 2.5; } }
+      else if (u >= C.firewallU) { kf = s * (C.frontK || 1); ey = EY; if (engine[a] && engine[b]) { kf *= 2.5; ey *= 2.5; } }   // frontK: a car's own crush-zone stiffness
       else if (u >= C.rearU) { kf = 2.5; ey = 2.4 * EY; }   // passenger safety cell
       else { kf = 1.5; ey = 1.2 * EY; }
       if (C.zoneK && !(ghost[a] || ghost[b])) {   // per-zone [stiffness, yield] factors of a non-car spec
@@ -664,7 +664,7 @@ function createImpactSim(cfg) {
         const set = new Set(nodes), anchors = [];
         for (let c = U.c0; c < U.c0 + U.nc; c++) if (set.has(ca[c]) && set.has(cb[c])) anchors.push(c);
         if (anchors.length < 4) for (let c = U.c0; c < U.c0 + U.nc; c++) if (set.has(ca[c]) !== set.has(cb[c])) anchors.push(c);
-        parts.push({ name: p.name, unit: u, U, mass: rule[1], limit: rule[2] * udmg, breakaway: p.name.startsWith('BREAKAWAY'), emb,
+        parts.push({ name: p.name, unit: u, U, mass: rule[1], limit: rule[2] * udmg * ((sp.partLimit || {})[rule[0]] || 1), breakaway: p.name.startsWith('BREAKAWAY'), emb,
           nodes: Int32Array.from(nodes), share: Float64Array.from(wts.map(w => w / wt)), anchors: Int32Array.from(anchors), body: -1, t: -1 });
       }
     }

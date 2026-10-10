@@ -1,0 +1,600 @@
+{
+ "name": "gtr",
+ "title": "Nissan GT-R Nismo",
+ "credit": {
+  "title": "Nissan GT-R Nismo",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "blend": "models/Nissan GT-R Nismo 2016/GTR+35.blend",
+ "wheelbase": 2.78,
+ "body": [
+  "Body"
+ ],
+ "wheels": {
+  "FL": "Wheel.Ft.L",
+  "FR": "Wheel.Ft.R",
+  "RL": "Wheel.Bk.L",
+  "RR": "Wheel.Bk.R"
+ },
+ "wheelExtra": [
+  "Nissan GTR R35 Nismo-012"
+ ],
+ "wheelRim": [
+  "chrome_a",
+  "blackglossmat"
+ ],
+ "materials": {
+  "drop": [
+   "Leather_all",
+   "Dots Stroke"
+  ],
+  "glass": [
+   "PlasticGlassWhitewindshield",
+   "chrome_b"
+  ],
+  "light": [
+   "PlasticGlassWhite",
+   "PlasticGlassRed",
+   "headlight",
+   "taillight"
+  ],
+  "chrome": [
+   "chrome_a"
+  ],
+  "trim": [
+   "blackglossmat",
+   "blackmatt2b",
+   "CarbonFiberBlack",
+   "CarbonFiberBlackmatte",
+   "PianoBlack",
+   "mattblack",
+   "gloassygreyishblackmat",
+   "gloassywhitemat",
+   "whitemat",
+   "goldstripe",
+   "redlogo",
+   "redlogob",
+   "redg",
+   "plate",
+   "disc",
+   "brakedisc",
+   "CarpaintGlossBlack",
+   "CarpaintMatteBlack",
+   "CarpaintMetallicDarkGrey"
+  ],
+  "tire": [
+   "tirerubber"
+  ],
+  "rim": [
+   "CarpaintMetallicGoldenYellow"
+  ]
+ },
+ "colors": {
+  "CarpaintGlossBlack": [
+   0.012,
+   0.012,
+   0.012
+  ],
+  "CarpaintMatteBlack": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "CarbonFiberBlack": [
+   0.025,
+   0.025,
+   0.028
+  ],
+  "CarbonFiberBlackmatte": [
+   0.022,
+   0.022,
+   0.024
+  ],
+  "PianoBlack": [
+   0.01,
+   0.01,
+   0.01
+  ],
+  "CarpaintMetallicDarkGrey": [
+   0.2,
+   0.2,
+   0.21
+  ],
+  "gloassywhitemat": [
+   0.7,
+   0.7,
+   0.7
+  ],
+  "plate": [
+   0.8,
+   0.8,
+   0.8
+  ],
+  "disc": [
+   0.3,
+   0.3,
+   0.31
+  ],
+  "redlogo": [
+   0.7,
+   0.02,
+   0.02
+  ],
+  "redlogob": [
+   0.7,
+   0.02,
+   0.02
+  ],
+  "PlasticGlassWhite": [
+   0.85,
+   0.87,
+   0.9
+  ],
+  "PlasticGlassRed": [
+   0.7,
+   0.03,
+   0.03
+  ],
+  "headlight": [
+   0.95,
+   0.95,
+   0.92
+  ],
+  "taillight": [
+   0.8,
+   0.04,
+   0.04
+  ],
+  "PlasticGlassWhitewindshield": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "tirerubber": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "CarpaintMetallicGoldenYellow": [
+   0.44,
+   0.141,
+   0.031
+  ],
+  "chrome_b": [
+   0.02,
+   0.03,
+   0.04
+  ]
+ },
+ "regions": [
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.1,
+    0.5
+   ],
+   "y": [
+    0.8,
+    1.15
+   ],
+   "z": [
+    -1.1,
+    -0.75
+   ],
+   "minTris": 1
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.1,
+    0.5
+   ],
+   "y": [
+    0.8,
+    1.15
+   ],
+   "z": [
+    0.75,
+    1.1
+   ],
+   "minTris": 1
+  },
+  {
+   "part": "RIGID_Cage_Body",
+   "x": [
+    -1.2,
+    0.5
+   ],
+   "y": [
+    0.9,
+    1.4
+   ],
+   "z": [
+    -1.0,
+    -0.55
+   ],
+   "mats": [
+    "chrome_b"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassWS",
+   "x": [
+    0.0,
+    1.0
+   ],
+   "y": [
+    0.9,
+    1.4
+   ],
+   "z": [
+    -0.8,
+    0.8
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    -0.8,
+    0.45
+   ],
+   "y": [
+    0.9,
+    1.4
+   ],
+   "z": [
+    -0.9,
+    -0.55
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    -0.8,
+    0.45
+   ],
+   "y": [
+    0.9,
+    1.4
+   ],
+   "z": [
+    0.55,
+    0.9
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQL",
+   "x": [
+    -1.2,
+    -0.6
+   ],
+   "y": [
+    0.95,
+    1.4
+   ],
+   "z": [
+    -0.9,
+    -0.6
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQR",
+   "x": [
+    -1.2,
+    -0.6
+   ],
+   "y": [
+    0.95,
+    1.4
+   ],
+   "z": [
+    0.6,
+    0.9
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -2.0,
+    -0.85
+   ],
+   "y": [
+    0.95,
+    1.42
+   ],
+   "z": [
+    -0.65,
+    0.65
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.45,
+    -1.85
+   ],
+   "y": [
+    1.02,
+    1.45
+   ],
+   "z": [
+    -0.95,
+    0.95
+   ],
+   "notMats": [
+    "glass"
+   ],
+   "minTris": 1
+  },
+  {
+   "part": "BRITTLE_LightHL",
+   "x": [
+    1.4,
+    2.2
+   ],
+   "y": [
+    0.6,
+    0.92
+   ],
+   "z": [
+    -0.95,
+    -0.4
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ],
+   "minTris": 1
+  },
+  {
+   "part": "BRITTLE_LightHR",
+   "x": [
+    1.4,
+    2.2
+   ],
+   "y": [
+    0.6,
+    0.92
+   ],
+   "z": [
+    0.4,
+    0.95
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ],
+   "minTris": 1
+  },
+  {
+   "part": "BRITTLE_LightTL",
+   "x": [
+    -2.4,
+    -1.85
+   ],
+   "y": [
+    0.72,
+    1.02
+   ],
+   "z": [
+    -0.85,
+    -0.3
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ],
+   "minTris": 1
+  },
+  {
+   "part": "BRITTLE_LightTR",
+   "x": [
+    -2.4,
+    -1.85
+   ],
+   "y": [
+    0.72,
+    1.02
+   ],
+   "z": [
+    0.3,
+    0.85
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ],
+   "minTris": 1
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.45,
+    -1.55
+   ],
+   "y": [
+    0.93,
+    1.45
+   ],
+   "z": [
+    -0.62,
+    0.62
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -2.45,
+    -1.75
+   ],
+   "y": [
+    0.0,
+    0.93
+   ],
+   "z": [
+    -1.05,
+    1.05
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    0.75,
+    2.45
+   ],
+   "y": [
+    0.8,
+    1.15
+   ],
+   "z": [
+    -0.62,
+    0.62
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    1.85,
+    2.45
+   ],
+   "y": [
+    0.0,
+    0.85
+   ],
+   "z": [
+    -1.05,
+    1.05
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    0.66,
+    1.85
+   ],
+   "y": [
+    0.15,
+    1.1
+   ],
+   "z": [
+    -1.05,
+    -0.55
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    0.66,
+    1.85
+   ],
+   "y": [
+    0.15,
+    1.1
+   ],
+   "z": [
+    0.55,
+    1.05
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFL",
+   "x": [
+    -0.72,
+    0.66
+   ],
+   "y": [
+    0.15,
+    1.02
+   ],
+   "z": [
+    -1.05,
+    -0.55
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFR",
+   "x": [
+    -0.72,
+    0.66
+   ],
+   "y": [
+    0.15,
+    1.02
+   ],
+   "z": [
+    0.55,
+    1.05
+   ],
+   "notMats": [
+    "glass"
+   ]
+  }
+ ],
+ "splitPolygons": [
+  "paint"
+ ],
+ "splitSize": 0.6,
+ "dropTiny": 0.012,
+ "reportMin": 300,
+ "decimate": {
+  "RIGID_Cage": 0.05,
+  "DEFORM": 0.1,
+  "DEFORM_Bumper": 0.02,
+  "DEFORM_Trunk": 0.05,
+  "BREAKAWAY": 0.1,
+  "BRITTLE_Light": 0.035,
+  "BRITTLE_Glass": 0.08,
+  "wheel": 0.025
+ },
+ "hPoint": [
+  -0.05,
+  0.45,
+  -0.37
+ ],
+ "expectGlass": 6
+}

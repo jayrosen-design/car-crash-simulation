@@ -1,0 +1,848 @@
+{
+ "name": "corvette",
+ "title": "Chevrolet Corvette Stingray",
+ "credit": {
+  "title": "Chevrolet Corvette Stingray",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "blend": "models/Corvette Stingray/extracted/Corvette_Stingray_Blender_Low_Poly_File.blend",
+ "wheelbase": 2.71,
+ "body": [
+  "Bumber_Front.003",
+  "Back_Fender_Left",
+  "Back_Fender_Left.001",
+  "Back_Fender_Left.002",
+  "Back_Fender_Right",
+  "Back_WindShield_Frame",
+  "Bumber_Front",
+  "Bumber_Front.001",
+  "Bumber_Front.002",
+  "Bumber_Front.004",
+  "Bumber_Front.005",
+  "Bumber_Front.006",
+  "Bumber_Front.007",
+  "Bumber_Front.008",
+  "Bumber_Front.009",
+  "Circle",
+  "Circle.001",
+  "Circle.002",
+  "Circle.003",
+  "Circle.004",
+  "Circle.005",
+  "Circle.006",
+  "Circle.007",
+  "Circle.008",
+  "Circle.009",
+  "Circle.010",
+  "Circle.011",
+  "Circle.012",
+  "Circle.013",
+  "Front_Fender",
+  "Front_Fender.001",
+  "Front_Fender.003",
+  "Front_Fender.004",
+  "Front_Fender.005",
+  "Front_Fender.006",
+  "Front_Fender.007",
+  "Front_Grill",
+  "Gas_Cape",
+  "Guide_Rim.001",
+  "Guide_Rim.002",
+  "Guide_Rim.004",
+  "Guie_Front_Fendor _And_Door.002",
+  "Guie_Front_Fendor _And_Door.003",
+  "Guie_Front_Fendor _And_Door.004",
+  "Hood",
+  "Hood.001",
+  "Hood.002",
+  "Plane",
+  "Plane.001",
+  "Plane.002",
+  "Plane.003",
+  "Plane.004",
+  "Plane.005",
+  "Plane.006",
+  "Plane.007",
+  "Plane.008",
+  "Plane.009",
+  "Plane.010",
+  "Plane.011",
+  "Plane.012",
+  "Plane.013",
+  "Plane.014",
+  "Plane.015",
+  "Plane.016",
+  "Plane.017",
+  "Plane.018",
+  "Plane.019",
+  "Plane.020",
+  "Roof_1",
+  "Roof_1.001",
+  "Roof_1.002",
+  "Roof_1.006",
+  "Roof_1.007",
+  "Roof_1.009",
+  "Roof_1.010",
+  "Roof_1.011",
+  "Roof_1.013",
+  "Roof_2",
+  "Roof_2.001",
+  "Roof_2.002",
+  "Roof_2.003",
+  "Roof_2.004",
+  "Roof_2.005",
+  "Sphere",
+  "Sphere.001",
+  "Sphere.002",
+  "Sphere.010",
+  "Sphere.011",
+  "Tail",
+  "Tail.002",
+  "Tail.003",
+  "Tail.004",
+  "Tail.005",
+  "Tail.006",
+  "Tail.007",
+  "Tail.008",
+  "Tail.009",
+  "Tail.010",
+  "Tail.011",
+  "Tail.012",
+  "Tail.013",
+  "Tail.014",
+  "Tail.015",
+  "Tail.016",
+  "Tail.017",
+  "Tail.018",
+  "Tail.019",
+  "Tail.020",
+  "Tail.021",
+  "Tail.022",
+  "Tail.023",
+  "Tail.024",
+  "Vert",
+  "Vert.079"
+ ],
+ "objects": {},
+ "wheels": {
+  "FL": "Plane.024",
+  "FR": "Plane.036",
+  "RL": "Plane.028",
+  "RR": "Plane.032"
+ },
+ "wheelExtra": [
+  "Circle.037",
+  "Circle.038",
+  "Circle.039",
+  "Circle.040",
+  "Circle.041",
+  "Circle.042",
+  "Circle.043",
+  "Bolt.003",
+  "Nut.007",
+  "Nut.008",
+  "Plane.033",
+  "Plane.034",
+  "Plane.035"
+ ],
+ "wheelRim": [
+  "Metal_Black",
+  "Car_Painnt_Second_Color"
+ ],
+ "materials": {
+  "drop": [
+   "Interior_Black",
+   "Black_Diffuse",
+   "Material.001",
+   "Volume",
+   "Dots Stroke"
+  ],
+  "glass": [
+   "Glass_Tinted"
+  ],
+  "light": [
+   "Glass - Orange",
+   "Glass - Orange_Bump",
+   "Glass - Red_Bump",
+   "Glass_Clear",
+   "Glass_Clear  Bumps",
+   "Glass_Clear Ridged  - UV",
+   "Glass_Clear Ridged Trunk Light Lens",
+   "Glass_Red",
+   "Glass_Red - Ridged",
+   "Glass_Red - Ridged 0.4",
+   "Light_Bulb_OFF",
+   "Side_Light_Bulb_OFF",
+   "White_Light_Bulb_ON"
+  ],
+  "chrome": [
+   "Metal_Chrome",
+   "Metal_Chrome_Rough 0.2"
+  ],
+  "trim": [
+   "Car_Painnt_Black",
+   "Car_Painnt_Second_Color",
+   "Metal_Black",
+   "Metal-Black_Rough_0.2",
+   "Metal_Chrome_Dark",
+   "Plastic_Black_Bumpy_Small",
+   "Rubber_Black",
+   "Window_Border",
+   "Flag_Logo",
+   "Brake_Disc",
+   "Brake_Hub"
+  ],
+  "tire": [
+   "Tire"
+  ]
+ },
+ "colors": {
+  "Car_Painnt_Black": [
+   0.012,
+   0.012,
+   0.013
+  ],
+  "Car_Painnt_Second_Color": [
+   0.03,
+   0.06,
+   0.05
+  ],
+  "Metal_Black": [
+   0.05,
+   0.05,
+   0.055
+  ],
+  "Metal-Black_Rough_0.2": [
+   0.04,
+   0.04,
+   0.04
+  ],
+  "Metal_Chrome_Dark": [
+   0.2,
+   0.2,
+   0.21
+  ],
+  "Plastic_Black_Bumpy_Small": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "Rubber_Black": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "Window_Border": [
+   0.01,
+   0.01,
+   0.01
+  ],
+  "Flag_Logo": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "Brake_Disc": [
+   0.35,
+   0.35,
+   0.36
+  ],
+  "Brake_Hub": [
+   0.3,
+   0.3,
+   0.31
+  ],
+  "Tire": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "Glass_Tinted": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "Glass - Orange": [
+   0.9,
+   0.4,
+   0.0
+  ],
+  "Glass - Orange_Bump": [
+   0.9,
+   0.4,
+   0.0
+  ],
+  "Glass - Red_Bump": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "Glass_Clear": [
+   0.85,
+   0.87,
+   0.9
+  ],
+  "Glass_Clear  Bumps": [
+   0.85,
+   0.87,
+   0.9
+  ],
+  "Glass_Clear Ridged  - UV": [
+   0.85,
+   0.87,
+   0.9
+  ],
+  "Glass_Clear Ridged Trunk Light Lens": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "Glass_Red": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "Glass_Red - Ridged": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "Glass_Red - Ridged 0.4": [
+   0.7,
+   0.04,
+   0.04
+  ],
+  "Light_Bulb_OFF": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "Side_Light_Bulb_OFF": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "White_Light_Bulb_ON": [
+   0.95,
+   0.95,
+   0.97
+  ],
+  "Car_Painnt_Red": [
+   0.55,
+   0.08,
+   0.06
+  ]
+ },
+ "regions": [
+  {
+   "part": null,
+   "x": [
+    -3,
+    3
+   ],
+   "y": [
+    0,
+    1.2
+   ],
+   "z": [
+    -1.1,
+    1.1
+   ],
+   "mats": [
+    "Plastic_Black_Bumpy_Small"
+   ],
+   "minTris": 8000
+  },
+  {
+   "part": null,
+   "x": [
+    1.4,
+    2.1
+   ],
+   "y": [
+    0.5,
+    0.9
+   ],
+   "z": [
+    -1,
+    1
+   ],
+   "mats": [
+    "White_Light_Bulb_ON"
+   ],
+   "minTris": 2500
+  },
+  {
+   "part": null,
+   "x": [
+    1.45,
+    1.85
+   ],
+   "y": [
+    0.6,
+    0.85
+   ],
+   "z": [
+    -0.9,
+    0.9
+   ],
+   "mats": [
+    "Glass_Clear"
+   ],
+   "minTris": 1300
+  },
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    -0.1,
+    0.35
+   ],
+   "y": [
+    0.78,
+    1.08
+   ],
+   "z": [
+    -1.15,
+    -0.8
+   ]
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    -0.1,
+    0.35
+   ],
+   "y": [
+    0.78,
+    1.08
+   ],
+   "z": [
+    0.8,
+    1.15
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    -0.8,
+    0.3
+   ],
+   "y": [
+    0.85,
+    1.2
+   ],
+   "z": [
+    -0.85,
+    -0.5
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    -0.8,
+    0.3
+   ],
+   "y": [
+    0.85,
+    1.2
+   ],
+   "z": [
+    0.5,
+    0.85
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQL",
+   "x": [
+    -1.35,
+    -0.7
+   ],
+   "y": [
+    0.9,
+    1.2
+   ],
+   "z": [
+    -0.8,
+    -0.45
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQR",
+   "x": [
+    -1.35,
+    -0.7
+   ],
+   "y": [
+    0.9,
+    1.2
+   ],
+   "z": [
+    0.45,
+    0.8
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassWS",
+   "x": [
+    0.0,
+    0.8
+   ],
+   "y": [
+    0.8,
+    1.25
+   ],
+   "z": [
+    -0.8,
+    0.8
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -1.9,
+    -0.9
+   ],
+   "y": [
+    0.9,
+    1.3
+   ],
+   "z": [
+    -0.5,
+    0.5
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHL",
+   "x": [
+    1.4,
+    2.1
+   ],
+   "y": [
+    0.55,
+    0.9
+   ],
+   "z": [
+    -0.9,
+    -0.4
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHR",
+   "x": [
+    1.4,
+    2.1
+   ],
+   "y": [
+    0.55,
+    0.9
+   ],
+   "z": [
+    0.4,
+    0.9
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTL",
+   "x": [
+    -2.25,
+    -1.9
+   ],
+   "y": [
+    0.7,
+    1.0
+   ],
+   "z": [
+    -0.82,
+    -0.25
+   ],
+   "mats": [
+    "light",
+    "chrome",
+    "Car_Painnt_Black",
+    "Car_Painnt_Second_Color"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTR",
+   "x": [
+    -2.25,
+    -1.9
+   ],
+   "y": [
+    0.7,
+    1.0
+   ],
+   "z": [
+    0.25,
+    0.82
+   ],
+   "mats": [
+    "light",
+    "chrome",
+    "Car_Painnt_Black",
+    "Car_Painnt_Second_Color"
+   ]
+  },
+  {
+   "part": "RIGID_Cage_Body",
+   "x": [
+    0.45,
+    0.95
+   ],
+   "y": [
+    0.78,
+    0.95
+   ],
+   "z": [
+    -0.85,
+    0.85
+   ],
+   "mats": [
+    "Metal-Black_Rough_0.2",
+    "Rubber_Black"
+   ]
+  },
+  {
+   "part": "RIGID_Cage_Body",
+   "x": [
+    -1.1,
+    0.6
+   ],
+   "y": [
+    0.15,
+    0.5
+   ],
+   "z": [
+    -1.0,
+    -0.7
+   ],
+   "mats": [
+    "paint"
+   ]
+  },
+  {
+   "part": "RIGID_Cage_Body",
+   "x": [
+    -1.1,
+    0.6
+   ],
+   "y": [
+    0.15,
+    0.5
+   ],
+   "z": [
+    0.7,
+    1.0
+   ],
+   "mats": [
+    "paint"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    0.3,
+    1.95
+   ],
+   "y": [
+    0.15,
+    0.95
+   ],
+   "z": [
+    -1.0,
+    -0.45
+   ],
+   "mats": [
+    "paint",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    0.3,
+    1.95
+   ],
+   "y": [
+    0.15,
+    0.95
+   ],
+   "z": [
+    0.45,
+    1.0
+   ],
+   "mats": [
+    "paint",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFL",
+   "x": [
+    -0.95,
+    0.6
+   ],
+   "y": [
+    0.2,
+    1.05
+   ],
+   "z": [
+    -1.0,
+    -0.55
+   ],
+   "mats": [
+    "paint",
+    "Metal-Black_Rough_0.2"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFR",
+   "x": [
+    -0.95,
+    0.6
+   ],
+   "y": [
+    0.2,
+    1.05
+   ],
+   "z": [
+    0.55,
+    1.0
+   ],
+   "mats": [
+    "paint",
+    "Metal-Black_Rough_0.2"
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    0.55,
+    2.0
+   ],
+   "y": [
+    0.65,
+    0.95
+   ],
+   "z": [
+    -0.75,
+    0.75
+   ],
+   "notMats": [
+    "glass",
+    "light"
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.1,
+    -0.85
+   ],
+   "y": [
+    0.9,
+    1.25
+   ],
+   "z": [
+    -0.8,
+    0.8
+   ],
+   "mats": [
+    "paint",
+    "Window_Border"
+   ],
+   "minTris": 1000
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -2.35,
+    -1.55
+   ],
+   "y": [
+    0.0,
+    1.05
+   ],
+   "z": [
+    -1.0,
+    1.0
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    1.5,
+    2.4
+   ],
+   "y": [
+    0.0,
+    0.85
+   ],
+   "z": [
+    -1.0,
+    1.0
+   ],
+   "notMats": [
+    "glass"
+   ]
+  }
+ ],
+ "splitPolygons": [],
+ "reportMin": 100,
+ "dropTiny": 0.012,
+ "decimate": {
+  "RIGID_Cage": 0.35,
+  "DEFORM": 0.5,
+  "DEFORM_Door": 0.8,
+  "DEFORM_Fender": 0.4,
+  "DEFORM_BumperF": 0.35,
+  "DEFORM_BumperR": 0.22,
+  "DEFORM_Trunk": 0.5,
+  "BREAKAWAY": 0.5,
+  "BRITTLE_Light": 0.2,
+  "BRITTLE_Glass": 1.0,
+  "BRITTLE_GlassQ": 0.15,
+  "wheel": 0.022
+ },
+ "hPoint": [
+  -0.12,
+  0.46,
+  -0.36
+ ],
+ "expectGlass": 6
+}

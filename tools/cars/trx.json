@@ -1,0 +1,951 @@
+{
+ "name": "trx",
+ "title": "Ram 1500 TRX",
+ "credit": {
+  "title": "Ram 1500 TRX",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "blend": "models/LUX+ETHOS®+2023+Dodge+RAM+TRX+Sandblast+Edition/LUX ETHOS® 2023 Dodge RAM TRX Sandblast Edition/LUX ETHOS® 2023 Dodge RAM TRX Sandblast Edition.blend",
+ "wheelbase": 3.683,
+ "body": [
+  "Body"
+ ],
+ "wheels": {
+  "FL": "Wheel.Ft.L",
+  "FR": "Wheel.Ft.R",
+  "RL": "Wheel.Bk.L",
+  "RR": "Wheel.Bk.R"
+ },
+ "materials": {
+  "drop": [
+   "DRTRX Infotainment",
+   "DRTRX Headliner",
+   "DRTRX Machined Finish Interiros",
+   "DRTRX Black Leather",
+   "vehicle_mesh.010",
+   "DRTRX Interior Stitching Color",
+   "vehicle_dash_emissive.002",
+   "vehicle_dash_emissive",
+   "DRTRX Interior Color 02",
+   "DRTRX Dodge Steering Logo",
+   "DRTRX Paddle Shifters",
+   "DRTRX Supercharged Badge",
+   "DRTRX 6.2L Badge Red"
+  ],
+  "glass": [
+   "windows.002"
+  ],
+  "light": [
+   "Headlight & Taillights",
+   "DRTRX Rear Indicator Lights",
+   "DRTRX Headlight Indicators",
+   "vehicle_mesh.012",
+   "vehicle_lightsemissive",
+   "Headlight Dark",
+   "DRTRX Headlight DRL",
+   "DRTRX Front Fog Lights",
+   "DRTRX Side Marker Lights",
+   "DRTRX Front Hood Marker Lights",
+   "DRTRX Front LED Headlights",
+   "DRTRX Mirror Indicators",
+   "DRTRX Rear Tail Lights",
+   "DRTRX Rear Parking Reverse Lighs",
+   "DRTRX Rear Roof Tail Light",
+   "DRTRX Rear Bed Flood Light",
+   "DRTRX Rear Bumper Lower Lights",
+   "DRTRX Rear Step Light",
+   "DRTRX Rear Side Marker Lights"
+  ],
+  "chrome": [
+   "Chrome.003",
+   "vehicle_mesh.021",
+   "Titanium -  Pure"
+  ],
+  "trim": [
+   "vehicle_mesh.018",
+   "vehicle_mesh.024",
+   "vehicle_mesh.015",
+   "vehicle_mesh.022",
+   "vehicle_mesh.019",
+   "vehicle_mesh.017",
+   "vehicle_mesh.016",
+   "vehicle_mesh.014",
+   "vehicle_mesh.009",
+   "vehicle_mesh.008",
+   "vehicle_mesh.007",
+   "vehicle_mesh.006",
+   "vehicle_mesh.005",
+   "vehicle_mesh.004",
+   "vehicle_mesh.003",
+   "vehicle_mesh.002",
+   "vehicle_badges",
+   "vehicle_badges.001",
+   "DRTRX Stock Black Composite",
+   "DRTRX TRX Decal",
+   "LUX ETHOS Brand Emblem",
+   "DRTRX Interior Carbon"
+  ],
+  "mech": [
+   "DRTRX Coil Gas Shox Suspension",
+   "Suspension Black",
+   "Bronze.002",
+   "Carbon Ceramic Discs",
+   "Carbon Ceramic Discs.001",
+   "Carbon Ceramic Discs.002",
+   "Carbon Ceramic Discs.003"
+  ],
+  "tire": [
+   "vehicle_tire.001",
+   "vehicle_tire.002",
+   "vehicle_tire.003",
+   "vehicle_tire.022",
+   "vehicle_tire.004",
+   "vehicle_tire.005",
+   "vehicle_tire.006",
+   "vehicle_tire.007"
+  ],
+  "rim": [
+   "Rim Paint",
+   "Rim Paint.001",
+   "Rim Paint.002",
+   "Rim Paint.003",
+   "Rim Center Cao",
+   "Rim Center Cao.001",
+   "Rim Center Cao.002",
+   "Rim Center Cao.003",
+   "Rim Bolts",
+   "Rim Bolts.001",
+   "Rim Bolts.002",
+   "Rim Bolts.003",
+   "Bead Lock Bolts",
+   "Bead Lock Bolts.001",
+   "Bead Lock Bolts.002",
+   "Bead Lock Bolts.003",
+   "Bead Lock Paint",
+   "Bead Lock Paint.001",
+   "Bead Lock Paint.002",
+   "Bead Lock Paint.003",
+   "Air Filler Neck",
+   "Air Filler Neck.001",
+   "Air Filler Neck.002",
+   "Air Filler Neck.003",
+   "LE Rim Logo",
+   "LE Rim Logo.001",
+   "LE Rim Logo.002",
+   "LE Rim Logo.003"
+  ]
+ },
+ "regions": [
+  {
+   "part": null,
+   "x": [
+    1.1,
+    1.3
+   ],
+   "y": [
+    1.35,
+    1.6
+   ],
+   "z": [
+    -0.7,
+    -0.3
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.85,
+    1.35
+   ],
+   "y": [
+    1.35,
+    1.9
+   ],
+   "z": [
+    -1.4,
+    -0.98
+   ]
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.85,
+    1.35
+   ],
+   "y": [
+    1.35,
+    1.9
+   ],
+   "z": [
+    0.98,
+    1.4
+   ]
+  },
+  {
+   "part": null,
+   "x": [
+    -0.75,
+    1.45
+   ],
+   "y": [
+    0.75,
+    2.0
+   ],
+   "z": [
+    -0.72,
+    0.72
+   ],
+   "mats": [
+    "trim",
+    "chrome",
+    "mech",
+    "light"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHL",
+   "x": [
+    2.35,
+    2.85
+   ],
+   "y": [
+    1.05,
+    1.35
+   ],
+   "z": [
+    -1.0,
+    -0.5
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHR",
+   "x": [
+    2.35,
+    2.85
+   ],
+   "y": [
+    1.05,
+    1.35
+   ],
+   "z": [
+    0.5,
+    1.0
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTL",
+   "x": [
+    -3.0,
+    -2.55
+   ],
+   "y": [
+    1.0,
+    1.55
+   ],
+   "z": [
+    -1.02,
+    -0.7
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTR",
+   "x": [
+    -3.0,
+    -2.55
+   ],
+   "y": [
+    1.0,
+    1.55
+   ],
+   "z": [
+    0.7,
+    1.02
+   ],
+   "mats": [
+    "light",
+    "trim",
+    "chrome"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -1.1,
+    -0.85
+   ],
+   "y": [
+    1.45,
+    2.05
+   ],
+   "z": [
+    -0.85,
+    0.85
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    0.2,
+    1.2
+   ],
+   "y": [
+    1.4,
+    2.0
+   ],
+   "z": [
+    -0.95,
+    -0.735
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    0.2,
+    1.2
+   ],
+   "y": [
+    1.4,
+    2.0
+   ],
+   "z": [
+    0.735,
+    0.95
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRL",
+   "x": [
+    -0.75,
+    0.2
+   ],
+   "y": [
+    1.4,
+    2.0
+   ],
+   "z": [
+    -0.95,
+    -0.735
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRR",
+   "x": [
+    -0.75,
+    0.2
+   ],
+   "y": [
+    1.4,
+    2.0
+   ],
+   "z": [
+    0.735,
+    0.95
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassWS",
+   "x": [
+    0.85,
+    1.75
+   ],
+   "y": [
+    1.45,
+    2.05
+   ],
+   "z": [
+    -0.9,
+    0.9
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    1.45,
+    2.95
+   ],
+   "y": [
+    1.3,
+    1.75
+   ],
+   "z": [
+    -0.95,
+    0.95
+   ],
+   "notMats": [
+    "glass",
+    "vehicle_mesh.002"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    2.4,
+    3.05
+   ],
+   "y": [
+    0.15,
+    1.2
+   ],
+   "z": [
+    -1.15,
+    1.15
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    1.3,
+    2.75
+   ],
+   "y": [
+    0.45,
+    1.65
+   ],
+   "z": [
+    -1.25,
+    -0.6
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    1.3,
+    2.75
+   ],
+   "y": [
+    0.45,
+    1.65
+   ],
+   "z": [
+    0.6,
+    1.25
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "RIGID_Cage_Body",
+   "x": [
+    -1.0,
+    1.5
+   ],
+   "y": [
+    0.5,
+    0.9
+   ],
+   "z": [
+    -1.15,
+    1.15
+   ],
+   "mats": [
+    "DRTRX Interior Carbon",
+    "DRTRX Stock Black Composite"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFL",
+   "x": [
+    0.22,
+    1.45
+   ],
+   "y": [
+    0.75,
+    2.05
+   ],
+   "z": [
+    -1.25,
+    -0.6
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFR",
+   "x": [
+    0.22,
+    1.45
+   ],
+   "y": [
+    0.75,
+    2.05
+   ],
+   "z": [
+    0.6,
+    1.25
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorRL",
+   "x": [
+    -0.85,
+    0.22
+   ],
+   "y": [
+    0.75,
+    2.05
+   ],
+   "z": [
+    -1.25,
+    -0.6
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_DoorRR",
+   "x": [
+    -0.85,
+    0.22
+   ],
+   "y": [
+    0.75,
+    2.05
+   ],
+   "z": [
+    0.6,
+    1.25
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -3.0,
+    -2.65
+   ],
+   "y": [
+    0.9,
+    1.65
+   ],
+   "z": [
+    -0.85,
+    0.85
+   ],
+   "notMats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -3.05,
+    -2.5
+   ],
+   "y": [
+    0.2,
+    0.95
+   ],
+   "z": [
+    -1.15,
+    1.15
+   ],
+   "notMats": [
+    "glass"
+   ]
+  }
+ ],
+ "splitPolygons": [
+  "glass"
+ ],
+ "splitSize": 0.6,
+ "dropTiny": 0.015,
+ "reportMin": 150,
+ "decimate": {
+  "RIGID_Cage": 0.3,
+  "DEFORM": 0.35,
+  "BREAKAWAY": 0.35,
+  "BRITTLE_Light": 0.15,
+  "BRITTLE_Glass": 1.0,
+  "wheel": 0.18
+ },
+ "hPoint": [
+  0.35,
+  1.05,
+  -0.45
+ ],
+ "expectGlass": 6,
+ "colors": {
+  "vehicle_mesh.024": [
+   0.03,
+   0.03,
+   0.03
+  ],
+  "vehicle_mesh.022": [
+   0.03,
+   0.03,
+   0.03
+  ],
+  "vehicle_mesh.015": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "vehicle_mesh.019": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "vehicle_mesh.017": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "vehicle_mesh.016": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "DRTRX Stock Black Composite": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "DRTRX TRX Decal": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "vehicle_mesh.009": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_mesh.008": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_mesh.007": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_mesh.006": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_mesh.005": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_mesh.004": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_mesh.003": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "DRTRX Interior Carbon": [
+   0.025,
+   0.025,
+   0.028
+  ],
+  "vehicle_mesh.002": [
+   0.04,
+   0.04,
+   0.04
+  ],
+  "vehicle_badges.001": [
+   0.04,
+   0.04,
+   0.04
+  ],
+  "vehicle_badges": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "vehicle_mesh.014": [
+   0.45,
+   0.45,
+   0.46
+  ],
+  "LUX ETHOS Brand Emblem": [
+   0.3,
+   0.3,
+   0.3
+  ],
+  "vehicle_mesh.021": [
+   0.6,
+   0.6,
+   0.62
+  ],
+  "Bronze.002": [
+   0.4,
+   0.25,
+   0.1
+  ],
+  "Headlight & Taillights": [
+   0.55,
+   0.55,
+   0.58
+  ],
+  "vehicle_mesh.012": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "Headlight Dark": [
+   0.05,
+   0.05,
+   0.055
+  ],
+  "DRTRX Headlight DRL": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "DRTRX Front LED Headlights": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "vehicle_lightsemissive": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "DRTRX Front Fog Lights": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "DRTRX Rear Parking Reverse Lighs": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "DRTRX Rear Bed Flood Light": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "DRTRX Rear Step Light": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "DRTRX Headlight Indicators": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "DRTRX Side Marker Lights": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "DRTRX Front Hood Marker Lights": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "DRTRX Mirror Indicators": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "DRTRX Rear Tail Lights": [
+   0.7,
+   0.03,
+   0.03
+  ],
+  "DRTRX Rear Indicator Lights": [
+   0.7,
+   0.03,
+   0.03
+  ],
+  "DRTRX Rear Roof Tail Light": [
+   0.7,
+   0.03,
+   0.03
+  ],
+  "DRTRX Rear Bumper Lower Lights": [
+   0.7,
+   0.03,
+   0.03
+  ],
+  "DRTRX Rear Side Marker Lights": [
+   0.7,
+   0.03,
+   0.03
+  ],
+  "Bead Lock Bolts": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "Air Filler Neck": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "LE Rim Logo": [
+   0.3,
+   0.3,
+   0.3
+  ],
+  "Carbon Ceramic Discs": [
+   0.25,
+   0.25,
+   0.26
+  ],
+  "Bead Lock Bolts.001": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "Air Filler Neck.001": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "LE Rim Logo.001": [
+   0.3,
+   0.3,
+   0.3
+  ],
+  "Carbon Ceramic Discs.001": [
+   0.25,
+   0.25,
+   0.26
+  ],
+  "Bead Lock Bolts.002": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "Air Filler Neck.002": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "LE Rim Logo.002": [
+   0.3,
+   0.3,
+   0.3
+  ],
+  "Carbon Ceramic Discs.002": [
+   0.25,
+   0.25,
+   0.26
+  ],
+  "Bead Lock Bolts.003": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "Air Filler Neck.003": [
+   0.5,
+   0.5,
+   0.52
+  ],
+  "LE Rim Logo.003": [
+   0.3,
+   0.3,
+   0.3
+  ],
+  "Carbon Ceramic Discs.003": [
+   0.25,
+   0.25,
+   0.26
+  ],
+  "vehicle_tire.001": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_tire.002": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_tire.003": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_tire.004": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_tire.005": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_tire.006": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_tire.007": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "vehicle_tire.022": [
+   0.02,
+   0.02,
+   0.02
+  ]
+ }
+}

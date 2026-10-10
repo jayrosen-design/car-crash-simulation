@@ -1,0 +1,721 @@
+{
+ "name": "z350",
+ "title": "Nissan 350Z",
+ "credit": {
+  "title": "Nissan 350Z",
+  "author": "CGTrader",
+  "license": "CGTrader Royalty Free License",
+  "url": "https://www.cgtrader.com/pages/terms-and-conditions"
+ },
+ "blend": "models/Nissan 350z/350z.blend",
+ "wheelbase": 2.65,
+ "body": [
+  "Plane",
+  "Plane.002",
+  "Plane.003",
+  "Plane.005",
+  "Plane.006",
+  "Plane.013",
+  "Plane.015",
+  "Plane.016",
+  "Plane.024",
+  "Plane.025",
+  "Plane.026",
+  "Plane.027",
+  "Plane.028",
+  "Plane.029",
+  "Plane.030",
+  "Plane.031",
+  "Plane.032",
+  "Plane.033",
+  "Plane.034",
+  "Plane.035",
+  "Plane.037",
+  "Plane.038",
+  "Plane.080",
+  "Plane.081",
+  "Plane.082",
+  "Plane.083",
+  "Circle.004",
+  "Circle.005",
+  "Circle.006",
+  "Circle.007",
+  "Circle.008",
+  "Circle.009",
+  "Circle.010",
+  "Circle.011",
+  "Circle.032",
+  "Circle.033",
+  "Circle.034",
+  "Circle.035",
+  "Circle.036",
+  "Circle.038"
+ ],
+ "wheels": {
+  "FL": "Plane.009",
+  "FR": "Plane.012",
+  "RL": "Plane.011",
+  "RR": "Plane.010"
+ },
+ "wheelExtra": [
+  "Circle.039",
+  "Circle.045",
+  "Circle.002",
+  "Circle.040",
+  "Circle.043"
+ ],
+ "wheelRim": [
+  "Rim",
+  "JrLogo"
+ ],
+ "textureSplit": {
+  "PolarizedWindow": {
+   "image": "media/lab-side.jpg",
+   "palette": [
+    [
+     "outer",
+     "glass",
+     [
+      0.02,
+      0.03,
+      0.04
+     ]
+    ]
+   ]
+  }
+ },
+ "materials": {
+  "drop": [
+   "SeatsLeather",
+   "InteriorCarpet",
+   "InterRoof"
+  ],
+  "glass": [
+   "Window",
+   "PolarizedWindow",
+   "WindowPlastic"
+  ],
+  "light": [
+   "PolarizedLight",
+   "LightInsideBase",
+   "BrakeChromeInside",
+   "BrakeLightGlassCover",
+   "BrakeRivetMaterial",
+   "Blinker",
+   "ReverseLightCover"
+  ],
+  "chrome": [
+   "ZChromeDetail",
+   "Mirror",
+   "NissanBadge",
+   "Handle",
+   "ExhaustSystem"
+  ],
+  "trim": [
+   "Blacks",
+   "WheelWell",
+   "InterPlasticDashRough",
+   "SmoothPlastic",
+   "License",
+   "Caliper",
+   "Wheelhub",
+   "BrakeDisk",
+   "BrakeDiskOuter.001",
+   "ZChromeDetailMatte",
+   "JrLogo"
+  ],
+  "rim": [
+   "Rim"
+  ],
+  "tire": [
+   "TireWithNormal"
+  ]
+ },
+ "colors": {
+  "Blacks": [
+   0.015,
+   0.015,
+   0.015
+  ],
+  "WheelWell": [
+   0.01,
+   0.01,
+   0.01
+  ],
+  "WindowPlastic": [
+   0.01,
+   0.01,
+   0.01
+  ],
+  "Window": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "PolarizedWindow": [
+   0.02,
+   0.03,
+   0.04
+  ],
+  "PolarizedLight": [
+   0.85,
+   0.87,
+   0.9
+  ],
+  "LightInsideBase": [
+   0.75,
+   0.75,
+   0.77
+  ],
+  "BrakeChromeInside": [
+   0.7,
+   0.7,
+   0.72
+  ],
+  "BrakeLightGlassCover": [
+   0.7,
+   0.04,
+   0.03
+  ],
+  "BrakeRivetMaterial": [
+   0.75,
+   0.05,
+   0.04
+  ],
+  "Blinker": [
+   0.9,
+   0.45,
+   0.0
+  ],
+  "ReverseLightCover": [
+   0.9,
+   0.9,
+   0.92
+  ],
+  "Mirror": [
+   0.7,
+   0.72,
+   0.75
+  ],
+  "Handle": [
+   0.6,
+   0.6,
+   0.62
+  ],
+  "ExhaustSystem": [
+   0.45,
+   0.45,
+   0.46
+  ],
+  "NissanBadge": [
+   0.7,
+   0.7,
+   0.72
+  ],
+  "License": [
+   0.8,
+   0.8,
+   0.75
+  ],
+  "Rim": [
+   0.2,
+   0.2,
+   0.21
+  ],
+  "JrLogo": [
+   0.05,
+   0.05,
+   0.05
+  ],
+  "TireWithNormal": [
+   0.02,
+   0.02,
+   0.02
+  ],
+  "Wheelhub": [
+   0.05,
+   0.05,
+   0.05
+  ],
+  "BrakeDisk": [
+   0.35,
+   0.35,
+   0.36
+  ],
+  "BrakeDiskOuter.001": [
+   0.35,
+   0.35,
+   0.36
+  ],
+  "Caliper": [
+   0.8,
+   0.3,
+   0.04
+  ],
+  "Paint": [
+   0.55,
+   0.08,
+   0.06
+  ]
+ },
+ "regions": [
+  {
+   "part": null,
+   "x": null,
+   "y": null,
+   "z": null,
+   "mats": [
+    "PolarizedWindow"
+   ]
+  },
+  {
+   "part": "RIGID_Cage_Body",
+   "x": null,
+   "y": null,
+   "z": null,
+   "mats": [
+    "WindowPlastic"
+   ]
+  },
+  {
+   "part": "RIGID_Cage_Body",
+   "x": null,
+   "y": null,
+   "z": null,
+   "mats": [
+    "ExhaustSystem"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassWS",
+   "x": [
+    -0.1,
+    1.0
+   ],
+   "y": [
+    0.8,
+    1.35
+   ],
+   "z": [
+    -0.85,
+    0.85
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassRear",
+   "x": [
+    -1.7,
+    -0.6
+   ],
+   "y": [
+    0.8,
+    1.35
+   ],
+   "z": [
+    -0.65,
+    0.65
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFL",
+   "x": [
+    -0.7,
+    0.35
+   ],
+   "y": [
+    0.85,
+    1.3
+   ],
+   "z": [
+    -0.85,
+    -0.5
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassFR",
+   "x": [
+    -0.7,
+    0.35
+   ],
+   "y": [
+    0.85,
+    1.3
+   ],
+   "z": [
+    0.5,
+    0.85
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQL",
+   "x": [
+    -1.1,
+    -0.65
+   ],
+   "y": [
+    0.85,
+    1.3
+   ],
+   "z": [
+    -0.85,
+    -0.5
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BRITTLE_GlassQR",
+   "x": [
+    -1.1,
+    -0.65
+   ],
+   "y": [
+    0.85,
+    1.3
+   ],
+   "z": [
+    0.5,
+    0.85
+   ],
+   "mats": [
+    "glass"
+   ]
+  },
+  {
+   "part": "BREAKAWAY_MirrorL",
+   "x": [
+    0.05,
+    0.5
+   ],
+   "y": [
+    0.85,
+    1.15
+   ],
+   "z": [
+    -1.1,
+    -0.79
+   ],
+   "minTris": 50
+  },
+  {
+   "part": "BREAKAWAY_MirrorR",
+   "x": [
+    0.05,
+    0.5
+   ],
+   "y": [
+    0.85,
+    1.15
+   ],
+   "z": [
+    0.79,
+    1.1
+   ],
+   "minTris": 50
+  },
+  {
+   "part": "BRITTLE_LightHL",
+   "x": [
+    1.4,
+    2.15
+   ],
+   "y": [
+    0.5,
+    0.9
+   ],
+   "z": [
+    -0.9,
+    -0.35
+   ],
+   "mats": [
+    "light",
+    "chrome",
+    "trim"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightHR",
+   "x": [
+    1.4,
+    2.15
+   ],
+   "y": [
+    0.5,
+    0.9
+   ],
+   "z": [
+    0.35,
+    0.9
+   ],
+   "mats": [
+    "light",
+    "chrome",
+    "trim"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTL",
+   "x": [
+    -2.2,
+    -1.35
+   ],
+   "y": [
+    0.65,
+    0.98
+   ],
+   "z": [
+    -0.85,
+    -0.3
+   ],
+   "mats": [
+    "light",
+    "chrome",
+    "trim"
+   ]
+  },
+  {
+   "part": "BRITTLE_LightTR",
+   "x": [
+    -2.2,
+    -1.35
+   ],
+   "y": [
+    0.65,
+    0.98
+   ],
+   "z": [
+    0.3,
+    0.85
+   ],
+   "mats": [
+    "light",
+    "chrome",
+    "trim"
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    0.78,
+    1.0
+   ],
+   "y": [
+    0.64,
+    1.1
+   ],
+   "z": [
+    -0.74,
+    0.74
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    1.0,
+    1.2
+   ],
+   "y": [
+    0.64,
+    1.1
+   ],
+   "z": [
+    -0.7,
+    0.7
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    1.2,
+    1.4
+   ],
+   "y": [
+    0.64,
+    1.1
+   ],
+   "z": [
+    -0.66,
+    0.66
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    1.4,
+    1.6
+   ],
+   "y": [
+    0.64,
+    1.1
+   ],
+   "z": [
+    -0.62,
+    0.62
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    1.6,
+    1.8
+   ],
+   "y": [
+    0.64,
+    1.1
+   ],
+   "z": [
+    -0.58,
+    0.58
+   ]
+  },
+  {
+   "part": "DEFORM_Hood",
+   "x": [
+    1.8,
+    2.0
+   ],
+   "y": [
+    0.64,
+    1.1
+   ],
+   "z": [
+    -0.54,
+    0.54
+   ]
+  },
+  {
+   "part": "DEFORM_BumperF",
+   "x": [
+    1.72,
+    2.3
+   ],
+   "y": [
+    0.0,
+    1.0
+   ],
+   "z": null
+  },
+  {
+   "part": "DEFORM_FenderL",
+   "x": [
+    0.66,
+    1.75
+   ],
+   "y": [
+    0.22,
+    0.95
+   ],
+   "z": [
+    -1.0,
+    -0.45
+   ]
+  },
+  {
+   "part": "DEFORM_FenderR",
+   "x": [
+    0.66,
+    1.75
+   ],
+   "y": [
+    0.22,
+    0.95
+   ],
+   "z": [
+    0.45,
+    1.0
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFL",
+   "x": [
+    -0.7,
+    0.66
+   ],
+   "y": [
+    0.27,
+    0.96
+   ],
+   "z": [
+    -1.0,
+    -0.55
+   ]
+  },
+  {
+   "part": "DEFORM_DoorFR",
+   "x": [
+    -0.7,
+    0.66
+   ],
+   "y": [
+    0.27,
+    0.96
+   ],
+   "z": [
+    0.55,
+    1.0
+   ]
+  },
+  {
+   "part": "DEFORM_Trunk",
+   "x": [
+    -2.25,
+    -0.72
+   ],
+   "y": [
+    0.8,
+    1.35
+   ],
+   "z": [
+    -0.56,
+    0.56
+   ]
+  },
+  {
+   "part": "DEFORM_BumperR",
+   "x": [
+    -2.3,
+    -1.65
+   ],
+   "y": [
+    0.0,
+    0.8
+   ],
+   "z": null
+  }
+ ],
+ "splitPolygons": [
+  "paint",
+  "glass"
+ ],
+ "splitSize": 1.0,
+ "reportMin": 100,
+ "dropTiny": 0.012,
+ "decimate": {
+  "RIGID_Cage": 0.1,
+  "DEFORM": 0.12,
+  "DEFORM_Door": 0.09,
+  "BREAKAWAY": 0.15,
+  "BRITTLE_Light": 0.04,
+  "BRITTLE_Glass": 0.3,
+  "wheel": 0.025
+ },
+ "hPoint": [
+  -0.1,
+  0.45,
+  -0.4
+ ],
+ "expectGlass": 6
+}

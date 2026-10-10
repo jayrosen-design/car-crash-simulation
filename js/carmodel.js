@@ -468,7 +468,8 @@ gl_Position = projectionMatrix * mvPosition;`);
       if (!obj.isMesh) return;
       let top = obj;
       while (top.parent && !/^(RIGID_|DEFORM_|BRITTLE_|BREAKAWAY_)/.test(top.name)) top = top.parent;
-      const part = top.name.replace(/_\d+$/, '');
+      // (three.js names a node's extra primitives name_1, name_2 ...; a Blender mesh 'DEFORM_Hood.001' arrives as 'DEFORM_Hood001')
+      const part = top.name.replace(/_\d+$/, '').replace(/([A-Za-z])\d{3}$/, '$1');
       const geo = obj.geometry.clone();
       geo.applyMatrix4(obj.matrixWorld);
       if (part === 'RIGID_Mech_Wheel') { wheelGeo.push({ geo, mat: materialFor(obj.material.name, 'wheel') }); return; }

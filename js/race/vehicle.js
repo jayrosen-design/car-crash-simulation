@@ -130,6 +130,7 @@ const RaceCar = (() => {
       // engine: power-limited drive force, shared between the driven wheels
       const power = tune.power * (car.boosting ? BOOST * (1 + 0.4 * car.kick) : 1);
       let drive = thr * Math.min(m * G * (tune.launch || 0.95), power / Math.max(4, Math.abs(vx)));
+      if (tune.vlimit && vx > tune.vlimit * (car.boosting ? 1.15 : 1)) drive = 0;   // an electronic speed limiter (m/s)
       // reverse: 0.5 g and 40 kW; the player's car backs up briskly instead (0.8 g, 90 kW, at most 58 km/h)
       if (car.reverse) drive = car.arcade ? -thr * (vx < -16 ? 0 : Math.min(m * G * 0.8, 90e3 / Math.max(3, Math.abs(vx))))
         : -thr * Math.min(m * G * 0.5, 40e3 / Math.max(3, Math.abs(vx)));

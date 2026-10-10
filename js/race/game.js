@@ -29,7 +29,7 @@
  * rigid bodies (rigs.js) instead of on the crash solver; the drone hops on the handbrake; the tank
  * doesn't crash (it stalls) and races unranked: no place, no best, done when the last rival is.
  *
- * URL: ?car=<key> (the car the select screen starts on: lexus, mustang, halcyon ...), ?seed=<n> (another city),
+ * URL: ?car=<key> (the car the select screen starts on: lexus, mustang, civic ...), ?seed=<n> (another city),
  * ?damage=dramatic, ?traffic=0,
  * ?test=wall150|headon|takedown (a scripted crash or takedown at once, results in
  * window.__race.test), ?worker=0, ?touch=1|0 (on-screen buttons on or off; by default on touch screens).
@@ -89,11 +89,11 @@ const RaceGame = (() => {
   // ---------------------------------------------------------------- the grid
   // aggr: how readily a rival picks a fight (ai.js), 0 to 1
   const RIVALS = [
-    { name: 'Ava Lindqvist', key: 'halcyon', paint: 0x2b5fa8, skill: 1.0, aggr: 0.5 },
+    { name: 'Ava Lindqvist', key: 'supra', paint: 0x2b5fa8, skill: 1.0, aggr: 0.5 },
     { name: 'Marco Reyes', key: 'lexus', paint: 0xe0b022, skill: 0.985, aggr: 0.25 },
     { name: 'Kenji Tanaka', key: 'mustang', paint: 0x1f7a4a, skill: 0.975, aggr: 0.8 },
-    { name: 'Léa Moreau', key: 'cadence', paint: 0xe8e8e6, skill: 0.965, aggr: 0.35 },
-    { name: 'Sam Okafor', key: 'bastion', paint: 0xd2541e, skill: 0.955, aggr: 0.9 },
+    { name: 'Léa Moreau', key: 'civic', paint: 0xe8e8e6, skill: 0.965, aggr: 0.35 },
+    { name: 'Sam Okafor', key: 'trx', paint: 0xd2541e, skill: 0.955, aggr: 0.9 },
     { name: 'Nina Novak', key: 'lexus', paint: 0x111214, skill: 0.945, aggr: 0.45 },
     { name: 'Ravi Mehta', key: 'mustang', paint: 0x6b2c8f, skill: 0.935, aggr: 0.65 },
   ];
@@ -497,7 +497,7 @@ const RaceGame = (() => {
   // recorder it stays on the grid). A model is made the first time its car is picked; until
   // it's ready the start button waits.
   const show = level.poseAt(level.start.s + 10, 3.5);
-  const DRIVE = { AWD: 'all-wheel', RWD: 'rear-wheel', FWD: 'front-wheel', thrust: 'rotor', tracked: 'tracked' };
+  const DRIVE = { AWD: 'all-wheel', RWD: 'rear-wheel', FWD: 'front-wheel', thrust: 'rotor', tracked: 'six-wheel' };
   const BARS = [   // [label, fill 0-1 from the measured figures, value]
     ['Top speed', (p) => (p.top - 60) / 240, (p) => `${Math.round(p.top)} km/h`],
     ['0–100 km/h', (p) => p.t100 < 0 ? 0 : (10 - p.t100) / 7, (p) => p.t100 < 0 ? '–' : `${p.t100.toFixed(1)} s`],
