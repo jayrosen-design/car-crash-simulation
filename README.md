@@ -163,12 +163,12 @@ In playback:
 | Look back | B | Left bumper |
 | Back on the road | R | View |
 | Pause | Esc, P, or the Menu button at the top | Menu |
-| Music on or off | M, or Music in the pause menu | the pause menu |
+| Music on or off; the song | M, or Music and Song in the pause menu | the pause menu |
 | Menus (car select, pause, results) | arrows or WASD, Enter | d-pad or left stick, A |
 
 Controllers work through the Gamepad API's standard mapping, with rumble where the browser supports it.
 
-**Ways out.** The car select has links home and to Destruction. The pause menu offers Resume, Restart race (straight back to the grid with the same car and track), Quit to car and track select, Music on or off, Play Destruction and Home. The results offer Race again (also straight to the grid), Change car or track, the highlights, Play Destruction and Home.
+**Ways out.** The car select has links home and to Destruction. The pause menu offers Resume, Restart race (straight back to the grid with the same car and track), Quit to car and track select, Music on or off, the song, Play Destruction and Home. The results offer Race again (also straight to the grid), Change car or track, the highlights, Play Destruction and Home.
 
 **On a touch screen** (phones and tablets), on-screen buttons appear on their own while racing:
 - **Left thumb:** steer left and right.
@@ -206,13 +206,14 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Slams.** Each contact you make with a rival is a rub, a light slam or a full slam, by how hard you drove into it along the contact normal. Your nose into its tail is a shunt (light from 3 m/s, full from 7 m/s); anything else is a side slam (2.5 and 5 m/s). A slam takes a little of the rival's boost for you. Two cars can't slam each other again within a second.
   - **Out of control.** A full slam takes the rival's steering away for 0.4–1 s, and for a second any solid touch (1.5 m/s) wrecks it.
   - **Takedowns.** A rival that wrecks within two seconds of your hit is yours: a wall, traffic or another car at over 7 m/s, a crash anyway, or a spin past 60°. It counts half a second later, and is lost if you crash first. Two within 1.5 s are a double; three or more within 30 s a spree.
-  - **The takedown camera.** A takedown at speed is watched like your own crash: the world steps back to just before the hit, and the rival (and the car it hit, if it's a car) goes through the crash solver, so it crumples, sheds parts, breaks its glass and rolls. The camera circles it in slow motion while the race runs at 3% speed with your car holding its line at part throttle, so there's nothing to steer. It lasts about 1.5 s after the hit (Enter skips it after 0.8 s); then the race carries on from where you were, and the wrecked rival rejoins 30 m back.
+  - **The takedown camera.** A takedown at speed is watched like your own crash: the world steps back to just before the hit, and the rival (and the car it hit, if it's a car) goes through the crash solver, so it crumples, sheds parts, breaks its glass and rolls. The camera circles it in slow motion while the race runs at 3% speed with your car holding its line at part throttle, so there's nothing to steer. The camera stays on the rival, eased, and glides round a building in its way. The takedown counts (and says so) as it starts. It lasts about 4 s, never more than 4.5 s; a fresh press of the gas (or Enter) skips it after 0.6 s. Then the race carries on from where you were, and the wrecked rival rejoins 30 m back.
   - **Psyche-outs.** A rival that wrecks with no contact while you're tailgating it (within 7 m, in the last second) is a takedown too.
   - **Takedown denied.** A rival you slammed that touches something and comes through its two seconds.
   - **Rivals fight back.** From 10 s into the race, the aggressive ones pick fights (`ai.js`), at most two at a time and none while you're a ghost after a respawn. A rival picks a car within 30 m, you first: it catches up through the traffic (or eases off to let you come alongside), takes a lane next to you on the clearer side, swings out and steers into you for up to 1.2 s, then cools down (longer after a slam that landed, shorter the more aggressive it is). It stands down when it hits anything else. Aggressive rivals also move across to block you when you're catching them from close behind. Rivals fight each other the same way. Each slam you land on a rival makes it more aggressive.
   - **Slammed.** A rival's slam on you follows the same rules, the other way round: it takes some of your boost, and a full one turns your wheel away from the hit (all of it for 0.3 s, then handed back over up to a second). Crash within two seconds of a rival driving into you and it took you down ("taken down by …" on the crash screen); it's then marked as your revenge target (a tag over its car and a red ring on the map), and taking it down is a revenge takedown. Come through a rival's full slam after touching something and it's a lucky escape.
   - Without your help, a rival needs 13 m/s into a wall (nose or tail first) and 20 m/s into another rival, so the pack can jostle. Wrecked rivals spin away from the hit and rejoin three seconds later.
 - **Collisions.** Walls are slippery, and a car already spinning hard isn't spun harder by one, so a scrape along a wall keeps most of your speed (91% after a 26° scrape at 108 km/h). Sliding into a wall sideways is a bounce, not a wreck. Car against car, the lighter car is pushed out more, and steering into a car alongside shoves it (an extra push of 12 m/s² at full lock, on top of the contact). A wreck is shoved out of the way without slowing the car that hits it.
+  - **Back on the road.** A car put back on the road (you after a crash, a rival after a wreck) is a ghost for 2 s: it can't crash, and it passes through a car it was put down on top of. Once it's clear of the other cars it's solid again, so it can't drive through a car from behind.
 - **Health, then the crash.** Your car has a health bar rather than crashing at the first hard hit.
   - **Damage.** Each hit takes damage by how hard it is. That is the change of speed it gives the car, $\Delta v = (1+e)\,v_n$ from the approach speed along the contact normal and the bounce. Against another car it is the share $m_o/(m+m_o)$ of that. Against a wall it is the full amount nose or tail first, down to 0.4 of it sliding in sideways. Damage $= \max(0,\ \Delta v - 2.5)^2/650$ of the bar.
   - **What hits cost.** Scrapes and nudges are free, and bumping rivals costs little: an 8 m/s nudge is about 1%. A square hit on a wall at 47 km/h takes about a fifth. From about 90 km/h a single hit empties the bar.
@@ -264,6 +265,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Facades.** Windows, floors and shop fronts are drawn by a shader over the wall textures, with some windows lit.
   - **Time of day.** `RaceRender.lookFor(level.look)`: dusk, night (`RaceRender.NIGHT`: a starry sky with a moon, the city's glow on the horizon, the street lights' pools doing the work) or day (the street HDRI, no glows or bloom).
   - **Dusk.** The same time of day as Destruction (`RaceRender.DUSK`): a low orange sun and a violet sky, a procedural sky and environment map for the reflections, more windows lit. A sun shadow map follows the car.
+  - **Chase camera.** A vehicle over 5.4 m long or 2.05 m tall is followed from further back and higher (the Ram TRX a little, the Type 87 most), so the road shows over it; the cars are followed as before. The same in Destruction.
   - **Lights.** Pools of light under the street lights. Every car's headlights and tail lights glow (camera-facing sprites, placed on each model's own lamps), and a selective bloom makes them and the lit signs shine. The bloom is off on touch screens.
   - **Guard rails.** Instanced rails along both kerbs.
   - **The other tracks' dressing.** The harbour's container stacks are one instanced set (colliders too), its gantry cranes carry glowing red lights, and its water is dark with a soft sheen and a ripple normal map. The hillside's open ground is grass; its park trees (away from the road) use a coarser crown than the street's (560 triangles rather than 1,260).
@@ -332,11 +334,12 @@ Open it from the home page, the **Simulation** menu in the simulator, or `/destr
 | Boost; after the crash, the Crashbreaker | Shift | A or right bumper |
 | Handbrake | Space | X |
 | Retry (at any time) | R, or Enter on the results | View, or A |
+| Move the camera after the crash | drag (or a finger; pinch to zoom); A / D and W / S or the arrows; the wheel or Q / E to zoom | either stick; triggers to zoom |
 | Pause | Esc, P, or the Menu button at the top left | Menu |
-| Music on or off | M, or Music in the pause menu | the pause menu |
+| Music on or off; the song | M, or Music and Song in the pause menu | the pause menu |
 | Menus (select, pause, results) | arrows or WASD, Enter | d-pad or left stick, A |
 
-The car select has links home and to Race. The pause menu offers Resume, Retry, Quit to car and level select, Music on or off, Play Race and Home; the results offer Retry, Change car, Drone replay, Play Race and Home.
+The car select has links home and to Race. The pause menu offers Resume, Retry, Quit to car and level select, Music on or off, the song, Play Race and Home; the results offer Retry, Change car, Drone replay, Play Race and Home.
 
 On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once the Crashbreaker is ready, and Retry sits at the top. The running total moves to the top left.
 
@@ -387,6 +390,7 @@ On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once
   - +$100,000 in the middle of the junction, for your wreck.
   - Multipliers stack, up to ×8, and scale the total.
 - **The end.** The attempt ends when nothing has paid out for 4 s, or 25 s after the crash. The total counts up against the targets, a medal is stamped, and the results show what was wrecked. Retry starts the same junction again at once.
+- **Watching.** From the crash to the results, the camera circles the action on its own. You can take it over: drag it, or use the keys or a stick, to go round and up or down, and zoom with the wheel, a pinch, Q / E or the triggers. It stays where you put it and starts circling again 2.5 s after you let go. A building, lorry, bus or tanker coming between it and the action pulls it in, in front of it, and it never sits inside one. A hint shows until you've moved it once. The same works in the drone replay.
 - **Drone replay.** The attempt is recorded as it's drawn: the last 3.5 s of the run before the impact, then everything to the end of the tally (at most 40 s): the traffic and wrecks, your car and its crash, the pieces that came off, the fires, the props and the explosions. From the results, **Drone replay** plays it back as the camera crew's drone filmed it, following the run from above, then circling the impact and the pile-up. A click on the bar, Esc or Enter ends it and puts the results back.
 
 **What things are worth.** A vehicle pays its value times its damage (0 to 1) as the damage grows, and a quarter more when totalled. Explosions pay a bonus. Props pay their value the first time they're knocked.
@@ -616,6 +620,8 @@ Playback finds the two frames around the playback time and blends between them (
 | Simulator and crash labs | `simulator` | Impact Velocity |
 
 Three songs of the soundtrack's cue sheet aren't made yet; until they are, the song with the closest brief stands in (the `CUES` table in `music.js`).
+
+**Picking the song.** The pause menu's **Song** button (both games) steps through each level's own song and then the seven songs. A pick plays at once and then plays on every Race track and Destruction junction; the menus and results keep theirs. It's kept in the browser (`music-song`).
 
 - **Mixing.** A change of song is an equal-power crossfade: 1.2 s out and 0.8 s in, and 2.5 s into the results song. Each song is trimmed to −16 LUFS, and the music plays 6 dB under that, below the game's own sounds. A pause ducks it to 35% and muffles it (a 900 Hz low-pass); the Race crash camera and replays, and the Destruction mode's slow-motion impact, duck it to 50%.
 - **Loops.** Each song loops on a splice from late in the song back to an earlier point. The splice sits 25 ms before a drum hit that both places share, with the two hits lined up to the millisecond and a 40 ms crossfade, so the beat carries on. `tools/build-music.js --analyze` finds the splices: the rhythm (onsets in four bands) and the sound (band energies) in the 6 s before both points must match. Fuel for the Fire loops before its groove changes at 84 s, so it never reaches its halftime break.

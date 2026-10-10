@@ -917,7 +917,7 @@ const RaceGame = (() => {
       if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4 * Math.max(1, specs[carKey].length / 4.86), 1.5, level); }
       else if (tdCam) updateTakedownCam(dt, input);
       else {
-        R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting, eye: eyeOf(carKey), pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll }, dt);
+        R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting, size: [specs[carKey].length, specs[carKey].height], eye: eyeOf(carKey), pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll }, dt);
         // the boost's first surge widens the view a little more (the camera keeps its own smoothed
         // field of view, which it puts back next frame)
         if (car.kick > 0) { R.camera.fov += 5 * car.kick; R.camera.updateProjectionMatrix(); }
@@ -1065,7 +1065,9 @@ const RaceGame = (() => {
   // A rival the player takes down by putting it into a wall, a post or another car crashes on the full
   // crash solver (Dramatic damage: it comes apart), and the camera leaves the player to watch it in
   // slow motion: the race all but stops (3% speed), the player's car holds a steady throttle (nothing to
-  // steer), and the wreck is orbited through the impact, then the race carries on. The rival rejoins
+  // steer), and the wreck is orbited through the impact (about 4 s, at most 4.5; a fresh press of the
+  // gas or Enter skips it), then the race carries on. The takedown counts as the camera starts. The
+  // camera follows the rival alone, smoothly, gliding round a building in its way. The rival rejoins
   // behind; a traffic car it hit leaves.
   let tdCam = null;
   function startTakedownCam(r, e) {
@@ -1095,7 +1097,8 @@ const RaceGame = (() => {
     const tu = bodies.map((q, u) => ({ body: q, key: q.car.key, model: R.wrecks[q.car.key], view: cr.unitView(u), paint: paintOf(q) }));
     for (const U of tu) { U.body.frozen = true; U.model.group.visible = true; if (U.paint !== undefined) U.model.setPaint(U.paint); }
     r.wreck = 99;
-    tdCam = { cr, units: tu, r, t: 0, real: 0, cur: { k: 0 }, ev: [], angle: Math.atan2(car.z - c.z, car.x - c.x) + 0.5, name: r.name, at: simT,
+    rules.commit(r, simT);
+    tdCam = { cr, units: tu, r, t: 0, real: 0, cur: { k: 0 }, ev: [], angle: Math.atan2(car.z - c.z, car.x - c.x) + 0.5, name: r.name, at: simT, P: null, gas: true,
       rec: { cr, units: tu.map((U, u) => ({ key: U.key, model: U.key, u, paint: U.paint })) } };
     noteMoment('takedown', { name: r.name });
     R.setCrashLift(ground);
@@ -1114,14 +1117,23 @@ const RaceGame = (() => {
       td.t = Math.min(td.t + dt * speed, limit);
       let k = Math.min(td.cur.k, n - 2); while (k > 0 && F.t[k] > td.t) k--; while (k < n - 2 && F.t[k + 1] <= td.t) k++; td.cur.k = k;
       const k2 = Math.min(n - 1, k + 1), s = F.t[k2] > F.t[k] ? Math.min(1, Math.max(0, (td.t - F.t[k]) / (F.t[k2] - F.t[k]))) : 0;
-      const P = { x: 0, z: 0, y: cr.lift };
-      for (const U of td.units) { R.deform(U.model, U.view, k, k2, s, td.t); const ax = U.view.frames.axes[k]; P.x += ax[0] / td.units.length; P.z += ax[2] / td.units.length; }
+      for (const U of td.units) R.deform(U.model, U.view, k, k2, s, td.t);
+      // the camera: on the rival (unit 0), eased, circling; R.orbit steps it round a building, and it
+      // carries on from there rather than swinging back
+      const ax = td.units[0].view.frames.axes[k], ke = 1 - Math.exp(-dt * 5);
+      if (!td.P) td.P = { x: ax[0], z: ax[2], y: cr.lift };
+      td.P.x += (ax[0] - td.P.x) * ke; td.P.z += (ax[2] - td.P.z) * ke;
       fireEvents(cr, td.t, td.units, td.cur, td.ev);   // its own queue: the player's crash queue isn't touched
-      td.angle += dt * 0.4;
-      R.orbit(P, td.angle, 8, 2.1, level);
+      td.angle = R.orbit(td.P, td.angle + dt * 0.4, 8, 2.1, level);
+      // (glides there: a step round a building is a quick move, not a cut)
+      if (!td.cp) td.cp = R.camera.position.clone(); else td.cp.lerp(R.camera.position, 1 - Math.exp(-dt * 7));
+      R.camera.position.copy(td.cp); R.camera.lookAt(td.P.x, td.P.y + 0.7, td.P.z);
       fxScale = speed;
-      const over = (cr.done && td.t >= F.t[n - 1] - 1e-6) || (cr.T0 >= 0 && td.t >= cr.T0 + 1.5);
-      if (over || (td.real > 0.8 && input.start)) endTakedownCam();
+      if (!(input.throttle > 0.5)) td.gas = false;   // the gas held from the race doesn't skip it; a new press does
+      const skip = td.real > 0.6 && (input.start || (input.throttle > 0.5 && !td.gas));
+      const over = (cr.done && td.t >= F.t[n - 1] - 1e-6) || (cr.T0 >= 0 && td.t >= cr.T0 + 1.2) || td.real > 4.5;
+      if (td.real > 0.6) { $('#td-skip').hidden = false; if (TOUCH) $('#td-skip').textContent = 'Tap Gas to carry on'; }
+      if (over || skip) endTakedownCam();
     } else if (td.real > 3) endTakedownCam();   // the solver never got going: give up on it
     FX.setTimeScale(Math.max(0.3, speed));
   }
@@ -1129,6 +1141,7 @@ const RaceGame = (() => {
     const td = tdCam;
     if (!td) return;
     tdCam = null;
+    $('#td-skip').hidden = true;
     crashSmoke.stop();
     if (!td.cr.done) td.cr.stop();
     for (const U of td.units) { U.body.frozen = false; U.model.clearDestruction(); U.model.group.visible = false; }

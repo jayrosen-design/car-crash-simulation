@@ -280,7 +280,10 @@ const RaceWorld = (() => {
         if (b.frozen) continue;
         if (!b.kinematic) b.car.step(dt, inputs(b) || {});
         vertical(b, dt);
+        if (b.ghost > (b.ghostWas || 0)) b.solid = false;   // put back again: through what it's on top of, again
         if (b.ghost > 0) b.ghost = Math.max(0, b.ghost - dt);
+        b.ghostWas = b.ghost;
+        b.overlap = false;
       }
       // static contacts (twice: a corner can be pushed into a neighbouring shape); a car in the air
       // clears the low ones
@@ -303,19 +306,22 @@ const RaceWorld = (() => {
         for (let j = i + 1; j < bodies.length; j++) {
           const b = bodies[j];
           if (b.frozen || (a.kinematic && b.kinematic)) continue;
-          if (a.ghost || b.ghost) continue;
           const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z, r = a.reach + b.reach;
           if (dx * dx + dz * dz > (r * r > 49 ? r * r : 49)) continue;
           const dy = a.car.y - b.car.y;
           if (dy > (b.top || 1.2) || -dy > (a.top || 1.2)) continue;   // one flying over the other
           const A = box(a, BA), B = box(b, BB), hit = vsCar(A, B);
           if (!hit) continue;
+          // a car put back on the road (a ghost) passes through what it was put down inside, but once
+          // it's clear of everything it's solid again (it still can't crash until its time is up)
+          if ((a.ghost > 0 && !a.solid) || (b.ghost > 0 && !b.solid)) { a.overlap = b.overlap = true; continue; }
           // a hit traffic car becomes a free body
           if (a.kinematic) a.kinematic = false;
           if (b.kinematic) b.kinematic = false;
           resolveCars(a, b, hit, dt);
         }
       }
+      for (const b of bodies) if (b.ghost > 0 && !b.overlap) b.solid = true;
       tick++;
       return events;
     }

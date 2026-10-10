@@ -36,6 +36,11 @@ const Music = (() => {
     'race:downtown': 'no-brakes-downtown', 'race:harbour': 'midnight-freight', 'race:hillside': 'full-throttle',
     'destruction:crossroads': 'fuel-for-the-fire', 'destruction:docklands': 'fuel-for-the-fire', 'destruction:boulevard': 'million-dollar-wreck',
   };
+  // the song the races and Destruction attempts play: null, each level's own; else one song for all of
+  // them (the pause menu's song button steps through them; kept in this browser)
+  let pick = (() => { try { const s = localStorage.getItem('music-song'); return SONGS[s] ? s : null; } catch (e) { return null; } })();
+  const isLevel = (cue) => /^(race|destruction):/.test(cue || '');
+  const songOf = (cue) => (pick && isLevel(cue) ? pick : CUES[cue]);
   const RESUME = new Set(['menu', 'simulator']);   // these pick up where they stopped; the rest start from the top
   const FADES = { results: [2.5, 1.5] };           // [out, in] s for a change to that cue; else 1.2 and 0.8 (1.5 and 1 from the results)
   const LEVEL = 0.5;      // the music under the game's own sounds (about -22 LUFS)
@@ -120,7 +125,7 @@ const Music = (() => {
   function preload(...cues) {
     if (OFF) return;
     for (const c of cues) {
-      const song = CUES[c];
+      const song = songOf(c);
       if (!song || asked.has(song)) continue;
       asked.add(song);
       queue = queue.then(() => { if (buffers.has(song) || buffers.size < KEEP) return load(song); }).catch(() => {});
@@ -200,9 +205,10 @@ const Music = (() => {
   // ---------------------------------------------------------------- what pages call
   // the song for a cue; a cue that plays the song already playing changes nothing
   function play(cue) {
-    if (OFF || !CUES[cue] || (want && want.cue === cue)) return;
-    const prev = want, song = CUES[cue];
-    want = { cue, song, prev: prev && prev.cue };
+    if (OFF || !CUES[cue] || (want && want.cue === cue && want.song === songOf(cue))) return;
+    const prev = want, song = songOf(cue);
+    want = { cue, song, prev: prev && prev.cue === cue ? prev.prev : prev && prev.cue };
+    for (const b of pickers) paintPick(b);
     if (deck && deck.song === song) { deck.cue = cue; return; }
     const p = load(song);
     queue = queue.then(() => p).catch(() => {});
@@ -260,6 +266,19 @@ const Music = (() => {
     if (on && deck) { title = SONGS[deck.song].title; showTitle(); }
   }
   const paint = (b) => { b.textContent = enabled ? 'Music: on' : 'Music: off'; b.setAttribute('aria-pressed', String(enabled)); };
+  // a button that steps the levels' song: each level's own, then each song in turn
+  const pickers = [], ORDER = [null, ...Object.keys(SONGS)];
+  function paintPick(b) {
+    const own = want && isLevel(want.cue) ? CUES[want.cue] : null;
+    b.textContent = pick ? 'Song: ' + SONGS[pick].title : 'Song: ' + (own ? SONGS[own].title + ' (the level\'s own)' : 'each level\'s own');
+  }
+  function choose(song) {
+    pick = SONGS[song] ? song : null;
+    try { if (pick) localStorage.setItem('music-song', pick); else localStorage.removeItem('music-song'); } catch (e) { /* not kept */ }
+    for (const b of pickers) paintPick(b);
+    if (want && isLevel(want.cue)) play(want.cue);   // the level playing now changes song at once
+  }
+  function bindPicker(b) { if (!b) return; pickers.push(b); paintPick(b); b.addEventListener('click', () => choose(ORDER[(ORDER.indexOf(pick) + 1) % ORDER.length])); }
   // a button that turns the music on and off (M does too)
   function bindButton(b) { if (!b) return; buttons.push(b); paint(b); b.addEventListener('click', () => setEnabled(!enabled)); }
   window.addEventListener('keydown', (e) => {
@@ -286,8 +305,9 @@ const Music = (() => {
   }
 
   return {
-    play, duck, preload, leave, bindButton, setEnabled, SONGS, CUES,
+    play, duck, preload, leave, bindButton, bindPicker, choose, setEnabled, SONGS, CUES,
     get enabled() { return enabled; },
+    get song() { return pick; },
     // for checks: what plays, where, and the mixer's output node
     get status() {
       return { ctx: ctx && ctx.state, want: want && want.cue, song: deck && deck.song, cue: deck && deck.cue, pos: deck && ctx ? +pos(deck, ctx.currentTime).toFixed(3) : null,

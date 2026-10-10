@@ -265,20 +265,23 @@ const RaceRender = (() => {
     // ------------------------------------------------ camera
     const cam = { mode: 'chase', pos: new T.Vector3(), look: new T.Vector3(), fov: 62, init: false, back: false, y: 0 };
     const tmp = new T.Vector3(), tgt = new T.Vector3(), CM = new T.Matrix4();
-    /* st: the followed car { x, z, h, y (its height over hills and in the air), speed, boost; for the
-     * cockpit camera eye: [x, y, z] the driver's eyes in the car's frame, pitch, roll }; dt: s */
+    /* st: the followed car { x, z, h, y (its height over hills and in the air), speed, boost; size:
+     * [length, height] (m; a long or tall vehicle, such as the armoured car, is followed from further
+     * back and higher; a car up to 5.4 m long and 2.05 m tall as before); for the cockpit camera eye:
+     * [x, y, z] the driver's eyes in the car's frame, pitch, roll }; dt: s */
     function follow(st, dt) {
       const c = Math.cos(st.h), s = Math.sin(st.h), sp = st.speed || 0;
       // the camera's height follows the car's smoothly (a jump lifts it a moment later)
       cam.y = cam.init ? cam.y + ((st.y || 0) - cam.y) * (1 - Math.exp(-dt * 6)) : (st.y || 0);
       if (cam.mode === 'chase') {
-        const back = cam.back ? -1 : 1, dist = 6.4 + Math.min(1.6, sp / 40), height = 2.15 + Math.min(0.5, sp / 120);
+        const L = st.size ? st.size[0] : 0, Hv = st.size ? st.size[1] : 0, big = Math.max(1, L / 5.4, Hv / 2.05), over = Math.max(0, Hv - 2.05);
+        const back = cam.back ? -1 : 1, dist = (6.4 + Math.min(1.6, sp / 40)) * big, height = (2.15 + Math.min(0.5, sp / 120)) * big + 2 * over;
         tgt.set(st.x - c * dist * back, cam.y + height, st.z - s * dist * back);
         if (!cam.init) { cam.pos.copy(tgt); cam.init = true; }
         const k = 1 - Math.exp(-dt * (cam.back ? 30 : 9));
         cam.pos.lerp(tgt, k);
         cam.pos.y = tgt.y;
-        cam.look.set(st.x + c * 4 * back, (st.y || 0) * 0.5 + cam.y * 0.5 + 1.1, st.z + s * 4 * back);
+        cam.look.set(st.x + c * 4 * big * back, (st.y || 0) * 0.5 + cam.y * 0.5 + 1.1 + 0.5 * over, st.z + s * 4 * big * back);
       } else {   // cockpit: the driver's eyes, pitching and rolling with the car, looking down the road
         const e = st.eye || [0, 1.2, -0.37];
         carMatrix(CM, st.x, st.z, st.h, st.pitch, st.roll, st.y);

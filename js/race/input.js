@@ -11,6 +11,8 @@
  *   reset        R                                View
  *   pause        Esc, P                           Menu
  *   menus        arrows, WASD; Enter              d-pad, left stick; A
+ *   camera move  A / D, W / S, arrows; Q / E      either stick; triggers (zoom)
+ *                (zoom), for Destruction's camera after the crash
  *
  * On a touch screen the game shows on-screen buttons (game.html #touch, bindTouch): steer left and
  * right, gas, brake, boost, drift (handbrake), and camera, back on the road, pause.
@@ -64,7 +66,8 @@ const RaceInput = (() => {
   const armed = [true, true];
   const flick = (i, v) => { if (Math.abs(v) < 0.3) armed[i] = true; else if (Math.abs(v) > 0.6 && armed[i]) { armed[i] = false; return Math.sign(v); } return 0; };
   /* -> { steer, throttle, brake, handbrake, boost, camera, lookBack, reset, pause, start, any, device,
-   *      nav: { x, y } (menu steps this poll: -1, 0 or 1; right and down positive) } */
+   *      nav: { x, y } (menu steps this poll: -1, 0 or 1; right and down positive),
+   *      cam: { x, y, zoom } (a free camera: round to the right, up, in; each -1 to 1) } */
   function poll(dt) {
     const k = (...c) => c.some(x => keys.has(x)), e = (...c) => c.some(x => pressed.has(x));
     // keyboard (and on-screen) steering: ease toward the key's direction, quicker back to centre
@@ -78,6 +81,7 @@ const RaceInput = (() => {
       camera: e('KeyC') || t('camera'), reset: e('KeyR') || t('reset'), pause: e('Escape', 'KeyP') || t('pause'), start: e('Enter', 'Space'),
       any: pressed.size > 0 || tapped.size > 0 || Object.values(touch).some(Boolean), device: Object.values(touch).some(Boolean) ? 'touch' : 'keyboard',
       nav: { x: (e('KeyD', 'ArrowRight') ? 1 : 0) - (e('KeyA', 'ArrowLeft') ? 1 : 0), y: (e('KeyS', 'ArrowDown') ? 1 : 0) - (e('KeyW', 'ArrowUp') ? 1 : 0) },
+      cam: { x: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0), y: (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0), zoom: (k('KeyE', 'Equal', 'NumpadAdd') ? 1 : 0) - (k('KeyQ', 'Minus', 'NumpadSubtract') ? 1 : 0) },
     };
     tapped.clear();
     // the first connected standard-mapping gamepad
@@ -104,6 +108,10 @@ const RaceInput = (() => {
       const fx = flick(0, gp.axes[0] || 0), fy = flick(1, gp.axes[1] || 0);
       out.nav.x = out.nav.x || (edge(15) ? 1 : edge(14) ? -1 : fx);
       out.nav.y = out.nav.y || (edge(13) ? 1 : edge(12) ? -1 : fy);
+      const cl = (v) => Math.max(-1, Math.min(1, v));
+      out.cam.x = cl(out.cam.x + sx + dz(gp.axes[2] || 0));
+      out.cam.y = cl(out.cam.y - dz(gp.axes[1] || 0) - dz(gp.axes[3] || 0));
+      out.cam.zoom = cl(out.cam.zoom + b(7) - b(6));
       out.any = out.any || gp.buttons.some((x, i) => edge(i));
       if (padUsed) out.device = 'gamepad';
       gp.buttons.forEach((x, i) => { prevButtons[i] = x && x.pressed; });

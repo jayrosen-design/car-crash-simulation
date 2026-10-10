@@ -103,6 +103,9 @@ const RaceRules = (() => {
         pending.push({ r, at: t + COMMIT, psyche, revenge: r === revenge });
         return true;
       },
+      // rival r's takedown counts at the next update (the takedown camera shows it at once; the race
+      // all but stops meanwhile, so nothing can take it away)
+      commit(r, t) { for (const p of pending) if (p.r === r) p.at = Math.min(p.at, t); },
       /* the player crashed at time t: a takedown not yet counted is lost; returns the rival that took
        * the player down (it drove into the player within the window), now the revenge target, or null */
       playerCrashed(t) {

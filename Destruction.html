@@ -22,7 +22,7 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 var(--font); overflow: hidden; user-select: none; }
 [hidden] { display: none !important; }
 #app { position: fixed; inset: 0; }
-#view { position: absolute; inset: 0; }
+#view { position: absolute; inset: 0; touch-action: none; }
 #view canvas { display: block; width: 100%; height: 100%; }
 #loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); color: var(--muted); z-index: 50; padding: 24px; text-align: center; }
 
@@ -199,6 +199,8 @@ body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
 .btn:hover { background: rgba(255, 255, 255, 0.12); }
 .btn.primary { background: var(--accent); color: #0b1220; border-color: var(--accent); }
 .replay-bar { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 8px 14px; border-radius: 10px; background: rgba(10, 12, 16, 0.75); border: 1px solid var(--line); font-size: 14px; }
+.cam-hint { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; background: rgba(10, 12, 16, 0.6); font-size: 13px; color: var(--muted, #b9bec7); white-space: nowrap; }
+.touch .cam-hint { bottom: auto; top: 64px; }
 .replay-bar .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ff3b1f; margin-right: 8px; vertical-align: 1px; }
 .overlay .panel { pointer-events: auto; }
 @media (max-width: 760px) { .minimap { display: none; } .boost-bar, .health-bar { width: 140px; } }
@@ -214,6 +216,7 @@ body.touch #combo { right: 50%; transform: translateX(50%); bottom: 154px; }
 .crash-title { font-size: 54px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; color: #fff; }
 .crash-sub { font-size: 18px; color: #f0d6c8; margin-top: 2px; }
 .crash-skip { position: fixed; left: 0; right: 0; bottom: 8%; font-size: 15px; color: var(--muted); }
+.td-skip { text-align: center; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7); pointer-events: none; }
 
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(5, 7, 10, 0.55); z-index: 20; }
 .card { padding: 22px 26px; max-width: 560px; }
@@ -448,6 +451,7 @@ body.destruction { font-family: "Barlow", system-ui, -apple-system, "Segoe UI", 
       <div class="speedo"><span id="hud-speed">0</span><span class="unit">km/h</span><span class="gear">gear <b id="hud-gear">1</b></span></div>
     </div>
     <div id="msg" class="msg" hidden></div>
+    <div id="cam-hint" class="cam-hint" hidden></div>
     <button type="button" id="btn-menu" class="btn" aria-label="Pause menu">☰ Menu <small>Esc</small></button>
   </div>
 
@@ -520,6 +524,7 @@ body.destruction { font-family: "Barlow", system-ui, -apple-system, "Segoe UI", 
         <button type="button" id="btn-retry" class="btn">Retry</button>
         <button type="button" id="btn-quit" class="btn">Quit to car and level select</button>
         <button type="button" id="btn-music" class="btn">Music: on</button>
+        <button type="button" id="btn-song" class="btn">Song</button>
         <a class="btn" href="Race.html">Play Race</a>
         <a class="btn" href="Car Crash Simulation.html">Home</a>
       </div>
@@ -6219,7 +6224,10 @@ const RaceWorld = (() => {
         if (b.frozen) continue;
         if (!b.kinematic) b.car.step(dt, inputs(b) || {});
         vertical(b, dt);
+        if (b.ghost > (b.ghostWas || 0)) b.solid = false;   // put back again: through what it's on top of, again
         if (b.ghost > 0) b.ghost = Math.max(0, b.ghost - dt);
+        b.ghostWas = b.ghost;
+        b.overlap = false;
       }
       // static contacts (twice: a corner can be pushed into a neighbouring shape); a car in the air
       // clears the low ones
@@ -6242,19 +6250,22 @@ const RaceWorld = (() => {
         for (let j = i + 1; j < bodies.length; j++) {
           const b = bodies[j];
           if (b.frozen || (a.kinematic && b.kinematic)) continue;
-          if (a.ghost || b.ghost) continue;
           const dx = a.car.x - b.car.x, dz = a.car.z - b.car.z, r = a.reach + b.reach;
           if (dx * dx + dz * dz > (r * r > 49 ? r * r : 49)) continue;
           const dy = a.car.y - b.car.y;
           if (dy > (b.top || 1.2) || -dy > (a.top || 1.2)) continue;   // one flying over the other
           const A = box(a, BA), B = box(b, BB), hit = vsCar(A, B);
           if (!hit) continue;
+          // a car put back on the road (a ghost) passes through what it was put down inside, but once
+          // it's clear of everything it's solid again (it still can't crash until its time is up)
+          if ((a.ghost > 0 && !a.solid) || (b.ghost > 0 && !b.solid)) { a.overlap = b.overlap = true; continue; }
           // a hit traffic car becomes a free body
           if (a.kinematic) a.kinematic = false;
           if (b.kinematic) b.kinematic = false;
           resolveCars(a, b, hit, dt);
         }
       }
+      for (const b of bodies) if (b.ghost > 0 && !b.overlap) b.solid = true;
       tick++;
       return events;
     }
@@ -7659,6 +7670,11 @@ const Music = (() => {
     'race:downtown': 'no-brakes-downtown', 'race:harbour': 'midnight-freight', 'race:hillside': 'full-throttle',
     'destruction:crossroads': 'fuel-for-the-fire', 'destruction:docklands': 'fuel-for-the-fire', 'destruction:boulevard': 'million-dollar-wreck',
   };
+  // the song the races and Destruction attempts play: null, each level's own; else one song for all of
+  // them (the pause menu's song button steps through them; kept in this browser)
+  let pick = (() => { try { const s = localStorage.getItem('music-song'); return SONGS[s] ? s : null; } catch (e) { return null; } })();
+  const isLevel = (cue) => /^(race|destruction):/.test(cue || '');
+  const songOf = (cue) => (pick && isLevel(cue) ? pick : CUES[cue]);
   const RESUME = new Set(['menu', 'simulator']);   // these pick up where they stopped; the rest start from the top
   const FADES = { results: [2.5, 1.5] };           // [out, in] s for a change to that cue; else 1.2 and 0.8 (1.5 and 1 from the results)
   const LEVEL = 0.5;      // the music under the game's own sounds (about -22 LUFS)
@@ -7743,7 +7759,7 @@ const Music = (() => {
   function preload(...cues) {
     if (OFF) return;
     for (const c of cues) {
-      const song = CUES[c];
+      const song = songOf(c);
       if (!song || asked.has(song)) continue;
       asked.add(song);
       queue = queue.then(() => { if (buffers.has(song) || buffers.size < KEEP) return load(song); }).catch(() => {});
@@ -7823,9 +7839,10 @@ const Music = (() => {
   // ---------------------------------------------------------------- what pages call
   // the song for a cue; a cue that plays the song already playing changes nothing
   function play(cue) {
-    if (OFF || !CUES[cue] || (want && want.cue === cue)) return;
-    const prev = want, song = CUES[cue];
-    want = { cue, song, prev: prev && prev.cue };
+    if (OFF || !CUES[cue] || (want && want.cue === cue && want.song === songOf(cue))) return;
+    const prev = want, song = songOf(cue);
+    want = { cue, song, prev: prev && prev.cue === cue ? prev.prev : prev && prev.cue };
+    for (const b of pickers) paintPick(b);
     if (deck && deck.song === song) { deck.cue = cue; return; }
     const p = load(song);
     queue = queue.then(() => p).catch(() => {});
@@ -7883,6 +7900,19 @@ const Music = (() => {
     if (on && deck) { title = SONGS[deck.song].title; showTitle(); }
   }
   const paint = (b) => { b.textContent = enabled ? 'Music: on' : 'Music: off'; b.setAttribute('aria-pressed', String(enabled)); };
+  // a button that steps the levels' song: each level's own, then each song in turn
+  const pickers = [], ORDER = [null, ...Object.keys(SONGS)];
+  function paintPick(b) {
+    const own = want && isLevel(want.cue) ? CUES[want.cue] : null;
+    b.textContent = pick ? 'Song: ' + SONGS[pick].title : 'Song: ' + (own ? SONGS[own].title + ' (the level\'s own)' : 'each level\'s own');
+  }
+  function choose(song) {
+    pick = SONGS[song] ? song : null;
+    try { if (pick) localStorage.setItem('music-song', pick); else localStorage.removeItem('music-song'); } catch (e) { /* not kept */ }
+    for (const b of pickers) paintPick(b);
+    if (want && isLevel(want.cue)) play(want.cue);   // the level playing now changes song at once
+  }
+  function bindPicker(b) { if (!b) return; pickers.push(b); paintPick(b); b.addEventListener('click', () => choose(ORDER[(ORDER.indexOf(pick) + 1) % ORDER.length])); }
   // a button that turns the music on and off (M does too)
   function bindButton(b) { if (!b) return; buttons.push(b); paint(b); b.addEventListener('click', () => setEnabled(!enabled)); }
   window.addEventListener('keydown', (e) => {
@@ -7909,8 +7939,9 @@ const Music = (() => {
   }
 
   return {
-    play, duck, preload, leave, bindButton, setEnabled, SONGS, CUES,
+    play, duck, preload, leave, bindButton, bindPicker, choose, setEnabled, SONGS, CUES,
     get enabled() { return enabled; },
+    get song() { return pick; },
     // for checks: what plays, where, and the mixer's output node
     get status() {
       return { ctx: ctx && ctx.state, want: want && want.cue, song: deck && deck.song, cue: deck && deck.cue, pos: deck && ctx ? +pos(deck, ctx.currentTime).toFixed(3) : null,
@@ -7921,7 +7952,7 @@ const Music = (() => {
 })();
 
 </script>
-<script>Music.bindButton(document.getElementById('btn-music'));   // the pause menu's music switch (js/music.js)</script>
+<script>Music.bindButton(document.getElementById('btn-music')); Music.bindPicker(document.getElementById('btn-song'));   // the pause menu's music switch and song (js/music.js)</script>
 <script type="text/x-inline" data-src="js/fx.js">
 /* Event-driven effects (TRD §5.1): synthesized Web Audio sounds and a point-particle system.
  * Physics events arrive already merged within 0.1 m (physics.js); here audio is filtered by
@@ -9840,6 +9871,8 @@ const RigModels = (() => {
  *   reset        R                                View
  *   pause        Esc, P                           Menu
  *   menus        arrows, WASD; Enter              d-pad, left stick; A
+ *   camera move  A / D, W / S, arrows; Q / E      either stick; triggers (zoom)
+ *                (zoom), for Destruction's camera after the crash
  *
  * On a touch screen the game shows on-screen buttons (game.html #touch, bindTouch): steer left and
  * right, gas, brake, boost, drift (handbrake), and camera, back on the road, pause.
@@ -9893,7 +9926,8 @@ const RaceInput = (() => {
   const armed = [true, true];
   const flick = (i, v) => { if (Math.abs(v) < 0.3) armed[i] = true; else if (Math.abs(v) > 0.6 && armed[i]) { armed[i] = false; return Math.sign(v); } return 0; };
   /* -> { steer, throttle, brake, handbrake, boost, camera, lookBack, reset, pause, start, any, device,
-   *      nav: { x, y } (menu steps this poll: -1, 0 or 1; right and down positive) } */
+   *      nav: { x, y } (menu steps this poll: -1, 0 or 1; right and down positive),
+   *      cam: { x, y, zoom } (a free camera: round to the right, up, in; each -1 to 1) } */
   function poll(dt) {
     const k = (...c) => c.some(x => keys.has(x)), e = (...c) => c.some(x => pressed.has(x));
     // keyboard (and on-screen) steering: ease toward the key's direction, quicker back to centre
@@ -9907,6 +9941,7 @@ const RaceInput = (() => {
       camera: e('KeyC') || t('camera'), reset: e('KeyR') || t('reset'), pause: e('Escape', 'KeyP') || t('pause'), start: e('Enter', 'Space'),
       any: pressed.size > 0 || tapped.size > 0 || Object.values(touch).some(Boolean), device: Object.values(touch).some(Boolean) ? 'touch' : 'keyboard',
       nav: { x: (e('KeyD', 'ArrowRight') ? 1 : 0) - (e('KeyA', 'ArrowLeft') ? 1 : 0), y: (e('KeyS', 'ArrowDown') ? 1 : 0) - (e('KeyW', 'ArrowUp') ? 1 : 0) },
+      cam: { x: (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0), y: (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0), zoom: (k('KeyE', 'Equal', 'NumpadAdd') ? 1 : 0) - (k('KeyQ', 'Minus', 'NumpadSubtract') ? 1 : 0) },
     };
     tapped.clear();
     // the first connected standard-mapping gamepad
@@ -9933,6 +9968,10 @@ const RaceInput = (() => {
       const fx = flick(0, gp.axes[0] || 0), fy = flick(1, gp.axes[1] || 0);
       out.nav.x = out.nav.x || (edge(15) ? 1 : edge(14) ? -1 : fx);
       out.nav.y = out.nav.y || (edge(13) ? 1 : edge(12) ? -1 : fy);
+      const cl = (v) => Math.max(-1, Math.min(1, v));
+      out.cam.x = cl(out.cam.x + sx + dz(gp.axes[2] || 0));
+      out.cam.y = cl(out.cam.y - dz(gp.axes[1] || 0) - dz(gp.axes[3] || 0));
+      out.cam.zoom = cl(out.cam.zoom + b(7) - b(6));
       out.any = out.any || gp.buttons.some((x, i) => edge(i));
       if (padUsed) out.device = 'gamepad';
       gp.buttons.forEach((x, i) => { prevButtons[i] = x && x.pressed; });
@@ -10440,20 +10479,23 @@ const RaceRender = (() => {
     // ------------------------------------------------ camera
     const cam = { mode: 'chase', pos: new T.Vector3(), look: new T.Vector3(), fov: 62, init: false, back: false, y: 0 };
     const tmp = new T.Vector3(), tgt = new T.Vector3(), CM = new T.Matrix4();
-    /* st: the followed car { x, z, h, y (its height over hills and in the air), speed, boost; for the
-     * cockpit camera eye: [x, y, z] the driver's eyes in the car's frame, pitch, roll }; dt: s */
+    /* st: the followed car { x, z, h, y (its height over hills and in the air), speed, boost; size:
+     * [length, height] (m; a long or tall vehicle, such as the armoured car, is followed from further
+     * back and higher; a car up to 5.4 m long and 2.05 m tall as before); for the cockpit camera eye:
+     * [x, y, z] the driver's eyes in the car's frame, pitch, roll }; dt: s */
     function follow(st, dt) {
       const c = Math.cos(st.h), s = Math.sin(st.h), sp = st.speed || 0;
       // the camera's height follows the car's smoothly (a jump lifts it a moment later)
       cam.y = cam.init ? cam.y + ((st.y || 0) - cam.y) * (1 - Math.exp(-dt * 6)) : (st.y || 0);
       if (cam.mode === 'chase') {
-        const back = cam.back ? -1 : 1, dist = 6.4 + Math.min(1.6, sp / 40), height = 2.15 + Math.min(0.5, sp / 120);
+        const L = st.size ? st.size[0] : 0, Hv = st.size ? st.size[1] : 0, big = Math.max(1, L / 5.4, Hv / 2.05), over = Math.max(0, Hv - 2.05);
+        const back = cam.back ? -1 : 1, dist = (6.4 + Math.min(1.6, sp / 40)) * big, height = (2.15 + Math.min(0.5, sp / 120)) * big + 2 * over;
         tgt.set(st.x - c * dist * back, cam.y + height, st.z - s * dist * back);
         if (!cam.init) { cam.pos.copy(tgt); cam.init = true; }
         const k = 1 - Math.exp(-dt * (cam.back ? 30 : 9));
         cam.pos.lerp(tgt, k);
         cam.pos.y = tgt.y;
-        cam.look.set(st.x + c * 4 * back, (st.y || 0) * 0.5 + cam.y * 0.5 + 1.1, st.z + s * 4 * back);
+        cam.look.set(st.x + c * 4 * big * back, (st.y || 0) * 0.5 + cam.y * 0.5 + 1.1 + 0.5 * over, st.z + s * 4 * big * back);
       } else {   // cockpit: the driver's eyes, pitching and rolling with the car, looking down the road
         const e = st.eye || [0, 1.2, -0.37];
         carMatrix(CM, st.x, st.z, st.h, st.pitch, st.roll, st.y);
@@ -11985,7 +12027,7 @@ const DestructionGame = (() => {
 
   // a fresh attempt: the traffic from its schedule, the props back up, no wrecks
   function resetAttempt() {
-    dclip = null; ring.length = 0; fxRec = [];
+    dclip = null; ring.length = 0; fxRec = []; resetView();
     if (crash) crash.stop();
     crash = null; crashUnits = []; impactAt = -1; slowmo = 0;
     for (const m of [R.player, R.wrecks.lexus, R.wrecks.mustang]) if (m) { m.clearDestruction(); m.group.matrixAutoUpdate = false; }
@@ -12116,7 +12158,7 @@ const DestructionGame = (() => {
     }
     boostAtImpact = boost;
     state = 'impact'; crashT = 0; tPlay = 0; kCur = 0; evPending = []; impactAt = simT;
-    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62;
+    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62; resetView();
     FX.engineStop(); FX.setTimeScale(0.25);
     RaceInput.rumble(1, 1, 450);
     callout('Crash!', '', 1300);
@@ -12127,7 +12169,7 @@ const DestructionGame = (() => {
     crash.impactKmh = e.vn * 3.6;
     boostAtImpact = boost;
     state = 'impact'; crashT = 0; tPlay = 0; kCur = 0; evPending = []; impactAt = simT;
-    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62;
+    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62; resetView();
     FX.engineStop(); FX.setTimeScale(0.25);
     RaceInput.rumble(1, 1, 450);
     callout('Crash!', '', 1300);
@@ -12234,8 +12276,8 @@ const DestructionGame = (() => {
       FX.setTimeScale(Math.max(0.08, speed));
       showCrashFrame(tPlay);
       fireEvents(tPlay);
-      camAngle += dt * 0.35;
-      R.orbit(PT, camAngle, 7.5, 1.9, level);
+      camAngle += dt * 0.35 * spinK();
+      watchCam(PT, camAngle, 7.5, 1.9, dt);
     }
     const end = crash.done && tPlay >= F.t[n - 1] - 1e-6;
     if (end || crashT > 12) handOff();
@@ -12477,8 +12519,8 @@ const DestructionGame = (() => {
       if (isBest && !TEST) { best = { total: L.total, medal: tl.medal }; try { localStorage.setItem(bestKey, JSON.stringify(best)); } catch (e) { /* not kept */ } }
       setTimeout(() => showResults(isBest), 1500);
     }
-    camAngle += dt * 0.12;
-    R.orbit({ x: 0, z: -4, y: 0 }, camAngle, 46, 24, level);
+    camAngle += dt * 0.12 * spinK();
+    watchCam({ x: 0, z: -4, y: 0 }, camAngle, 46, 24, dt);
   }
   function showResults(isBest) {
     $('#btn-replay').hidden = !(dclip && dclip.frames.length > 10);
@@ -12622,8 +12664,104 @@ const DestructionGame = (() => {
     const k = 1 - Math.exp(-dt * 1.6);
     focus.x += (x - focus.x) * k; focus.z += (z - focus.z) * k;
     focus.y = level.terrain(focus.x, focus.z);
-    camAngle += dt * 0.16;
-    R.orbit(focus, camAngle, 17, 6.5, level);
+    camAngle += dt * 0.16 * spinK();
+    watchCam(focus, camAngle, 17, 6.5, dt);
+  }
+
+  // ---------------------------------------------------------------- the watching camera
+  // From the crash to the results (and in the drone replay) the camera circles the action on its own,
+  // and the player can take it over: drag (a mouse or a finger) or A/D and W/S (the arrows, either
+  // stick) to go round and to raise or lower it; the wheel, a pinch, Q/E or the triggers to zoom. It
+  // stays where it's put and starts circling again 2.5 s after the last touch. Wherever it is, a
+  // building, a lorry, a bus or a tanker coming between it and the action pulls it in, in front of it.
+  const view = { yaw: 0, pitch: 0, zoom: 1, idle: 99, arm: null, used: false, ptrs: new Map(), pinch: 0 };
+  const watching = () => !paused && (state === 'impact' || state === 'pileup' || state === 'tally' || state === 'replay');
+  function resetView() { view.yaw = 0; view.pitch = 0; view.zoom = 1; view.idle = 99; view.arm = null; }
+  function touched() { view.idle = 0; view.used = true; }
+  const zoomBy = (f) => { view.zoom = Math.max(0.3, Math.min(2.5, view.zoom * f)); };
+  const spinK = () => Math.max(0, Math.min(1, (view.idle - 2.5) / 1.5));   // the circling, eased back in
+  {
+    const el = $('#view');
+    el.addEventListener('pointerdown', (e) => { if (!watching()) return; view.ptrs.set(e.pointerId, [e.clientX, e.clientY]); view.pinch = 0; try { el.setPointerCapture(e.pointerId); } catch (err) { /* fine without */ } });
+    el.addEventListener('pointermove', (e) => {
+      const p = view.ptrs.get(e.pointerId);
+      if (!p || !watching()) return;
+      const dx = e.clientX - p[0], dy = e.clientY - p[1];
+      p[0] = e.clientX; p[1] = e.clientY;
+      if (view.ptrs.size >= 2) {   // two fingers: a pinch zooms
+        const [a, b] = [...view.ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        if (view.pinch > 0 && d > 0) zoomBy(view.pinch / d);
+        view.pinch = d;
+      } else { view.yaw += dx * 0.006; view.pitch += dy * 0.005; }
+      touched();
+    });
+    const up = (e) => { view.ptrs.delete(e.pointerId); view.pinch = 0; };
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('wheel', (e) => { if (!watching()) return; e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0012)); touched(); }, { passive: false });
+  }
+  // the keys and sticks, each frame; and the hint, until the camera has been moved once
+  function viewInput(dt) {
+    view.idle += dt;
+    const c = input.cam;
+    if (watching() && c && (c.x || c.y || c.zoom)) {
+      view.yaw -= c.x * 1.8 * dt; view.pitch += c.y * 1.1 * dt; zoomBy(Math.exp(-c.zoom * 1.4 * dt));
+      touched();
+    }
+    const hint = $('#cam-hint'), show = !view.used && (state === 'impact' || state === 'pileup') && !paused;
+    if (show) hint.textContent = TOUCH ? 'Drag to look around · pinch to zoom' : input.device === 'gamepad' ? 'Sticks to look around · triggers to zoom' : 'Drag, or A/D and W/S, to look around · wheel or Q/E to zoom';
+    if (hint.hidden === show) hint.hidden = !show;
+  }
+  // something the camera mustn't be inside: a building (the tall ones all the way up), or a vehicle
+  // taller than a car (driving, or a wreck; not in the replay, whose vehicles are only drawn)
+  const CV = new T.Vector3(), QI = new T.Quaternion(), CP = new T.Vector3();
+  function blocked(x, y, z) {
+    for (const o of level.collidersNear(x, z, 0.5)) {
+      if (!o.box) continue;
+      const c = Math.cos(o.angle), s = Math.sin(o.angle), dx = x - o.x, dz = z - o.z;
+      if (Math.abs(dx * c + dz * s) < o.hx + 0.4 && Math.abs(-dx * s + dz * c) < o.hz + 0.4 && (o.height >= 11.9 || y < level.terrain(o.x, o.z) + o.height + 0.4)) return true;
+    }
+    if (state === 'replay') return false;
+    if (wrecks) for (const b of wrecks.bodies) {
+      if (b.hi[1] - b.lo[1] < 2.2 || Math.abs(x - b.p[0]) > b.rad + 0.4 || Math.abs(z - b.p[2]) > b.rad + 0.4 || Math.abs(y - b.p[1]) > b.rad + 0.4) continue;
+      CV.set(x - b.p[0], y - b.p[1], z - b.p[2]).applyQuaternion(QI.set(b.q[0], b.q[1], b.q[2], b.q[3]).invert());
+      if (CV.x > b.lo[0] - 0.4 && CV.x < b.hi[0] + 0.4 && CV.y > b.lo[1] - 0.4 && CV.y < b.hi[1] + 0.4 && CV.z > b.lo[2] - 0.4 && CV.z < b.hi[2] + 0.4) return true;
+    }
+    for (const v of traffic.vehicles.concat(parked)) {   // (a wreck has left these lists)
+      const d = driverBox(v);
+      if (d.height < 2.2 || Math.abs(x - d.x) > d.hl + 1 || Math.abs(z - d.z) > d.hl + 1) continue;
+      const c = Math.cos(d.h), s = Math.sin(d.h), dx = x - d.x, dz = z - d.z;
+      if (Math.abs(dx * c + dz * s) < d.hl + 0.4 && Math.abs(-dx * s + dz * c) < d.hw + 0.4 && y < level.terrain(d.x, d.z) + d.height + 0.4) return true;
+    }
+    return false;
+  }
+  /* where the camera goes: circling target { x, y, z } at angle a, radius r and height h (over the
+   * target), turned, raised and zoomed as the player has moved it, and pulled in in front of anything
+   * in the way (along the arm from the point it looks at, target.y + 0.7, leaving out whatever that
+   * point is itself inside). -> out */
+  function viewPos(target, a, r, h, dt, out) {
+    const y0 = (target.y || 0) + 0.7, h1 = h - 0.7;
+    const el = Math.max(0.03, Math.min(1.45, Math.atan2(h1, r) + view.pitch)), d = Math.hypot(r, h1) * view.zoom, A = a + view.yaw;
+    const ux = Math.cos(A) * Math.cos(el), uy = Math.sin(el), uz = Math.sin(A) * Math.cos(el);
+    let free = d, leaving = true;
+    for (let t = 1.5; t < d; t += t < 12 ? 0.25 : 0.5) {
+      const b = blocked(target.x + ux * t, y0 + uy * t, target.z + uz * t);
+      if (leaving) { if (!b) leaving = false; continue; }
+      if (b) { free = Math.max(1.5, t - 0.6); break; }
+    }
+    // in at once, back out smoothly
+    view.arm = view.arm === null || free < view.arm ? free : view.arm + (free - view.arm) * (1 - Math.exp(-dt * 2.5));
+    out.set(target.x + ux * view.arm, y0 + uy * view.arm, target.z + uz * view.arm);
+    out.y = Math.max(out.y, level.groundAt(out.x, out.z).h + 0.4);
+    // still inside something (the arm started inside it, say, or it's lower than a building): over it
+    for (let k = 0; k < 16 && blocked(out.x, out.y, out.z); k++) out.y += 0.5;
+    return out;
+  }
+  function watchCam(target, a, r, h, dt) {
+    R.orbit(target, a, r, h, null);   // the sun's shadow box and the lens
+    viewPos(target, a, r, h, dt, CP);
+    R.camera.position.copy(CP);
+    R.camera.lookAt(target.x, (target.y || 0) + 0.7, target.z);
   }
 
   // ---------------------------------------------------------------- touch screens
@@ -12673,6 +12811,7 @@ const DestructionGame = (() => {
     const dtReal = Math.min(0.1, (now - last) / 1000); last = now;
     if (TEST) testOut.frames.push([state, Math.round(dtReal * 1000)]);
     input = RaceInput.poll(dtReal);
+    viewInput(dtReal);
     if (input.any && !audio) { FX.initAudio(); audio = true; }
     if (input.pause && PAUSABLE.includes(state)) setPaused(!paused);
     else if (paused) RaceInput.menu($('#pause'), input);   // arrows or the d-pad, Enter or A
@@ -12772,7 +12911,7 @@ const DestructionGame = (() => {
       R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll, lift: car.y, steer: car.steer, wheelie: car.wheelie, car }, spinNow - prevSpin);
       prevSpin = spinNow;
       if (state === 'select') { selT += dtReal; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4 * Math.max(1, specs[carKey].length / 4.86), 1.5, level); }
-      else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dtReal);
+      else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting, size: [specs[carKey].length, specs[carKey].height] }, dtReal);
     } else if (state === 'pileup') pileupCamera(dtReal);
     recordStart(dtReal);
     drawVehicles();
@@ -12927,6 +13066,7 @@ const DestructionGame = (() => {
   function startDroneReplay() {
     if (!dclip || dclip.frames.length < 10) { toast('Nothing to replay', 1400); return; }
     if (dclip.crash && !dclip.crash.done) { toast('The crash is still being worked out', 1400); return; }
+    resetView();
     look.reset();
     for (const ch of chunks) if (ch.wheelOf) ch.wheelOf.group.add(ch.g);
     for (const U of dclip.units) { U.model.clearDestruction(); if (U.model !== R.player) U.model.group.visible = false; }
@@ -13001,15 +13141,15 @@ const DestructionGame = (() => {
     // the drone: about 13 m off and 7 m up (higher over a building), easing after the action
     const d = dr.drone, fo = f.focus, busy = pl.pose === undefined;
     if (d.a === null) d.a = (F[0].player && F[0].player.pose ? F[0].player.pose.h : 0) + Math.PI + 0.5;
-    d.a += dt * (busy ? 0.14 : 0.07);
+    d.a += dt * (busy ? 0.14 : 0.07) * spinK();
     const dist = busy ? 14 : 12;
     let alt = busy ? 6.5 : 6;
-    const wx = fo[0] + Math.cos(d.a) * dist, wz = fo[2] + Math.sin(d.a) * dist;
+    const wx = fo[0] + Math.cos(d.a + view.yaw) * dist, wz = fo[2] + Math.sin(d.a + view.yaw) * dist;
     for (const o of level.collidersNear(wx, wz, 1.5)) if (o.box && o.height) alt = Math.max(alt, o.height + 3 - fo[1]);
     d.alt += (alt - d.alt) * (1 - Math.exp(-dt * 1.5));
-    DV.set(wx, fo[1] + d.alt + Math.sin(dr.t * 1.7) * 0.18, wz); DL.set(fo[0], fo[1] + 0.8, fo[2]);
+    viewPos({ x: fo[0], y: fo[1], z: fo[2] }, d.a, dist, d.alt, dt, DV); DV.y += Math.sin(dr.t * 1.7) * 0.18; DL.set(fo[0], fo[1] + 0.8, fo[2]);
     if (!d.pos) { d.pos = DV.clone(); d.look = DL.clone(); }
-    d.pos.lerp(DV, 1 - Math.exp(-dt * 1.4)); d.look.lerp(DL, 1 - Math.exp(-dt * 3.5));
+    d.pos.lerp(DV, 1 - Math.exp(-dt * (view.idle < 1 ? 10 : 1.4))); d.look.lerp(DL, 1 - Math.exp(-dt * 3.5));
     R.orbit({ x: fo[0], y: fo[1], z: fo[2] }, d.a, dist, d.alt, null);
     R.camera.position.set(d.pos.x + Math.sin(dr.t * 1.3) * 0.12, d.pos.y, d.pos.z + Math.cos(dr.t * 1.1) * 0.12);
     R.camera.lookAt(d.look);

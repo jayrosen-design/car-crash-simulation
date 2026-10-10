@@ -149,7 +149,7 @@ const DestructionGame = (() => {
 
   // a fresh attempt: the traffic from its schedule, the props back up, no wrecks
   function resetAttempt() {
-    dclip = null; ring.length = 0; fxRec = [];
+    dclip = null; ring.length = 0; fxRec = []; resetView();
     if (crash) crash.stop();
     crash = null; crashUnits = []; impactAt = -1; slowmo = 0;
     for (const m of [R.player, R.wrecks.lexus, R.wrecks.mustang]) if (m) { m.clearDestruction(); m.group.matrixAutoUpdate = false; }
@@ -280,7 +280,7 @@ const DestructionGame = (() => {
     }
     boostAtImpact = boost;
     state = 'impact'; crashT = 0; tPlay = 0; kCur = 0; evPending = []; impactAt = simT;
-    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62;
+    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62; resetView();
     FX.engineStop(); FX.setTimeScale(0.25);
     RaceInput.rumble(1, 1, 450);
     callout('Crash!', '', 1300);
@@ -291,7 +291,7 @@ const DestructionGame = (() => {
     crash.impactKmh = e.vn * 3.6;
     boostAtImpact = boost;
     state = 'impact'; crashT = 0; tPlay = 0; kCur = 0; evPending = []; impactAt = simT;
-    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62;
+    camAngle = Math.atan2(car.vz, car.vx) + Math.PI * 0.62; resetView();
     FX.engineStop(); FX.setTimeScale(0.25);
     RaceInput.rumble(1, 1, 450);
     callout('Crash!', '', 1300);
@@ -398,8 +398,8 @@ const DestructionGame = (() => {
       FX.setTimeScale(Math.max(0.08, speed));
       showCrashFrame(tPlay);
       fireEvents(tPlay);
-      camAngle += dt * 0.35;
-      R.orbit(PT, camAngle, 7.5, 1.9, level);
+      camAngle += dt * 0.35 * spinK();
+      watchCam(PT, camAngle, 7.5, 1.9, dt);
     }
     const end = crash.done && tPlay >= F.t[n - 1] - 1e-6;
     if (end || crashT > 12) handOff();
@@ -641,8 +641,8 @@ const DestructionGame = (() => {
       if (isBest && !TEST) { best = { total: L.total, medal: tl.medal }; try { localStorage.setItem(bestKey, JSON.stringify(best)); } catch (e) { /* not kept */ } }
       setTimeout(() => showResults(isBest), 1500);
     }
-    camAngle += dt * 0.12;
-    R.orbit({ x: 0, z: -4, y: 0 }, camAngle, 46, 24, level);
+    camAngle += dt * 0.12 * spinK();
+    watchCam({ x: 0, z: -4, y: 0 }, camAngle, 46, 24, dt);
   }
   function showResults(isBest) {
     $('#btn-replay').hidden = !(dclip && dclip.frames.length > 10);
@@ -786,8 +786,104 @@ const DestructionGame = (() => {
     const k = 1 - Math.exp(-dt * 1.6);
     focus.x += (x - focus.x) * k; focus.z += (z - focus.z) * k;
     focus.y = level.terrain(focus.x, focus.z);
-    camAngle += dt * 0.16;
-    R.orbit(focus, camAngle, 17, 6.5, level);
+    camAngle += dt * 0.16 * spinK();
+    watchCam(focus, camAngle, 17, 6.5, dt);
+  }
+
+  // ---------------------------------------------------------------- the watching camera
+  // From the crash to the results (and in the drone replay) the camera circles the action on its own,
+  // and the player can take it over: drag (a mouse or a finger) or A/D and W/S (the arrows, either
+  // stick) to go round and to raise or lower it; the wheel, a pinch, Q/E or the triggers to zoom. It
+  // stays where it's put and starts circling again 2.5 s after the last touch. Wherever it is, a
+  // building, a lorry, a bus or a tanker coming between it and the action pulls it in, in front of it.
+  const view = { yaw: 0, pitch: 0, zoom: 1, idle: 99, arm: null, used: false, ptrs: new Map(), pinch: 0 };
+  const watching = () => !paused && (state === 'impact' || state === 'pileup' || state === 'tally' || state === 'replay');
+  function resetView() { view.yaw = 0; view.pitch = 0; view.zoom = 1; view.idle = 99; view.arm = null; }
+  function touched() { view.idle = 0; view.used = true; }
+  const zoomBy = (f) => { view.zoom = Math.max(0.3, Math.min(2.5, view.zoom * f)); };
+  const spinK = () => Math.max(0, Math.min(1, (view.idle - 2.5) / 1.5));   // the circling, eased back in
+  {
+    const el = $('#view');
+    el.addEventListener('pointerdown', (e) => { if (!watching()) return; view.ptrs.set(e.pointerId, [e.clientX, e.clientY]); view.pinch = 0; try { el.setPointerCapture(e.pointerId); } catch (err) { /* fine without */ } });
+    el.addEventListener('pointermove', (e) => {
+      const p = view.ptrs.get(e.pointerId);
+      if (!p || !watching()) return;
+      const dx = e.clientX - p[0], dy = e.clientY - p[1];
+      p[0] = e.clientX; p[1] = e.clientY;
+      if (view.ptrs.size >= 2) {   // two fingers: a pinch zooms
+        const [a, b] = [...view.ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        if (view.pinch > 0 && d > 0) zoomBy(view.pinch / d);
+        view.pinch = d;
+      } else { view.yaw += dx * 0.006; view.pitch += dy * 0.005; }
+      touched();
+    });
+    const up = (e) => { view.ptrs.delete(e.pointerId); view.pinch = 0; };
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('wheel', (e) => { if (!watching()) return; e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0012)); touched(); }, { passive: false });
+  }
+  // the keys and sticks, each frame; and the hint, until the camera has been moved once
+  function viewInput(dt) {
+    view.idle += dt;
+    const c = input.cam;
+    if (watching() && c && (c.x || c.y || c.zoom)) {
+      view.yaw -= c.x * 1.8 * dt; view.pitch += c.y * 1.1 * dt; zoomBy(Math.exp(-c.zoom * 1.4 * dt));
+      touched();
+    }
+    const hint = $('#cam-hint'), show = !view.used && (state === 'impact' || state === 'pileup') && !paused;
+    if (show) hint.textContent = TOUCH ? 'Drag to look around · pinch to zoom' : input.device === 'gamepad' ? 'Sticks to look around · triggers to zoom' : 'Drag, or A/D and W/S, to look around · wheel or Q/E to zoom';
+    if (hint.hidden === show) hint.hidden = !show;
+  }
+  // something the camera mustn't be inside: a building (the tall ones all the way up), or a vehicle
+  // taller than a car (driving, or a wreck; not in the replay, whose vehicles are only drawn)
+  const CV = new T.Vector3(), QI = new T.Quaternion(), CP = new T.Vector3();
+  function blocked(x, y, z) {
+    for (const o of level.collidersNear(x, z, 0.5)) {
+      if (!o.box) continue;
+      const c = Math.cos(o.angle), s = Math.sin(o.angle), dx = x - o.x, dz = z - o.z;
+      if (Math.abs(dx * c + dz * s) < o.hx + 0.4 && Math.abs(-dx * s + dz * c) < o.hz + 0.4 && (o.height >= 11.9 || y < level.terrain(o.x, o.z) + o.height + 0.4)) return true;
+    }
+    if (state === 'replay') return false;
+    if (wrecks) for (const b of wrecks.bodies) {
+      if (b.hi[1] - b.lo[1] < 2.2 || Math.abs(x - b.p[0]) > b.rad + 0.4 || Math.abs(z - b.p[2]) > b.rad + 0.4 || Math.abs(y - b.p[1]) > b.rad + 0.4) continue;
+      CV.set(x - b.p[0], y - b.p[1], z - b.p[2]).applyQuaternion(QI.set(b.q[0], b.q[1], b.q[2], b.q[3]).invert());
+      if (CV.x > b.lo[0] - 0.4 && CV.x < b.hi[0] + 0.4 && CV.y > b.lo[1] - 0.4 && CV.y < b.hi[1] + 0.4 && CV.z > b.lo[2] - 0.4 && CV.z < b.hi[2] + 0.4) return true;
+    }
+    for (const v of traffic.vehicles.concat(parked)) {   // (a wreck has left these lists)
+      const d = driverBox(v);
+      if (d.height < 2.2 || Math.abs(x - d.x) > d.hl + 1 || Math.abs(z - d.z) > d.hl + 1) continue;
+      const c = Math.cos(d.h), s = Math.sin(d.h), dx = x - d.x, dz = z - d.z;
+      if (Math.abs(dx * c + dz * s) < d.hl + 0.4 && Math.abs(-dx * s + dz * c) < d.hw + 0.4 && y < level.terrain(d.x, d.z) + d.height + 0.4) return true;
+    }
+    return false;
+  }
+  /* where the camera goes: circling target { x, y, z } at angle a, radius r and height h (over the
+   * target), turned, raised and zoomed as the player has moved it, and pulled in in front of anything
+   * in the way (along the arm from the point it looks at, target.y + 0.7, leaving out whatever that
+   * point is itself inside). -> out */
+  function viewPos(target, a, r, h, dt, out) {
+    const y0 = (target.y || 0) + 0.7, h1 = h - 0.7;
+    const el = Math.max(0.03, Math.min(1.45, Math.atan2(h1, r) + view.pitch)), d = Math.hypot(r, h1) * view.zoom, A = a + view.yaw;
+    const ux = Math.cos(A) * Math.cos(el), uy = Math.sin(el), uz = Math.sin(A) * Math.cos(el);
+    let free = d, leaving = true;
+    for (let t = 1.5; t < d; t += t < 12 ? 0.25 : 0.5) {
+      const b = blocked(target.x + ux * t, y0 + uy * t, target.z + uz * t);
+      if (leaving) { if (!b) leaving = false; continue; }
+      if (b) { free = Math.max(1.5, t - 0.6); break; }
+    }
+    // in at once, back out smoothly
+    view.arm = view.arm === null || free < view.arm ? free : view.arm + (free - view.arm) * (1 - Math.exp(-dt * 2.5));
+    out.set(target.x + ux * view.arm, y0 + uy * view.arm, target.z + uz * view.arm);
+    out.y = Math.max(out.y, level.groundAt(out.x, out.z).h + 0.4);
+    // still inside something (the arm started inside it, say, or it's lower than a building): over it
+    for (let k = 0; k < 16 && blocked(out.x, out.y, out.z); k++) out.y += 0.5;
+    return out;
+  }
+  function watchCam(target, a, r, h, dt) {
+    R.orbit(target, a, r, h, null);   // the sun's shadow box and the lens
+    viewPos(target, a, r, h, dt, CP);
+    R.camera.position.copy(CP);
+    R.camera.lookAt(target.x, (target.y || 0) + 0.7, target.z);
   }
 
   // ---------------------------------------------------------------- touch screens
@@ -837,6 +933,7 @@ const DestructionGame = (() => {
     const dtReal = Math.min(0.1, (now - last) / 1000); last = now;
     if (TEST) testOut.frames.push([state, Math.round(dtReal * 1000)]);
     input = RaceInput.poll(dtReal);
+    viewInput(dtReal);
     if (input.any && !audio) { FX.initAudio(); audio = true; }
     if (input.pause && PAUSABLE.includes(state)) setPaused(!paused);
     else if (paused) RaceInput.menu($('#pause'), input);   // arrows or the d-pad, Enter or A
@@ -936,7 +1033,7 @@ const DestructionGame = (() => {
       R.drawPlayer({ x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll, lift: car.y, steer: car.steer, wheelie: car.wheelie, car }, spinNow - prevSpin);
       prevSpin = spinNow;
       if (state === 'select') { selT += dtReal; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4 * Math.max(1, specs[carKey].length / 4.86), 1.5, level); }
-      else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dtReal);
+      else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting, size: [specs[carKey].length, specs[carKey].height] }, dtReal);
     } else if (state === 'pileup') pileupCamera(dtReal);
     recordStart(dtReal);
     drawVehicles();
@@ -1091,6 +1188,7 @@ const DestructionGame = (() => {
   function startDroneReplay() {
     if (!dclip || dclip.frames.length < 10) { toast('Nothing to replay', 1400); return; }
     if (dclip.crash && !dclip.crash.done) { toast('The crash is still being worked out', 1400); return; }
+    resetView();
     look.reset();
     for (const ch of chunks) if (ch.wheelOf) ch.wheelOf.group.add(ch.g);
     for (const U of dclip.units) { U.model.clearDestruction(); if (U.model !== R.player) U.model.group.visible = false; }
@@ -1165,15 +1263,15 @@ const DestructionGame = (() => {
     // the drone: about 13 m off and 7 m up (higher over a building), easing after the action
     const d = dr.drone, fo = f.focus, busy = pl.pose === undefined;
     if (d.a === null) d.a = (F[0].player && F[0].player.pose ? F[0].player.pose.h : 0) + Math.PI + 0.5;
-    d.a += dt * (busy ? 0.14 : 0.07);
+    d.a += dt * (busy ? 0.14 : 0.07) * spinK();
     const dist = busy ? 14 : 12;
     let alt = busy ? 6.5 : 6;
-    const wx = fo[0] + Math.cos(d.a) * dist, wz = fo[2] + Math.sin(d.a) * dist;
+    const wx = fo[0] + Math.cos(d.a + view.yaw) * dist, wz = fo[2] + Math.sin(d.a + view.yaw) * dist;
     for (const o of level.collidersNear(wx, wz, 1.5)) if (o.box && o.height) alt = Math.max(alt, o.height + 3 - fo[1]);
     d.alt += (alt - d.alt) * (1 - Math.exp(-dt * 1.5));
-    DV.set(wx, fo[1] + d.alt + Math.sin(dr.t * 1.7) * 0.18, wz); DL.set(fo[0], fo[1] + 0.8, fo[2]);
+    viewPos({ x: fo[0], y: fo[1], z: fo[2] }, d.a, dist, d.alt, dt, DV); DV.y += Math.sin(dr.t * 1.7) * 0.18; DL.set(fo[0], fo[1] + 0.8, fo[2]);
     if (!d.pos) { d.pos = DV.clone(); d.look = DL.clone(); }
-    d.pos.lerp(DV, 1 - Math.exp(-dt * 1.4)); d.look.lerp(DL, 1 - Math.exp(-dt * 3.5));
+    d.pos.lerp(DV, 1 - Math.exp(-dt * (view.idle < 1 ? 10 : 1.4))); d.look.lerp(DL, 1 - Math.exp(-dt * 3.5));
     R.orbit({ x: fo[0], y: fo[1], z: fo[2] }, d.a, dist, d.alt, null);
     R.camera.position.set(d.pos.x + Math.sin(dr.t * 1.3) * 0.12, d.pos.y, d.pos.z + Math.cos(dr.t * 1.1) * 0.12);
     R.camera.lookAt(d.look);
