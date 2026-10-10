@@ -75,7 +75,7 @@ order is the lineup order on the garage screen.
   solver against it as a moving box with a roof (as a bus does).
 - **Lexus RX 350 and Ford Mustang GT500.** As before: their numbers, handling and crashes are unchanged
   (the checks hold them bit-identical).
-- **Osprey drone.** Not driven: the camera crew's. (A replay mode filmed from it is the next step.)
+- **Osprey drone.** Not driven: the camera crew's. Race's highlights and Destruction's replay are filmed from it.
 
 ## 4. The garage screen
 
@@ -220,7 +220,6 @@ Built as above, and measured:
 
 ## 9. Out of scope
 
-- The replay mode filmed from the drone (next).
 - A bus model: the Destruction buses are still built in code.
 - The Audi A7 download: one 1-million-triangle mesh with no real materials to split it by.
 - Unlocks or progression: all twelve are available from the start.

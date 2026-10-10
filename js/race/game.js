@@ -210,6 +210,7 @@ const RaceGame = (() => {
   const testOut = (window.__race = { test: null }).test = { frames: [], aheadOfStream: 0 };
   function triggerCrash(e) {
     if (state !== 'race') return;
+    if (tdCam) endTakedownCam();
     if (car.kind === 'tracked') { stall(); return; }   // a tank isn't wrecked by a hit: it stalls
     // a takedown not yet counted is lost; a rival that drove into the player just before took them down
     const by = rules.playerCrashed(simT);
@@ -243,6 +244,8 @@ const RaceGame = (() => {
       crashUnits = bodies.map((b, u) => ({ body: b, model: u === 0 ? R.player : R.wrecks[b.car.key], view: crash.unitView(u), paint: paintOf(b) }));
     }
     crash.impactKmh = e.vn * 3.6;
+    crashRec = { cr: crash, units: crashUnits.map((U, u) => ({ key: U.body.car.key, model: U.model === R.player ? 'player' : U.body.car.key, u, paint: U.paint })) };
+    noteMoment('crash', { kmh: crash.impactKmh });
     R.setCrashLift(crash.lift); PT.y = crash.lift;
     for (const U of crashUnits) { U.body.frozen = true; if (U.model !== R.player) { U.model.group.visible = true; if (U.paint !== undefined) U.model.setPaint(U.paint); } }
     frozenDraw = drawStates();   // the street as it was, for the crash camera
@@ -267,6 +270,7 @@ const RaceGame = (() => {
     RaceInput.rumble(0.8, 0.8, 300);
   }
   // play crash frames on the crash's models at time t (frame cursor kept in kCur)
+  const kRef = { get k() { return kCur; } };   // the frame the crash camera shows (for the smoke)
   function showCrashFrame(cr, units, t) {
     const F = cr.F, n = F.t.length;
     let k = Math.min(kCur, n - 2); while (k > 0 && F.t[k] > t) k--; while (k < n - 2 && F.t[k + 1] <= t) k++; kCur = k;
@@ -292,7 +296,8 @@ const RaceGame = (() => {
       tPlay = Math.min(want, limit);
       FX.setTimeScale(speed);
       showCrashFrame(crash, crashUnits, tPlay);
-      fireEvents(crash, tPlay);
+      fxScale = speed;
+      fireEvents(crash, tPlay, crashUnits, kRef);
       camAngle += dt * 0.35;
       R.orbit(PT, camAngle, 7.5, 1.9, level);
     }
@@ -300,15 +305,35 @@ const RaceGame = (() => {
     const over = (crash.done && tPlay >= F.t[n - 1] - 1e-6) || (crash.T0 >= 0 && tPlay >= crash.T0 + 1.25);
     if (over || (crashT > 1.2 && (input.start || input.throttle > 0.5))) respawn();
   }
-  function fireEvents(cr, t) {
-    const fresh = cr.events.slice(evPending.cursor || 0);
-    evPending.cursor = cr.events.length;
-    evPending.push(...fresh);
-    evPending.sort((a, b) => a.t - b.t);
+  // where a crashed car's engine bay is in the world now (frame cur.k of its crash view): the engine
+  // zone's middle, carried by the cabin's axes (the lattice keeps the cabin rigid); a rig's hull
+  function engineBay(U, cur, lift) {
+    const S = specs[U.key || U.body.car.key], v = U.view;
+    if (S.rig || !U.model.lat) return () => { const a = v.frames.axes[Math.min(cur.k, v.frames.axes.length - 1)]; return a ? [a[0], a[1] + lift + 0.3, a[2]] : null; };
+    const E = S.engine, cr = U.model.lat.cabinRest, dx = S.xMin + (E.u0 + E.u1) / 2 - cr[0], dy = Math.min(E.yMax, 0.62 * S.height) - cr[1], dz = -cr[2];
+    return () => {
+      const a = v.frames.axes[Math.min(cur.k, v.frames.axes.length - 1)];
+      if (!a) return null;
+      const fx = a[3], fy = a[4], fz = a[5], ux = a[6], uy = a[7], uz = a[8], lx = fy * uz - fz * uy, ly = fz * ux - fx * uz, lz = fx * uy - fy * ux;
+      return [a[0] + fx * dx + ux * dy + lx * dz, a[1] + fy * dx + uy * dy + ly * dz + lift, a[2] + fz * dx + uz * dy + lz * dz];
+    };
+  }
+  // smoke from every car in a crash from its first impact, and fire too after a hard one
+  function smokeCrash(cr, units, cur, e) {
+    const lift = cr.lift || 0, kmh = cr.impactKmh || 0;
+    crashSmoke.burst(e.x, e.y + lift, e.z, Math.min(1.6, 0.6 + kmh / 120));
+    if (kmh < 30) return;
+    for (const U of units) crashSmoke.emit({ pos: engineBay(U, cur, lift), fire: kmh >= (cr.takedown ? 70 : 90) && !specs[U.key || U.body.car.key].rig, size: Math.min(1.4, specs[U.key || U.body.car.key].length / 4.6) });
+  }
+  function fireEvents(cr, t, units, cur, Q = evPending) {
+    const fresh = cr.events.slice(Q.cursor || 0);
+    Q.cursor = cr.events.length;
+    Q.push(...fresh);
+    Q.sort((a, b) => a.t - b.t);
     const lift = cr.lift || 0;   // the crash is drawn at the ground's height there
-    while (evPending.length && evPending[0].t <= t) {
-      const e = evPending.shift(), y = e.y + lift, pos = [e.x, y, e.z];
-      if (e.type === 'first') { if (!FX.crashClip(cr.sound, pos)) FX.crunch(1, pos); sparks.spawn(e.x, y, e.z, 40, 'spark', [0, 0.6, 0]); sparks.spawn(e.x, y, e.z, 16, 'dust'); }
+    while (Q.length && Q[0].t <= t) {
+      const e = Q.shift(), y = e.y + lift, pos = [e.x, y, e.z];
+      if (e.type === 'first') { if (!FX.crashClip(cr.sound, pos)) FX.crunch(1, pos); sparks.spawn(e.x, y, e.z, 40, 'spark', [0, 0.6, 0]); sparks.spawn(e.x, y, e.z, 16, 'dust'); if (units) smokeCrash(cr, units, cur, e); }
       else if (e.type === 'contact') { if (Math.random() < 0.25) FX.crunch(Math.min(1, e.mag / 3000), pos); if (Math.random() < 0.5) sparks.spawn(e.x, y, e.z, 4, 'spark', [0, 0.3, 0]); }
       else if (e.type === 'detach') { FX.tear(e.mass, pos); FX.clank(e.mass, pos); sparks.spawn(e.x, y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); }
       else if (e.type === 'glass') { FX.glass(e.mass, pos); sparks.spawn(e.x, y, e.z, 12, 'glass'); }
@@ -317,6 +342,7 @@ const RaceGame = (() => {
     }
   }
   function respawn() {
+    crashSmoke.stop();   // the wreck is gone: what's in the air drifts away
     crashes.push({ crash, units: crashUnits.map(U => ({ key: U.body.car.key, model: U.model === R.player ? 'player' : U.body.car.key, u: crashUnits.indexOf(U), paint: U.paint })) });
     if (crashes.length > 2) crashes.shift();
     for (const U of crashUnits) {
@@ -345,41 +371,183 @@ const RaceGame = (() => {
     $('#crash').hidden = true;
   }
 
-  // ---------------------------------------------------------------- replay of a crash (results screen)
-  let replay = null;
-  function startReplay(idx) {
-    const c = crashes[idx];
-    const rigid = c && c.crash.mode === 'rigid';
-    if (!c || !c.crash.done || (!rigid && !c.crash.result)) { toast('The crash is still being worked out', 1500); return; }
-    const cr = c.crash, res = cr.result, T0 = rigid ? cr.T0 : res.T0;
-    const units = c.units.map(u => ({ model: u.model === 'player' ? R.player : R.wrecks[u.key], view: cr.unitView(u.u), paint: u.paint }));
-    for (const U of units) { U.model.group.visible = true; if (U.model !== R.player && U.paint !== undefined) U.model.setPaint(U.paint); U.model.prepareDestruction(U.view); }
-    const cin = rigid ? { speed: (t) => slowmoAt(t - T0) } : Cinematic.fromCrash({ units: res.units.map((u, i) => Object.assign({}, u, { axes: cr.F.unitAxes[i] })), frames: cr.F, T0: res.T0, contact: res.contact }, cr.events);
-    replay = { cr, units, cin, T0, t: Math.max(0, T0 - 0.15), end: cr.F.t[cr.F.t.length - 1], prevState: state };
-    evPending = []; kCur = 0; camAngle = 0.4;
-    R.setCrashLift(cr.lift); PT.y = cr.lift || 0;
+  // ---------------------------------------------------------------- highlights, filmed by the drone
+  // The race is recorded as it's drawn (the cars' poses, the player's crash and a takedown's wreck as
+  // frames of their crashes, the props that moved), the last 6 s at a time. A moment (a takedown, the
+  // player's crash, a big jump) keeps the 4 s before it and a few after as a clip, at most eight. After
+  // the finish the clips play back as the camera crew's drone saw them: following the action from 7 m
+  // up, drifting round it, a little unsteady; the crashes smoke again.
+  const KEYS = Object.keys(specs), HL_MAX = 8;
+  const hlRing = [], clips = [];
+  let hlClock = 0, airT = 0, crashRec = null, hl = null;
+  function noteMoment(kind, info) {
+    if ((SCRIPTED && TEST !== 'takedown') || state === 'select' || state === 'countdown') return;
+    const pre = kind === 'jump' ? info.air + 2.2 : 4, post = kind === 'jump' ? 1.6 : kind === 'crash' ? 4.2 : 3.6;
+    const title = kind === 'takedown' ? `Takedown · ${info.name}` : kind === 'crash' ? `Your crash · ${Math.round(info.kmh)} km/h` : `Big air · ${info.air.toFixed(1)} s`;
+    const pri = { takedown: 3, crash: 2, jump: 1 }[kind];
+    const open = clips.find(c => c.end > hlClock - pre);
+    if (open) { open.end = Math.max(open.end, hlClock + post); if (pri > open.pri) { open.pri = pri; open.kind = kind; open.title = title; } return; }
+    clips.push({ kind, title, pri, start: hlClock - pre, end: hlClock + post, frames: hlRing.filter(f => f.t >= hlClock - pre) });
+    if (clips.length > HL_MAX) {   // the least of them goes (the earliest, of the lowest kind)
+      let worst = 0; for (let i = 1; i < clips.length; i++) if (clips[i].pri < clips[worst].pri) worst = i;
+      clips.splice(worst, 1);
+    }
+  }
+  // what was drawn this frame (dt: real seconds); draws: the other cars
+  function recordFrame(dt, draws) {
+    if (state !== 'race' && state !== 'crash') return;
+    hlClock += dt;
+    const f = { t: hlClock, cars: new Float32Array(draws.length * 14), props: null, player: null, td: null };
+    draws.forEach((d, i) => {
+      const o = 14 * i, sp = d.spins || [0, 0, 0, 0];
+      f.cars.set([KEYS.indexOf(d.key), d.x, d.z, d.h, d.pitch || 0, d.roll || 0, d.lift || 0, d.steer || 0, sp[0], sp[1], sp[2], sp[3], d.paint === undefined ? -1 : d.paint, 0], o);
+    });
+    if (state === 'crash' && crashRec) f.player = { rec: crashRec, t: tPlay };
+    else { const p = car.pose; f.player = { x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll, lift: car.y, steer: car.steer, wheelie: car.wheelie, spin: car.wheels[2].spin }; }
+    if (tdCam) f.td = { rec: tdCam.rec, t: tdCam.t };
+    for (let i = 0; i < props.list.length; i++) { const pr = props.list[i]; if (pr.dirty) (f.props = f.props || []).push([i, ...pr.p, ...pr.q]); }
+    hlRing.push(f);
+    while (hlRing.length && hlRing[0].t < hlClock - 6.5) hlRing.shift();
+    for (const c of clips) if (c.end >= hlClock && c.frames[c.frames.length - 1] !== f) c.frames.push(f);
+    // a big jump: noted on landing
+    if (state === 'race') { if (car.air) airT += dt; else { if (airT > 1.0) noteMoment('jump', { air: airT }); airT = 0; } }
+  }
+  // the crash frame at time t (cur.k kept between calls): [k, k2, s]
+  function frameAt(F, t, cur) {
+    const n = F.t.length;
+    let k = Math.min(cur.k, Math.max(0, n - 2)); while (k > 0 && F.t[k] > t) k--; while (k < n - 2 && F.t[k + 1] <= t) k++; cur.k = k;
+    const k2 = Math.min(n - 1, k + 1);
+    return [k, k2, F.t[k2] > F.t[k] ? Math.min(1, Math.max(0, (t - F.t[k]) / (F.t[k2] - F.t[k]))) : 0];
+  }
+  function startHighlights() {
+    const list = clips.filter(c => c.frames.length > 10);
+    if (!list.length) { toast('Nothing to show yet', 1500); return; }
+    for (const c of list) for (const f of c.frames) for (const r of [f.player && f.player.rec, f.td && f.td.rec]) if (r && !r.cr.done) { toast('The crashes are still being worked out', 1500); return; }
+    hl = { list, i: -1, prevState: state, saved: new Map() };
+    $('#results').hidden = true; $('#hud').hidden = true;
+    const bar = $('#replay-bar');
+    bar.innerHTML = '<span class="dot"></span>Drone cam · <span id="replay-clock" class="mono"></span>';
+    bar.hidden = false;
+    FX.engineStop();
     state = 'replay';
-    $('#results').hidden = true; $('#replay-bar').hidden = false;
+    nextClip();
   }
-  function updateReplay(dt, input) {
-    const rp = replay, sp = rp.cin.speed(rp.t);
-    rp.t = Math.min(rp.end, rp.t + dt * sp);
-    FX.setTimeScale(sp);
-    showCrashFrame(rp.cr, rp.units, rp.t);
-    fireEvents(rp.cr, rp.t);
-    camAngle += dt * 0.25;
-    R.orbit(PT, camAngle, 7, 1.7, level);
-    $('#replay-clock').textContent = `+${Math.round((rp.t - rp.T0) * 1000)} ms · ${sp >= 0.995 ? '1×' : '1/' + Math.round(1 / sp) + '×'}`;
-    if (rp.t >= rp.end || input.pause || input.start) endReplay();
+  // the units of a recorded crash, ready to play (models, views, their own event queue and cursor)
+  function playRec(rec) {
+    if (hl.recs.has(rec)) return hl.recs.get(rec);
+    const units = rec.units.map(u => ({ key: u.key, model: u.model === 'player' ? R.player : R.wrecks[u.key], view: rec.cr.unitView(u.u), paint: u.paint }));
+    for (const U of units) { if (U.model !== R.player && U.paint !== undefined) U.model.setPaint(U.paint); U.model.prepareDestruction(U.view); }
+    const p = { rec, units, Q: [], cur: { k: 0 }, on: false };
+    hl.recs.set(rec, p);
+    return p;
   }
-  function endReplay() {
-    for (const U of replay.units) { U.model.clearDestruction(); if (U.model !== R.player) U.model.group.visible = false; }
-    state = replay.prevState; replay = null;
-    R.setCrashLift(0); PT.y = 0;
+  function showRec(p, t, focus) {
+    const [k, k2, s] = frameAt(p.rec.cr.F, t, p.cur);
+    for (const U of p.units) {
+      if (U.model !== R.player) U.model.group.visible = true;
+      R.deform(U.model, U.view, k, k2, s, t);
+      const ax = U.view.frames.axes[k];
+      if (ax) { focus.x += ax[0]; focus.y += ax[1] + (p.rec.cr.lift || 0); focus.z += ax[2]; focus.n++; }
+    }
+    R.setCrashLift(p.rec.cr.lift || 0);
+    fireEvents(p.rec.cr, t, p.units, p.cur, p.Q);
+    p.on = true;
+  }
+  function hideRec(p) {
+    for (const U of p.units) { U.model.clearDestruction(); if (U.model !== R.player) U.model.group.visible = false; }
+    p.on = false; p.cur.k = 0; p.Q.length = 0; p.Q.cursor = 0;
+  }
+  function endClip() {
+    if (!hl || !hl.clip) return;
+    for (const p of hl.recs.values()) hideRec(p);
+    // the props back where they lie now
+    for (const [i, pose] of hl.saved) { const pr = props.list[i]; pr.p = pose[0]; pr.q = pose[1]; pr.dirty = true; }
+    hl.saved.clear();
+    crashSmoke.clear();
+    R.setCrashLift(0);
+  }
+  function nextClip() {
+    endClip();
+    hl.i++;
+    if (hl.i >= hl.list.length) { endHighlights(); return; }
+    const c = hl.clip = hl.list[hl.i];
+    hl.recs = new Map(); hl.t = 0; hl.fi = 0; hl.propAt = 0; hl.draws = [];
+    // the props this clip moves: back to where they stood (and the live poses kept for after)
+    const touched = new Set();
+    for (const f of c.frames) if (f.props) for (const q of f.props) touched.add(q[0]);
+    for (const i of touched) { const pr = props.list[i]; hl.saved.set(i, [pr.p.slice(), pr.q.slice()]); pr.p = pr.p0.slice(); pr.q = pr.q0.slice(); pr.dirty = true; }
+    const p0 = c.frames[0].player;
+    const h0 = p0 && p0.h !== undefined ? p0.h : 0;
+    hl.drone = { a: h0 + Math.PI + 0.55, pos: null, look: null, alt: 7 };
+    crashSmoke.clear();
+  }
+  function endHighlights() {
+    endClip();
+    const back = hl.prevState;
+    hl = null;
+    state = back;
+    $('#replay-bar').hidden = true; $('#hud').hidden = false;
     FX.setTimeScale(1);
-    $('#replay-bar').hidden = true;
+    if (audio) FX.engineStart();
     if (state === 'finished') $('#results').hidden = false;
   }
+  const DV = new THREE.Vector3(), DL = new THREE.Vector3();
+  function updateHighlights(dt, input) {
+    if (input.pause) { endHighlights(); return; }
+    if (input.start) { nextClip(); if (!hl) return; }
+    const c = hl.clip, F = c.frames;
+    hl.t += dt;
+    const ct = F[0].t + hl.t;
+    while (hl.fi < F.length - 1 && F[hl.fi + 1].t <= ct) hl.fi++;
+    const f = F[hl.fi];
+    // the props, as they moved up to now
+    for (; hl.propAt <= hl.fi; hl.propAt++) { const g = F[hl.propAt].props; if (g) for (const q of g) { const pr = props.list[q[0]]; pr.p = [q[1], q[2], q[3]]; pr.q = [q[4], q[5], q[6], q[7]]; pr.dirty = true; } }
+    // the other cars
+    hl.draws.length = 0;
+    for (let o = 0; o < f.cars.length; o += 14) {
+      const a = f.cars;
+      hl.draws.push({ key: KEYS[a[o]], x: a[o + 1], z: a[o + 2], h: a[o + 3], pitch: a[o + 4], roll: a[o + 5], lift: a[o + 6], steer: a[o + 7], spins: [a[o + 8], a[o + 9], a[o + 10], a[o + 11]], paint: a[o + 12] < 0 ? undefined : a[o + 12] });
+    }
+    // the player's car (or its crash), and a takedown's wreck; what the drone follows
+    const focus = { x: 0, y: 0, z: 0, n: 0 };
+    let live = new Set();
+    if (f.td) { const p = playRec(f.td.rec); showRec(p, f.td.t, focus); live.add(p); }
+    if (f.player && f.player.rec) {
+      const p = playRec(f.player.rec); const fx = { x: 0, y: 0, z: 0, n: 0 };
+      showRec(p, f.player.t, fx); live.add(p);
+      if (!focus.n) Object.assign(focus, fx);
+    } else if (f.player) {
+      const pl = f.player;
+      R.drawPlayer({ x: pl.x, z: pl.z, h: pl.h, pitch: pl.pitch, roll: pl.roll, lift: pl.lift, steer: pl.steer, wheelie: pl.wheelie }, pl.spin - (hl.spin === undefined ? pl.spin : hl.spin));
+      hl.spin = pl.spin;
+      if (!focus.n) { focus.x = pl.x; focus.y = pl.lift; focus.z = pl.z; focus.n = 1; }
+    }
+    for (const p of hl.recs.values()) if (p.on && !live.has(p)) hideRec(p);
+    if (focus.n) { focus.x /= focus.n; focus.y /= focus.n; focus.z /= focus.n; }
+    // the drone: drifts round the action, about 13 m off and 7 m up (higher over a building), easing
+    // after it like a camera on a quadcopter, with a little sway
+    const d = hl.drone, crashing = !!(f.td || (f.player && f.player.rec));
+    d.a += dt * (crashing ? 0.16 : 0.08);
+    const dist = crashing ? 11 : 13;
+    let alt = crashing ? 5.5 : 7;
+    const wx = focus.x + Math.cos(d.a) * dist, wz = focus.z + Math.sin(d.a) * dist;
+    for (const o of level.collidersNear(wx, wz, 1.5)) if (o.box && o.height) alt = Math.max(alt, o.height + 3 - (focus.y || 0));
+    d.alt += (alt - d.alt) * (1 - Math.exp(-dt * 1.5));
+    DV.set(wx, (focus.y || 0) + d.alt + Math.sin(hl.t * 1.7) * 0.18, wz);
+    DL.set(focus.x, (focus.y || 0) + 0.8, focus.z);
+    if (!d.pos) { d.pos = DV.clone(); d.look = DL.clone(); }
+    d.pos.lerp(DV, 1 - Math.exp(-dt * 1.4));
+    d.look.lerp(DL, 1 - Math.exp(-dt * 3.5));
+    R.orbit({ x: focus.x, y: focus.y || 0, z: focus.z }, d.a, dist, d.alt, null);   // (the sun's shadows follow the focus)
+    R.camera.position.set(d.pos.x + Math.sin(hl.t * 1.3) * 0.12, d.pos.y, d.pos.z + Math.cos(hl.t * 1.1) * 0.12);
+    R.camera.lookAt(d.look);
+    R.camera.rotateZ(Math.sin(hl.t * 0.9) * 0.012);
+    if (Math.abs(R.camera.fov - 48) > 0.01) { R.camera.fov = 48; R.camera.updateProjectionMatrix(); }
+    fxScale = 1;
+    $('#replay-clock').textContent = `${c.title} · ${hl.i + 1} of ${hl.list.length} · alt ${Math.round(d.pos.y - (focus.y || 0))} m · ${TOUCH ? 'tap for the next' : 'Enter: next · Esc: close'}`;
+    if (ct >= F[F.length - 1].t) nextClip();
+  }
+  $('#replay-bar').addEventListener('click', () => { if (hl) nextClip(); });
 
   // ---------------------------------------------------------------- the finish
   let autopilot = null;
@@ -415,7 +583,7 @@ const RaceGame = (() => {
     const fmt = (n) => n.toLocaleString('en-US');
     $('#results-score').innerHTML = `<h3>Score ${fmt(score.score)}${best === null ? '' : score.score > best ? ' · a new best' : ` · best ${fmt(best)}`}</h3>` +
       `<table>${score.breakdown().map(b => `<tr><td>${b.label}</td><td class="n">×${b.n}</td><td class="p">${fmt(b.pts)}</td></tr>`).join('')}</table>`;
-    $('#btn-replay').hidden = !crashes.length;
+    $('#btn-replay').hidden = !clips.some(c => c.frames.length > 10);
     $('#results').hidden = false;
   }
   // racing again: the page again, straight into the race with the same car and track (?go), or to the
@@ -423,7 +591,7 @@ const RaceGame = (() => {
   const reloadTo = (race) => { const u = new URL(location.href); if (race) u.searchParams.set('go', '1'); else u.searchParams.delete('go'); Music.leave(() => { location.href = u.toString(); }); };
   $('#btn-again').addEventListener('click', () => reloadTo(true));
   $('#btn-change').addEventListener('click', () => reloadTo(false));
-  $('#btn-replay').addEventListener('click', () => startReplay(crashes.length - 1));
+  $('#btn-replay').addEventListener('click', () => startHighlights());
 
   // ---------------------------------------------------------------- HUD
   let toastT = 0, chipT = 0;
@@ -625,6 +793,8 @@ const RaceGame = (() => {
 
   // ---------------------------------------------------------------- loop
   const sparks = new FX.Particles(R.scene, 2500);
+  const crashSmoke = RaceSmoke.create(R.scene);   // smoke and fire from crashed cars (smoke.js)
+  let fxScale = 1;   // how fast the smoke runs: slow motion slows it
   let acc = 0, last = performance.now(), simT = 0, audio = false, prevSpin = 0, paused = false, held = false;
   let input = { steer: 0, throttle: 0, brake: 0 };
   const testDrive = { throttle: 1 };
@@ -638,6 +808,7 @@ const RaceGame = (() => {
   function playerInput() {
     if (director.input) return director.input(STEP);
     if (TEST === 'takedown') return { throttle: 1, steer: simT < 1.2 ? 0.5 : -0.5 };   // shove, then pull away
+    if (tdCam) return { throttle: 0.4 };   // watching a takedown: the car holds its line
     if (TEST) return testDrive;
     if (state === 'finished' && autopilot) return ai.drive(autopilot, STEP, ctxAI);
     if (stallT > 0) { stallT -= STEP; return { brake: 1 }; }
@@ -669,17 +840,17 @@ const RaceGame = (() => {
     }
     // the music (js/music.js): the menu song on the select screen, the track's own song from the
     // countdown, the results song at the finish; quieter and muffled while paused or in the crash camera
-    const ms = state === 'replay' ? replay.prevState : state, muffle = paused || state === 'crash' || state === 'replay';
+    const ms = state === 'replay' ? hl.prevState : state, muffle = paused || state === 'crash';
     Music.play(ms === 'select' ? 'menu' : ms === 'finished' ? 'results' : 'race:' + LEVEL);
     Music.preload('race:' + LEVEL, 'results');
     Music.duck(paused ? 0.35 : muffle ? 0.5 : 1, muffle);
-    if (state === 'replay') updateReplay(dt, input);
+    if (state === 'replay') updateHighlights(dt, input);
     if (state === 'select') updateSelect(input);
     const hold = state === 'select' || state === 'countdown';
     if (hold !== held) { held = hold; me.frozen = hold && !TEST; for (const r of ai.rivals) r.body.frozen = hold; }
     if (!paused && state !== 'replay' && state !== 'select') {
       if (state === 'race') {
-        if (input.camera) R.cam.mode = R.cam.mode === 'chase' ? 'bumper' : 'chase';
+        if (input.camera) R.cam.mode = R.cam.mode === 'chase' ? 'cockpit' : 'chase';
         if (input.reset) resetToTrack();
         R.cam.back = !!input.lookBack;
       }
@@ -689,9 +860,9 @@ const RaceGame = (() => {
         if (Math.ceil(countdown) !== before && countdown > 0) { toast(String(Math.ceil(countdown)), 900); if (audio) FX.count(false); }
         if (countdown <= 0) { state = 'race'; simT = 0; toast('Go!', 900); if (audio) FX.count(true); }
       }
-      const scale = slowmo > 0 ? 0.3 : 1;
+      const scale = tdCam ? 0.03 : slowmo > 0 ? 0.3 : 1;
       if (slowmo > 0) slowmo -= dt;
-      if (state !== 'crash') FX.setTimeScale(scale);
+      if (state !== 'crash' && !tdCam) { FX.setTimeScale(scale); fxScale = scale; }
       acc += dt * scale;
       while (acc >= STEP) {
         stepN++;
@@ -736,6 +907,7 @@ const RaceGame = (() => {
       }
     }
     // the player's car and the camera
+    if (tdCam && state !== 'race' && state !== 'finished') endTakedownCam();
     if (state === 'crash') updateCrash(dt, input);
     else if (state !== 'replay') {
       const p = car.pose, spinNow = car.wheels[2].spin;
@@ -743,22 +915,26 @@ const RaceGame = (() => {
       prevSpin = spinNow;
       // the car faces the camera: a front three-quarter view, swaying 3-37 degrees off the nose
       if (state === 'select') { selT += dt; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4 * Math.max(1, specs[carKey].length / 4.86), 1.5, level); }
+      else if (tdCam) updateTakedownCam(dt, input);
       else {
-        R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dt);
+        R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting, eye: eyeOf(carKey), pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll }, dt);
         // the boost's first surge widens the view a little more (the camera keeps its own smoothed
         // field of view, which it puts back next frame)
         if (car.kick > 0) { R.camera.fov += 5 * car.kick; R.camera.updateProjectionMatrix(); }
       }
     }
+    R.cockpit(R.cam.mode === 'cockpit' && !tdCam && (state === 'race' || state === 'countdown' || state === 'finished'));
+    crashSmoke.update(dt * fxScale);
     // everyone else (instanced): the street as it was during a crash or replay
-    const draws = (state === 'crash' || state === 'replay') && frozenDraw ? frozenDraw : drawStates();
+    const draws = state === 'replay' ? (hl ? hl.draws : []) : state === 'crash' && frozenDraw ? frozenDraw : drawStates();
+    recordFrame(dt, draws);
     const slots = {};
     for (const d of draws) { slots[d.key] = slots[d.key] || 0; R.drawCar(d.key, slots[d.key]++, d); }
     R.endCars();
     // head and tail lights glowing at dusk and at night (everyone's, the player's too, but not in a crash)
     const glow = [];
     const lamps = (key, x, z, h, y) => {
-      const S = specs[key], L = lampsOf(key), c = Math.cos(h), s = Math.sin(h), f = S.xMin + S.length + 0.02, b = S.xMin - 0.02;
+      const L = lampsOf(key), c = Math.cos(h), s = Math.sin(h), f = L.xh, b = L.xt;
       for (const sd of [-1, 1]) {
         glow.push({ x: x + c * f - s * sd * L.wh, y: y + L.yh, z: z + s * f + c * sd * L.wh, r: 1, g: 0.9, b: 0.72 });
         glow.push({ x: x + c * b - s * sd * L.wt, y: y + L.yt, z: z + s * b + c * sd * L.wt, r: 0.95, g: 0.08, b: 0.04 });
@@ -786,17 +962,26 @@ const RaceGame = (() => {
     R.render();
     requestAnimationFrame(frame);
   }
-  // where a car's head and tail lamps glow: the Lexus and Mustang as before, the garage's own cars
-  // at their lamp parts (height and spread from the model)
+  // the driver's eyes, in the car's frame: about 0.6 m over the H-point (a little ahead of it: the view
+  // leans over the dash the models don't have); the rider's helmet; the commander, in the turret hatch
+  const eyeOf = (key) => {
+    const S = specs[key];
+    if (S.rig === 'bike') return [-0.1, 1.5, 0];
+    if (S.rig) return [0.4, S.height - 0.15, -0.3];
+    const H = S.hPoint || [-0.25, 0.6, -0.37];
+    return [H[0] + 0.15, H[1] + 0.62, H[2]];
+  };
+  // where a car's head and tail lamps glow: on its lamp parts (just off the front of the headlamp and the
+  // back of the tail lamp, at their height and spread), or a rig's lamp points
   const lampCache = {};
   function lampsOf(key) {
     if (lampCache[key]) return lampCache[key];
     const S = specs[key], part = (n) => S.parts.find((p) => p.name === n);
-    if (S.rig) { const h = S.lamps.head[0], t = S.lamps.tail[0]; return (lampCache[key] = { yh: h[1], yt: t[1], wh: Math.abs(h[2]), wt: Math.abs(t[2]) }); }
+    if (S.rig) { const h = S.lamps.head[0], t = S.lamps.tail[0]; return (lampCache[key] = { xh: h[0], xt: t[0], yh: h[1], yt: t[1], wh: Math.abs(h[2]), wt: Math.abs(t[2]) }); }
     const H = part('BRITTLE_LightHR'), T = part('BRITTLE_LightTR');
     const mid = (p, i) => (p.lo[i] + p.hi[i]) / 2;
-    return (lampCache[key] = key === 'lexus' || key === 'mustang' || !H || !T ? { yh: 0.7, yt: 0.86, wh: S.width / 2 - 0.32, wt: S.width / 2 - 0.32 }
-      : { yh: mid(H, 1), yt: mid(T, 1), wh: Math.min(S.width / 2 - 0.12, mid(H, 2)), wt: Math.min(S.width / 2 - 0.12, mid(T, 2)) });
+    return (lampCache[key] = !H || !T ? { xh: S.xMin + S.length - 0.15, xt: S.xMin + 0.1, yh: 0.7, yt: 0.86, wh: S.width / 2 - 0.32, wt: S.width / 2 - 0.32 }
+      : { xh: H.hi[0] + 0.02, xt: T.lo[0] - 0.02, yh: mid(H, 1), yt: mid(T, 1), wh: Math.min(S.width / 2 - 0.12, mid(H, 2)), wt: Math.min(S.width / 2 - 0.12, mid(T, 2)) });
   }
   // what to draw for the other cars
   function drawStates() {
@@ -876,8 +1061,90 @@ const RaceGame = (() => {
       if (rules.rivalContact(e, b.rival, simT)) wreckRival(b.rival, e);
     }
   }
+  // ---------------------------------------------------------------- the takedown camera
+  // A rival the player takes down by putting it into a wall, a post or another car crashes on the full
+  // crash solver (Dramatic damage: it comes apart), and the camera leaves the player to watch it in
+  // slow motion: the race all but stops (3% speed), the player's car holds a steady throttle (nothing to
+  // steer), and the wreck is orbited through the impact, then the race carries on. The rival rejoins
+  // behind; a traffic car it hit leaves.
+  let tdCam = null;
+  function startTakedownCam(r, e) {
+    const b = r.body, c = b.car;
+    if (specs[r.key].rig || !R.wrecks[r.key]) return false;
+    const other = e.a === b ? e.b : e.a;
+    world.restore(b, 1);
+    // another car in it: a unit of the crash too when its model is free (a different car), else a box
+    const ok = other && other.car && !other.frozen && other.car.key !== r.key && R.wrecks[other.car.key] && !specs[other.car.key].rig;
+    if (ok) world.restore(other, 1);
+    const bodies = ok ? [b, other] : [b];
+    const ground = level.groundAt(c.x, c.z).h;
+    const units = bodies.map(q => {
+      const k = q.car, u = { key: k.key, massKg: k.m, pose: k.pose, velocity: k.originVelocity(), yawRate: k.yaw };
+      if (k.air || k.y - ground > 0.05) Object.assign(u, { lift: k.y - ground, vy: k.vy, pitch: k.pitch + k.gPitch, roll: k.roll + k.gRoll });
+      return u;
+    });
+    // a takedown is a wreck: the rival leaves the ground rolling away from the hit, so it tumbles into
+    // what it hit (an arcade touch: a scrape along a rail would otherwise be all there was to see)
+    { const u = units[0], rx = -Math.sin(c.h), rz = Math.cos(c.h), side = Math.sign((e.x - c.x) * rx + (e.z - c.z) * rz) || 1, v = Math.hypot(c.vx, c.vz);
+      Object.assign(u, { lift: Math.max(u.lift || 0, 0.35), vy: Math.max(u.vy || 0, 3 + v * 0.08), roll: (u.roll || 0) + side * 0.5, pitch: (u.pitch || 0) - 0.08, yawRate: u.yawRate + side * Math.min(2.5, 0.8 + v * 0.05) }); }
+    const near = level.collidersNear(e.x, e.z, 32);
+    const boxes = near.filter(o => o.box).map(o => ({ x: o.x, z: o.z, hx: o.hx, hz: o.hz, angle: o.angle, height: o.height }));
+    if (other && other.car && !ok) { const B = world.box(other); if (B) boxes.push({ x: B.x, z: B.z, hx: B.hx, hz: B.hz, angle: Math.atan2(B.uz, B.ux), height: other.top || 1.5 }); }
+    const cr = RaceCrash.start({ units, world: { boxes, cyls: near.filter(o => !o.box).map(o => ({ x: o.x, z: o.z, r: o.r, height: o.height })) }, duration: 1.6, damage: 'dramatic', solver: solverPick.solver });
+    cr.lift = ground; cr.takedown = true; cr.impactKmh = Math.max(e.vn * 3.6, Math.hypot(c.vx, c.vz) * 3.6 * 0.7);
+    const tu = bodies.map((q, u) => ({ body: q, key: q.car.key, model: R.wrecks[q.car.key], view: cr.unitView(u), paint: paintOf(q) }));
+    for (const U of tu) { U.body.frozen = true; U.model.group.visible = true; if (U.paint !== undefined) U.model.setPaint(U.paint); }
+    r.wreck = 99;
+    tdCam = { cr, units: tu, r, t: 0, real: 0, cur: { k: 0 }, ev: [], angle: Math.atan2(car.z - c.z, car.x - c.x) + 0.5, name: r.name, at: simT,
+      rec: { cr, units: tu.map((U, u) => ({ key: U.key, model: U.key, u, paint: U.paint })) } };
+    noteMoment('takedown', { name: r.name });
+    R.setCrashLift(ground);
+    RaceInput.rumble(0.9, 0.7, 350);
+    return true;
+  }
+  function updateTakedownCam(dt, input) {
+    const td = tdCam, cr = td.cr, F = cr.F, n = F.t.length;
+    td.real += dt;
+    cr.tick(6);
+    let speed = 0.25;
+    if (n >= 3) {
+      const T0 = cr.T0 >= 0 ? cr.T0 : F.t[n - 1];
+      speed = slowmoAt(td.t - T0);
+      const limit = cr.done ? F.t[n - 1] : F.t[n - 3];
+      td.t = Math.min(td.t + dt * speed, limit);
+      let k = Math.min(td.cur.k, n - 2); while (k > 0 && F.t[k] > td.t) k--; while (k < n - 2 && F.t[k + 1] <= td.t) k++; td.cur.k = k;
+      const k2 = Math.min(n - 1, k + 1), s = F.t[k2] > F.t[k] ? Math.min(1, Math.max(0, (td.t - F.t[k]) / (F.t[k2] - F.t[k]))) : 0;
+      const P = { x: 0, z: 0, y: cr.lift };
+      for (const U of td.units) { R.deform(U.model, U.view, k, k2, s, td.t); const ax = U.view.frames.axes[k]; P.x += ax[0] / td.units.length; P.z += ax[2] / td.units.length; }
+      fireEvents(cr, td.t, td.units, td.cur, td.ev);   // its own queue: the player's crash queue isn't touched
+      td.angle += dt * 0.4;
+      R.orbit(P, td.angle, 8, 2.1, level);
+      fxScale = speed;
+      const over = (cr.done && td.t >= F.t[n - 1] - 1e-6) || (cr.T0 >= 0 && td.t >= cr.T0 + 1.5);
+      if (over || (td.real > 0.8 && input.start)) endTakedownCam();
+    } else if (td.real > 3) endTakedownCam();   // the solver never got going: give up on it
+    FX.setTimeScale(Math.max(0.3, speed));
+  }
+  function endTakedownCam() {
+    const td = tdCam;
+    if (!td) return;
+    tdCam = null;
+    crashSmoke.stop();
+    if (!td.cr.done) td.cr.stop();
+    for (const U of td.units) { U.body.frozen = false; U.model.clearDestruction(); U.model.group.visible = false; }
+    R.setCrashLift(0);
+    const f = level.nearest(car.x, car.z, prog.i);
+    for (const U of td.units) {
+      if (U.body.rival) { U.body.rival.wreck = 0; ai.respawn(U.body.rival, f.s - 30); }
+      else if (U.body.traffic) traffic.remove(U.body.traffic);
+    }
+    R.cam.init = false;   // the chase camera picks the player up again
+    FX.setTimeScale(1);
+  }
+
   // rival r wrecks (from contact event e, or spun out with e null): it spins away from the hit and
-  // brakes to a stop (ai.js), and rejoins; the player's takedown if the rules say so
+  // brakes to a stop (ai.js), and rejoins; the player's takedown if the rules say so (a hit into
+  // something: the takedown camera, above)
   function wreckRival(r, e) {
     const b = r.body, c = b.car;
     r.wreck = 3; b.wrecked = true;
@@ -889,7 +1156,9 @@ const RaceGame = (() => {
     const x = e ? e.x : c.x, z = e ? e.z : c.z;
     sparks.spawn(x, 0.5, z, 40, 'spark', [0, 0.8, 0]);
     const d = Math.hypot(c.x - car.x, c.z - car.z);
-    if (state === 'race' && rules.wrecked(r, simT)) { slowmo = 0.9; FX.crunch(1, [x, 0.6, z]); }   // counts half a second later
+    if (state === 'race' && rules.wrecked(r, simT)) {   // counts half a second later
+      if (!(e && !tdCam && (!SCRIPTED || TEST === 'takedown') && startTakedownCam(r, e))) { slowmo = 0.9; FX.crunch(1, [x, 0.6, z]); }   // (not for the trailer's director)
+    }
     else if (d < 80) FX.crunch(Math.max(0.3, 1 - d / 80), [x, 0.5, z]);
   }
   // a rival the player hit that spins out (past 60 degrees, still moving) is wrecked too
@@ -955,5 +1224,5 @@ const RaceGame = (() => {
   }
   start().catch((err) => { $('#loading').textContent = 'Could not start: ' + err.message; console.error(err); });
 
-  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return paintNow(); }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get boost() { return boost; }, get health() { return health; }, props, standings };
+  return { level, world, get car() { return car; }, get carKey() { return carKey; }, get paint() { return paintNow(); }, me, R, ai, traffic, director, crashFocus: PT, get simT() { return simT; }, get takedowns() { return takedowns; }, get prog() { return prog; }, get state() { return state; }, get crash() { return crash; }, get crashes() { return crashes; }, get clips() { return clips; }, highlights: () => startHighlights(), get tdCam() { return tdCam; }, get boost() { return boost; }, get health() { return health; }, props, standings };
 })();

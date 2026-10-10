@@ -149,6 +149,7 @@ const DestructionGame = (() => {
 
   // a fresh attempt: the traffic from its schedule, the props back up, no wrecks
   function resetAttempt() {
+    dclip = null; ring.length = 0; fxRec = [];
     if (crash) crash.stop();
     crash = null; crashUnits = []; impactAt = -1; slowmo = 0;
     for (const m of [R.player, R.wrecks.lexus, R.wrecks.mustang]) if (m) { m.clearDestruction(); m.group.matrixAutoUpdate = false; }
@@ -194,11 +195,11 @@ const DestructionGame = (() => {
       const c = v.body.car, key = v.type;
       if (traffic.HEAVY[key]) {
         M4.makeRotationY(-c.h).setPosition(c.x - Math.cos(c.h) * c.cgX, c.y, c.z - Math.sin(c.h) * c.cgX);
-        look.drawHeavy(key, slots[key]++, M4, heavyPaint(v), null);
+        dh(key, slots[key]++, M4, heavyPaint(v), null);
       } else {
         const p = c.pose, i = slots[key]++;
-        R.drawCar(key, i, { x: p.x, z: p.z, h: p.heading, pitch: c.pitch + c.gPitch, roll: c.roll + c.gRoll, lift: c.y, steer: c.steer, spins: c.wheels.map(w => w.spin), paint: paintOf(v) });
-        look.dentCar(key, i, null);
+        dc(key, i, { x: p.x, z: p.z, h: p.heading, pitch: c.pitch + c.gPitch, roll: c.roll + c.gRoll, lift: c.y, steer: c.steer, spins: c.wheels.map(w => w.spin), paint: paintOf(v) });
+        dd(key, i, null);
       }
     }
     if (wrecks) for (const b of wrecks.bodies) {
@@ -206,8 +207,8 @@ const DestructionGame = (() => {
       const key = b.key;
       wreckMatrix(b, M4);
       const d = b.dents.concat([b.exploded ? 1 : Math.min(0.6, b.burn >= 0 ? b.burn * 0.2 : 0)]);
-      if (traffic.HEAVY[key]) look.drawHeavy(key, slots[key]++, M4, key === 'bus' ? DestructionLook.BUS_PAINTS[(b.paint || 0) % 4] : DestructionLook.PAINTS[(b.paint || 0) % 8], d);
-      else { const i = slots[key]++; R.drawCar(key, i, { matrix: M4, spins: b.spins || [0, 0, 0, 0], paint: DestructionLook.PAINTS[(b.paint || 0) % 8] }); look.dentCar(key, i, d); }
+      if (traffic.HEAVY[key]) dh(key, slots[key]++, M4, key === 'bus' ? DestructionLook.BUS_PAINTS[(b.paint || 0) % 4] : DestructionLook.PAINTS[(b.paint || 0) % 8], d);
+      else { const i = slots[key]++; dc(key, i, { matrix: M4, spins: b.spins || [0, 0, 0, 0], paint: DestructionLook.PAINTS[(b.paint || 0) % 8] }); dd(key, i, d); }
     }
     R.endCars(); look.endHeavy();
   }
@@ -362,15 +363,15 @@ const DestructionGame = (() => {
       for (const w of U.model.pieces().wheels) { if (!w.group.userData.track) w.group.userData.track = []; const tr = w.group.userData.track; tr.push([t, w.group.position.x, w.group.position.y, w.group.position.z]); if (tr.length > 6) tr.shift(); }
     }
   }
-  function fireEvents(t) {
-    const fresh = crash.events.slice(evPending.cursor || 0);
-    evPending.cursor = crash.events.length;
-    evPending.push(...fresh);
-    evPending.sort((a, b) => a.t - b.t);
-    const lift = crash.lift || 0;
-    while (evPending.length && evPending[0].t <= t) {
-      const e = evPending.shift(), y = e.y + lift, pos = [e.x, y, e.z];
-      if (e.type === 'first') { if (!FX.crashClip(crash.sound, pos)) FX.crunch(1, pos); look.embers.spawn(e.x, y, e.z, 40, 'spark', [0, 0.6, 0]); look.embers.spawn(e.x, y, e.z, 16, 'dust'); look.shake(0.8, e.x, y, e.z); }
+  function fireEvents(t, cr = crash, Q = evPending) {
+    const fresh = cr.events.slice(Q.cursor || 0);
+    Q.cursor = cr.events.length;
+    Q.push(...fresh);
+    Q.sort((a, b) => a.t - b.t);
+    const lift = cr.lift || 0;
+    while (Q.length && Q[0].t <= t) {
+      const e = Q.shift(), y = e.y + lift, pos = [e.x, y, e.z];
+      if (e.type === 'first') { if (!FX.crashClip(cr.sound, pos)) FX.crunch(1, pos); look.embers.spawn(e.x, y, e.z, 40, 'spark', [0, 0.6, 0]); look.embers.spawn(e.x, y, e.z, 16, 'dust'); look.shake(0.8, e.x, y, e.z); }
       else if (e.type === 'contact') { if (Math.random() < 0.25) FX.crunch(Math.min(1, e.mag / 3000), pos); if (Math.random() < 0.5) look.embers.spawn(e.x, y, e.z, 4, 'spark', [0, 0.3, 0]); }
       else if (e.type === 'detach') { FX.tear(e.mass, pos); FX.clank(e.mass, pos); look.embers.spawn(e.x, y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); }
       else if (e.type === 'glass') { FX.glass(e.mass, pos); look.embers.spawn(e.x, y, e.z, 12, 'glass'); }
@@ -644,6 +645,7 @@ const DestructionGame = (() => {
     R.orbit({ x: 0, z: -4, y: 0 }, camAngle, 46, 24, level);
   }
   function showResults(isBest) {
+    $('#btn-replay').hidden = !(dclip && dclip.frames.length > 10);
     const L = wrecks.ledger, m = medalOf(L.total);
     $('#results-title').textContent = money(L.total);
     const line = $('#results-medal');
@@ -848,6 +850,7 @@ const DestructionGame = (() => {
     Music.play(state === 'select' ? 'menu' : state === 'tally' || state === 'results' ? 'results' : 'destruction:' + LEVEL);
     Music.preload('destruction:' + LEVEL, 'results');
     Music.duck(paused ? 0.35 : state === 'impact' ? 0.5 : 1, paused || state === 'impact');
+    if (state === 'replay') { updateDroneReplay(dtReal, input); updatePopups(dtReal); look.render(); requestAnimationFrame(frame); return; }
     if (state === 'select') updateSelect(input);
     if (state === 'results') { if (input.reset) retry(); else RaceInput.menu($('#results'), input); }   // Enter or A: the highlighted button (Retry first)
     else if (input.reset && ['countdown', 'run', 'impact', 'pileup', 'tally'].includes(state) && !paused) retry();
@@ -935,6 +938,7 @@ const DestructionGame = (() => {
       if (state === 'select') { selT += dtReal; R.orbit({ x: car.x, z: car.z, y: car.y }, car.h + 0.35 + 0.3 * Math.sin(selT * 0.35), 6.4 * Math.max(1, specs[carKey].length / 4.86), 1.5, level); }
       else R.follow({ x: p.x, z: p.z, h: p.heading, y: car.y, speed: car.speed, boost: car.boosting }, dtReal);
     } else if (state === 'pileup') pileupCamera(dtReal);
+    recordStart(dtReal);
     drawVehicles();
     R.drawProps();
     // fires on the burning wrecks, the lights of the traffic
@@ -945,6 +949,7 @@ const DestructionGame = (() => {
     }
     const lights = traffic.vehicles.map(v => { const d = driverBox(v); return { x: d.x, z: d.z, y: d.y, h: d.h, len: d.hl * 2, wid: d.hw * 2, heavy: !!traffic.HEAVY[v.type] }; });
     look.update(state === 'tally' || state === 'results' ? dtReal : dt, fires, lights, taken);
+    recordEnd(fires, lights);
     if (audio) {
       const fireNear = fires.reduce((m, f) => Math.max(m, f.level * Math.max(0, 1 - Math.hypot(f.x - R.camera.position.x, f.z - R.camera.position.z) / 70)), 0);
       FX.fireUpdate(Math.min(1, fireNear), 0);
@@ -1000,12 +1005,14 @@ const DestructionGame = (() => {
   function wreckEvent(e) {
     if (e.type === 'cash') { popup(e.amount, e.label, e.x, e.y, e.z, e.ref); lastCash = simT; if (TEST) testOut.events.push(['cash', Math.round(e.amount), e.label]); }
     else if (e.type === 'explode') { boomFocus = { x: e.x, z: e.z, t: 2 }; onExplodeVisual(e); }
-    else if (e.type === 'hit' && e.dv > 6) { const d = R.camera.position.distanceTo(PV.set(e.x, e.y, e.z)); if (d < 90) FX.crunch(Math.min(1, e.dv / 20) * Math.max(0.3, 1 - d / 90), [e.x, e.y, e.z]); look.embers.spawn(e.x, e.y, e.z, Math.min(30, 4 + Math.round(e.dv)), 'spark', [0, 0.6, 0]); look.shake(Math.min(0.5, e.dv / 40), e.x, e.y, e.z); }
+    else if (e.type === 'hit' && e.dv > 6) {
+      if (recOn()) fxRec.push({ type: 'hit', x: e.x, y: e.y, z: e.z, dv: e.dv }); const d = R.camera.position.distanceTo(PV.set(e.x, e.y, e.z)); if (d < 90) FX.crunch(Math.min(1, e.dv / 20) * Math.max(0.3, 1 - d / 90), [e.x, e.y, e.z]); look.embers.spawn(e.x, e.y, e.z, Math.min(30, 4 + Math.round(e.dv)), 'spark', [0, 0.6, 0]); look.shake(Math.min(0.5, e.dv / 40), e.x, e.y, e.z); }
     else if (e.type === 'ignite') { if (e.body.kind === 'tanker') callout('It\'s going to blow!', 'cb', 900); }
   }
   // an explosion from inside the pile-up (a totalled vehicle or a tanker): the wrecks have had their
   // push; here the rest of the world gets it, and the show
   function onExplodeVisual(e) {
+    if (recOn()) fxRec.push({ type: 'explode', kind: e.kind, x: e.x, y: e.y, z: e.z, r: e.r });
     const size = e.kind === 'tanker' ? 1.15 : e.kind === 'crashbreaker' ? 0.95 : e.kind === 'bus' || e.kind === 'truck' ? 0.6 : 0.42;
     look.blast(e.x, e.y, e.z, e.r, size);
     FX.explosion(size, [e.x, e.y, e.z]);
@@ -1036,6 +1043,168 @@ const DestructionGame = (() => {
   }
   function reposeChunks(U) { for (const ch of chunks) placeChunk(ch); }
 
+
+  // ---------------------------------------------------------------- the drone's replay
+  // The run is recorded as it's drawn: the last 3.5 s before the impact, then everything to the end
+  // of the tally (at most 40 s): the traffic and the wrecks (their draw calls), the player's car (its
+  // pose, then the impact as frames of its crash, then the models moved as their wrecks and the pieces
+  // that came off), the fires, the traffic's lights, the props that moved and the explosions. From the
+  // results it plays back as the camera crew's drone filmed it: following the run from 7 m up, then
+  // the impact and the pile-up, drifting round them, a little unsteady.
+  const ring = [], MR = new T.Matrix4();
+  let dclip = null, drec = null, dr = null, fxRec = [], dClock = 0;
+  const recOn = () => (state === 'run' || state === 'impact' || state === 'pileup' || state === 'tally');
+  // the draw calls drawVehicles makes, recorded as they're made
+  function dc(key, i, st) {
+    R.drawCar(key, i, st);
+    if (drec) drec.draws.push(st.matrix ? ['c', key, i, Float32Array.from(st.matrix.elements), st.spins ? st.spins.slice() : null, st.paint] : ['p', key, i, Object.assign({}, st, { spins: st.spins ? st.spins.slice() : null })]);
+  }
+  function dh(key, i, M, paint, d) { look.drawHeavy(key, i, M, paint, d); if (drec) drec.draws.push(['h', key, i, Float32Array.from(M.elements), paint, d ? d.slice() : null]); }
+  function dd(key, i, d) { look.dentCar(key, i, d); if (drec) drec.draws.push(['d', key, i, d ? d.slice() : null]); }
+  function recordStart(dt) {
+    drec = null;
+    if (!recOn()) return;
+    dClock += dt;
+    drec = { t: dClock, draws: [], props: null, fx: fxRec, player: null, models: null, chunks: null, fires: null, lights: null, taken: null, focus: null };
+    fxRec = [];
+    for (let i = 0; i < props.list.length; i++) { const pr = props.list[i]; if (pr.dirty) (drec.props = drec.props || []).push([i, ...pr.p, ...pr.q]); }
+  }
+  function recordEnd(fires, lights) {
+    const f = drec;
+    if (!f) return;
+    if (state === 'run') { const p = car.pose; f.player = { pose: { x: p.x, z: p.z, h: p.heading, pitch: car.pitch + car.gPitch, roll: (car.kind === 'bike' ? -car.lean : car.roll) + car.gRoll, lift: car.y, steer: car.steer, wheelie: car.wheelie }, spin: car.wheels[2].spin }; f.focus = [car.x, car.y, car.z]; }
+    else if (state === 'impact' && crash) { f.player = { impact: tPlay }; f.focus = [PT.x, PT.y || 0, PT.z]; }
+    else { f.player = { dest: tPlayEnd + handT }; f.focus = [focus.x, focus.y || 0, focus.z]; }
+    if (state !== 'run') {
+      f.models = []; for (const b of wrecks.bodies) if (b.model) f.models.push([b.model, Float32Array.from(b.model.group.matrix.elements)]);
+      f.chunks = chunks.map(ch => [ch.g.position.x, ch.g.position.y, ch.g.position.z, ch.g.quaternion.x, ch.g.quaternion.y, ch.g.quaternion.z, ch.g.quaternion.w]);
+    }
+    f.fires = fires.map(o => Object.assign({}, o)); f.lights = lights.map(o => Object.assign({}, o)); f.taken = [...taken];
+    if (state === 'run') { ring.push(f); while (ring.length && ring[0].t < f.t - 3.5) ring.shift(); }
+    else {
+      if (!dclip) dclip = { frames: ring.slice(), crash, units: crashUnits.slice(), rigid: !!(crash && crash.mode === 'rigid') };
+      if (f.t - dclip.frames[0].t < 40) dclip.frames.push(f);
+      ring.length = 0;
+    }
+  }
+  // what the replay's crash needs: the solver's cars (and their models) as they went into the pile-up
+  function startDroneReplay() {
+    if (!dclip || dclip.frames.length < 10) { toast('Nothing to replay', 1400); return; }
+    if (dclip.crash && !dclip.crash.done) { toast('The crash is still being worked out', 1400); return; }
+    look.reset();
+    for (const ch of chunks) if (ch.wheelOf) ch.wheelOf.group.add(ch.g);
+    for (const U of dclip.units) { U.model.clearDestruction(); if (U.model !== R.player) U.model.group.visible = false; }
+    const saved = new Map(), touched = new Set();
+    for (const f of dclip.frames) if (f.props) for (const q of f.props) touched.add(q[0]);
+    for (const i of touched) { const pr = props.list[i]; saved.set(i, [pr.p.slice(), pr.q.slice()]); pr.p = pr.p0.slice(); pr.q = pr.q0.slice(); pr.dirty = true; }
+    dr = { t: 0, fi: 0, propAt: 0, phase: 'run', Q: [], cur: { k: 0 }, list: null, saved, drone: { a: null, pos: null, look: null, alt: 7 }, spin: undefined };
+    state = 'replay';
+    $('#results').hidden = true; $('#hud').hidden = true;
+    $('#replay-bar').hidden = false;
+    FX.engineStop();
+  }
+  // the pieces that came off, as the pile-up took them over (handOff, handOffRig): the same order
+  function replayHandOff() {
+    const list = [];
+    if (dclip.rigid) {
+      const U = dclip.units[0], P = U.view.frames.poses, kL = P.length - 1;
+      U.view.pieces.forEach((n, i) => { const g = U.model.nodes[n]; if (!P[kL][i + 1] || !g) return; g.matrix.decompose(g.position, g.quaternion, g.scale); g.matrixAutoUpdate = true; list.push(g); });
+    } else for (const U of dclip.units) {
+      const pcs = U.model.pieces();
+      for (const wl of pcs.wheels) { R.crashRoot.attach(wl.group); list.push(wl.group); }
+      for (const g of pcs.debris) list.push(g);
+    }
+    return list;
+  }
+  function blastVisual(e) {
+    const size = e.kind === 'tanker' ? 1.15 : e.kind === 'pump' ? 0.75 : e.kind === 'crashbreaker' ? 0.95 : e.kind === 'bus' || e.kind === 'truck' ? 0.6 : 0.42;
+    look.blast(e.x, e.y, e.z, e.r, size);
+    FX.explosion(size, [e.x, e.y, e.z]);
+  }
+  const DV = new T.Vector3(), DL = new T.Vector3();
+  function updateDroneReplay(dt, inp) {
+    const F = dclip.frames;
+    if (inp.pause || inp.start) { endDroneReplay(); return; }
+    dr.t += dt;
+    const ct = F[0].t + dr.t;
+    while (dr.fi < F.length - 1 && F[dr.fi + 1].t <= ct) {
+      dr.fi++;
+      for (const e of F[dr.fi].fx) if (e.type === 'explode') blastVisual(e); else if (e.type === 'hit') look.embers.spawn(e.x, e.y, e.z, Math.min(30, 4 + Math.round(e.dv)), 'spark', [0, 0.6, 0]);
+    }
+    const f = F[dr.fi];
+    for (; dr.propAt <= dr.fi; dr.propAt++) { const g = F[dr.propAt].props; if (g) for (const q of g) { const pr = props.list[q[0]]; pr.p = [q[1], q[2], q[3]]; pr.q = [q[4], q[5], q[6], q[7]]; pr.dirty = true; } }
+    // the traffic and the wrecks
+    for (const d of f.draws) {
+      if (d[0] === 'c') R.drawCar(d[1], d[2], { matrix: MR.fromArray(d[3]), spins: d[4] || [0, 0, 0, 0], paint: d[5] });
+      else if (d[0] === 'p') R.drawCar(d[1], d[2], d[3]);
+      else if (d[0] === 'h') look.drawHeavy(d[1], d[2], MR.fromArray(d[3]), d[4], d[5]);
+      else look.dentCar(d[1], d[2], d[3]);
+    }
+    R.endCars(); look.endHeavy();
+    // the player's car: driving, the impact, the pile-up
+    const pl = f.player;
+    if (pl.pose) {
+      R.drawPlayer(pl.pose, dr.spin === undefined ? 0 : pl.spin - dr.spin);
+      dr.spin = pl.spin;
+    } else if (pl.impact !== undefined) {
+      const cr = dclip.crash;
+      if (dr.phase === 'run') { dr.phase = 'impact'; for (const U of dclip.units) { U.model.group.visible = true; if (U.model !== R.player) U.model.setPaint(U.paint); if (!dclip.rigid) U.model.prepareDestruction(U.view); } R.setCrashLift(cr.lift || 0); }
+      const Ft = cr.F, n = Ft.t.length;
+      let k = Math.min(dr.cur.k, n - 2); while (k > 0 && Ft.t[k] > pl.impact) k--; while (k < n - 2 && Ft.t[k + 1] <= pl.impact) k++; dr.cur.k = k;
+      const k2 = Math.min(n - 1, k + 1), s = Ft.t[k2] > Ft.t[k] ? Math.min(1, Math.max(0, (pl.impact - Ft.t[k]) / (Ft.t[k2] - Ft.t[k]))) : 0;
+      for (const U of dclip.units) R.deform(U.model, U.view, k, k2, s, pl.impact);
+      fireEvents(pl.impact, cr, dr.Q);
+    } else {
+      if (dr.phase !== 'pile') { if (dr.phase === 'run' && dclip.crash) { /* (skipped straight here) */ } dr.phase = 'pile'; dr.list = dclip.crash ? replayHandOff() : []; }
+      for (const [m, els] of f.models) { m.group.matrix.fromArray(els); m.group.matrixWorldNeedsUpdate = true; m.group.visible = true; }
+      f.chunks.forEach((c, i) => { const g = dr.list[i]; if (!g) return; g.position.set(c[0], c[1], c[2]); g.quaternion.set(c[3], c[4], c[5], c[6]); });
+      if (!dclip.rigid) for (const U of dclip.units) U.model.updateDestruction(pl.dest, U.view.frames.t.length - 1, U.view.frames.t.length - 1, 0);
+    }
+    R.drawProps();
+    look.update(dt, f.fires, f.lights, new Set(f.taken));
+    // the drone: about 13 m off and 7 m up (higher over a building), easing after the action
+    const d = dr.drone, fo = f.focus, busy = pl.pose === undefined;
+    if (d.a === null) d.a = (F[0].player && F[0].player.pose ? F[0].player.pose.h : 0) + Math.PI + 0.5;
+    d.a += dt * (busy ? 0.14 : 0.07);
+    const dist = busy ? 14 : 12;
+    let alt = busy ? 6.5 : 6;
+    const wx = fo[0] + Math.cos(d.a) * dist, wz = fo[2] + Math.sin(d.a) * dist;
+    for (const o of level.collidersNear(wx, wz, 1.5)) if (o.box && o.height) alt = Math.max(alt, o.height + 3 - fo[1]);
+    d.alt += (alt - d.alt) * (1 - Math.exp(-dt * 1.5));
+    DV.set(wx, fo[1] + d.alt + Math.sin(dr.t * 1.7) * 0.18, wz); DL.set(fo[0], fo[1] + 0.8, fo[2]);
+    if (!d.pos) { d.pos = DV.clone(); d.look = DL.clone(); }
+    d.pos.lerp(DV, 1 - Math.exp(-dt * 1.4)); d.look.lerp(DL, 1 - Math.exp(-dt * 3.5));
+    R.orbit({ x: fo[0], y: fo[1], z: fo[2] }, d.a, dist, d.alt, null);
+    R.camera.position.set(d.pos.x + Math.sin(dr.t * 1.3) * 0.12, d.pos.y, d.pos.z + Math.cos(dr.t * 1.1) * 0.12);
+    R.camera.lookAt(d.look);
+    R.camera.rotateZ(Math.sin(dr.t * 0.9) * 0.012);
+    if (Math.abs(R.camera.fov - 48) > 0.01) { R.camera.fov = 48; R.camera.updateProjectionMatrix(); }
+    $('#replay-clock').textContent = `${dr.phase === 'run' ? 'The run' : dr.phase === 'impact' ? 'The impact' : 'The pile-up'} · ${Math.max(0, Math.round(F[F.length - 1].t - ct))} s · alt ${Math.round(d.pos.y - fo[1])} m · ${TOUCH ? 'tap to close' : 'Enter or Esc to close'}`;
+    if (ct >= F[F.length - 1].t) endDroneReplay();
+  }
+  function endDroneReplay() {
+    if (!dr) return;
+    // the scene as the run left it: the pile-up's pieces are the replay's now
+    if (dr.phase !== 'pile' && dclip.crash) {   // (closed early: play the rest out at once)
+      const last = dclip.frames[dclip.frames.length - 1];
+      if (dr.phase === 'run') for (const U of dclip.units) { U.model.group.visible = true; if (!dclip.rigid) U.model.prepareDestruction(U.view); }
+      const n = dclip.crash.F.t.length;
+      for (const U of dclip.units) R.deform(U.model, U.view, n - 1, n - 1, 0, dclip.crash.F.t[n - 1]);
+      dr.list = replayHandOff();
+      for (const [m, els] of last.models || []) { m.group.matrix.fromArray(els); m.group.matrixWorldNeedsUpdate = true; m.group.visible = true; }
+      (last.chunks || []).forEach((c, i) => { const g = dr.list[i]; if (g) { g.position.set(c[0], c[1], c[2]); g.quaternion.set(c[3], c[4], c[5], c[6]); } });
+    }
+    if (dr.list) dr.list.forEach((g, i) => { if (chunks[i]) chunks[i].g = g; });
+    for (const [i, pose] of dr.saved) { const pr = props.list[i]; pr.p = pose[0]; pr.q = pose[1]; pr.dirty = true; }
+    dr = null;
+    state = 'results';
+    $('#replay-bar').hidden = true; $('#hud').hidden = false; $('#results').hidden = false;
+    R.setCrashLift(crash ? crash.lift : 0);
+    FX.setTimeScale(1);
+  }
+  $('#replay-bar').addEventListener('click', () => { if (dr) endDroneReplay(); });
+  $('#btn-replay').addEventListener('click', () => startDroneReplay());
+
   // ---------------------------------------------------------------- start
   async function start() {
     $('#loading').textContent = 'Building the junction…';
@@ -1064,6 +1233,6 @@ const DestructionGame = (() => {
   }
   start().catch((err) => { $('#loading').textContent = 'Could not start: ' + err.message; console.error(err); });
 
-  return { level, world, traffic, look, R, director, get wrecks() { return wrecks; }, get car() { return car; }, get state() { return state; }, get crash() { return crash; }, get simT() { return simT; }, get boost() { return boost; }, retry,
+  return { level, world, traffic, look, R, director, get dclip() { return dclip; }, replay: () => startDroneReplay(), get wrecks() { return wrecks; }, get car() { return car; }, get state() { return state; }, get crash() { return crash; }, get simT() { return simT; }, get boost() { return boost; }, retry,
     start: startAttempt, popupsFor: () => updatePopups(0), get playerWreck() { return playerWreck; }, crashFocus: PT, get focus() { return focus; } };
 })();

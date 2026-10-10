@@ -191,6 +191,25 @@ const RaceRender = (() => {
       return m;
     }
     const PM = new T.Matrix4();
+    // seen from the driver's seat: the windows out of the way (the cabin's glass would tint the whole
+    // view), and the body's inside faces drawn, so the roof and pillars frame the road; the engine block
+    // the models are given (the downloads have no dashboard to hide it), and a rider, out of the view
+    let inside = false;
+    function cockpit(on) {
+      if (!player || on === inside) return;
+      inside = on;
+      if (player.rig) { for (const n in player.nodes) if (n.startsWith('RIDER_')) player.nodes[n].visible = !on; return; }
+      for (const m of player.parts.RIGID_Mech_Engine || []) m.visible = !on;
+      player.group.traverse((o) => {
+        if (!o.isMesh) return;
+        if (o.material.userData.cls === 'glass') o.visible = !on;
+        else if (o.material.side !== T.DoubleSide || o.material.userData.wasSide !== undefined) {
+          if (on) { o.material.userData.wasSide = o.material.side; o.material.side = T.DoubleSide; }
+          else if (o.material.userData.wasSide !== undefined) { o.material.side = o.material.userData.wasSide; delete o.material.userData.wasSide; }
+          o.material.needsUpdate = true;
+        }
+      });
+    }
     function drawPlayer(st, spinDelta) {
       if (!player) return;
       carMatrix(PM, st.x, st.z, st.h, st.pitch, st.roll, st.lift);
@@ -245,8 +264,9 @@ const RaceRender = (() => {
 
     // ------------------------------------------------ camera
     const cam = { mode: 'chase', pos: new T.Vector3(), look: new T.Vector3(), fov: 62, init: false, back: false, y: 0 };
-    const tmp = new T.Vector3(), tgt = new T.Vector3();
-    /* st: the followed car { x, z, h, y (its height over hills and in the air), speed, boost }; dt: s */
+    const tmp = new T.Vector3(), tgt = new T.Vector3(), CM = new T.Matrix4();
+    /* st: the followed car { x, z, h, y (its height over hills and in the air), speed, boost; for the
+     * cockpit camera eye: [x, y, z] the driver's eyes in the car's frame, pitch, roll }; dt: s */
     function follow(st, dt) {
       const c = Math.cos(st.h), s = Math.sin(st.h), sp = st.speed || 0;
       // the camera's height follows the car's smoothly (a jump lifts it a moment later)
@@ -259,14 +279,16 @@ const RaceRender = (() => {
         cam.pos.lerp(tgt, k);
         cam.pos.y = tgt.y;
         cam.look.set(st.x + c * 4 * back, (st.y || 0) * 0.5 + cam.y * 0.5 + 1.1, st.z + s * 4 * back);
-      } else {   // bumper
-        cam.pos.set(st.x + c * 1.2, (st.y || 0) + 1.05, st.z + s * 1.2);
-        cam.look.set(st.x + c * 30, (st.y || 0) + 0.9, st.z + s * 30);
+      } else {   // cockpit: the driver's eyes, pitching and rolling with the car, looking down the road
+        const e = st.eye || [0, 1.2, -0.37];
+        carMatrix(CM, st.x, st.z, st.h, st.pitch, st.roll, st.y);
+        cam.pos.set(e[0], e[1], e[2]).applyMatrix4(CM);
+        cam.look.set(e[0] + 30, e[1] - 0.9, e[2] * 0.3).applyMatrix4(CM);
         cam.init = false;
       }
       camera.position.copy(cam.pos);
       camera.lookAt(cam.look);
-      const fovT = 60 + Math.min(16, sp * 0.18) + (st.boost ? 6 : 0);
+      const fovT = (cam.mode === 'cockpit' ? 56 : 60) + Math.min(16, sp * 0.18) + (st.boost ? 6 : 0);
       cam.fov += (fovT - cam.fov) * (1 - Math.exp(-dt * 3));
       if (Math.abs(camera.fov - cam.fov) > 0.01) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
       // the sun's shadow box follows the camera's target
@@ -404,7 +426,7 @@ const RaceRender = (() => {
       }
     }
 
-    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, hasModel: (key) => !!made[key], drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, render, resize, prepareProps, drawProps, setCrashLift,
+    return { renderer, scene, camera, sun, env, cam, prepareCars, drawCar, endCars, preparePlayer, hasModel: (key) => !!made[key], drawPlayer, prepareWreck, wrecks, deform, orbit, get player() { return player; }, follow, cockpit, render, resize, prepareProps, drawProps, setCrashLift,
       carMeshes, hemi, crashRoot, sunDir: SUN_DIR, renderBloom, carLights };
   }
 

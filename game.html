@@ -99,7 +99,7 @@
       <table id="results-table" class="results"></table>
       <p id="results-note" class="muted small" hidden>* still racing: an estimate from their pace so far</p>
       <div id="results-score" class="score-break"></div>
-      <div class="actions"><button id="btn-again" class="btn primary">Race again</button><button id="btn-change" class="btn">Change car or track</button><button id="btn-replay" class="btn">Watch your last crash</button><a class="btn" href="Destruction.html">Play Destruction</a><a class="btn" href="Car Crash Simulation.html">Home</a></div>
+      <div class="actions"><button id="btn-again" class="btn primary">Race again</button><button id="btn-change" class="btn">Change car or track</button><button id="btn-replay" class="btn">Watch the highlights</button><a class="btn" href="Destruction.html">Play Destruction</a><a class="btn" href="Car Crash Simulation.html">Home</a></div>
     </div>
   </div>
   <div id="replay-bar" class="replay-bar" hidden><span class="dot"></span>Crash replay · <span id="replay-clock" class="mono"></span> · Enter to close</div>
@@ -214,7 +214,7 @@
   // three.js is an ES module from the CDN; the game's scripts are classic scripts so the page also
   // works when opened straight from disk (file://). The standalone build embeds them as
   // text/x-inline blocks.
-  const APP_SCRIPTS = ['js/fx.js', 'js/cinematic.js', 'js/carmodel.js', 'js/rigmodel.js', 'js/race/input.js', 'js/race/crash.js', 'js/race/render.js', 'js/race/game.js'];
+  const APP_SCRIPTS = ['js/fx.js', 'js/fire.js', 'js/carmodel.js', 'js/rigmodel.js', 'js/race/input.js', 'js/race/crash.js', 'js/race/render.js', 'js/race/smoke.js', 'js/race/game.js'];
   try {
     const THREE = await import('three');
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');

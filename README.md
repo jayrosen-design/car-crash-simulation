@@ -159,7 +159,7 @@ In playback:
 | Brake, then reverse (hold) | S, ↓ | Left trigger |
 | Handbrake | Space | X |
 | Boost | Shift | A or right bumper |
-| Camera (chase or bumper) | C | Y |
+| Camera (chase or driver's seat) | C | Y |
 | Look back | B | Left bumper |
 | Back on the road | R | View |
 | Pause | Esc, P, or the Menu button at the top | Menu |
@@ -168,7 +168,7 @@ In playback:
 
 Controllers work through the Gamepad API's standard mapping, with rumble where the browser supports it.
 
-**Ways out.** The car select has links home and to Destruction. The pause menu offers Resume, Restart race (straight back to the grid with the same car and track), Quit to car and track select, Music on or off, Play Destruction and Home. The results offer Race again (also straight to the grid), Change car or track, the crash replay, Play Destruction and Home.
+**Ways out.** The car select has links home and to Destruction. The pause menu offers Resume, Restart race (straight back to the grid with the same car and track), Quit to car and track select, Music on or off, Play Destruction and Home. The results offer Race again (also straight to the grid), Change car or track, the highlights, Play Destruction and Home.
 
 **On a touch screen** (phones and tablets), on-screen buttons appear on their own while racing:
 - **Left thumb:** steer left and right.
@@ -176,6 +176,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
 - **Top:** pause, camera, back on the road, and full screen where the browser allows it (Android Chrome; not iPhone Safari).
 - **Holding the phone:** race with it sideways. Held upright, the race pauses and asks you to turn it.
 - **Picture:** on a touch screen the game draws at a lower resolution, with a smaller shadow map, to suit a phone's graphics chip.
+- **The car select on a phone.** The paints are one scrolling row, the spec card shrinks to the name, the class line and the bars, and the lineup is a short scrolling strip, so the car stays in view. Held upright, the select screen still works (only the race asks you to turn the phone).
 - **Testing:** `?touch=1` shows the buttons on any screen, and `?touch=0` hides them.
 
 ### The race
@@ -205,6 +206,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Slams.** Each contact you make with a rival is a rub, a light slam or a full slam, by how hard you drove into it along the contact normal. Your nose into its tail is a shunt (light from 3 m/s, full from 7 m/s); anything else is a side slam (2.5 and 5 m/s). A slam takes a little of the rival's boost for you. Two cars can't slam each other again within a second.
   - **Out of control.** A full slam takes the rival's steering away for 0.4–1 s, and for a second any solid touch (1.5 m/s) wrecks it.
   - **Takedowns.** A rival that wrecks within two seconds of your hit is yours: a wall, traffic or another car at over 7 m/s, a crash anyway, or a spin past 60°. It counts half a second later, and is lost if you crash first. Two within 1.5 s are a double; three or more within 30 s a spree.
+  - **The takedown camera.** A takedown at speed is watched like your own crash: the world steps back to just before the hit, and the rival (and the car it hit, if it's a car) goes through the crash solver, so it crumples, sheds parts, breaks its glass and rolls. The camera circles it in slow motion while the race runs at 3% speed with your car holding its line at part throttle, so there's nothing to steer. It lasts about 1.5 s after the hit (Enter skips it after 0.8 s); then the race carries on from where you were, and the wrecked rival rejoins 30 m back.
   - **Psyche-outs.** A rival that wrecks with no contact while you're tailgating it (within 7 m, in the last second) is a takedown too.
   - **Takedown denied.** A rival you slammed that touches something and comes through its two seconds.
   - **Rivals fight back.** From 10 s into the race, the aggressive ones pick fights (`ai.js`), at most two at a time and none while you're a ghost after a respawn. A rival picks a car within 30 m, you first: it catches up through the traffic (or eases off to let you come alongside), takes a lane next to you on the clearer side, swings out and steers into you for up to 1.2 s, then cools down (longer after a slam that landed, shorter the more aggressive it is). It stands down when it hits anything else. Aggressive rivals also move across to block you when you're catching them from close behind. Rivals fight each other the same way. Each slam you land on a rival makes it more aggressive.
@@ -219,7 +221,7 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
 - **Things to knock over.** Street lights, signal posts and the street trees break off their bases and topple. Cones, bins, newspaper boxes, hydrants, benches, crates and barrels fly and tumble. They are along the pavements, in roadworks by the kerb and stacked at the side streets' barriers. A burst hydrant sprays water. They cost no health and little speed: a street light about 5 km/h, a tree about 7, a cone almost none. Each one you hit adds a little boost. Buildings, the guard rails, the side streets' barriers and the hillside's park trees (behind the rails) stay solid.
 - **Hills and jumps.** The ramps are 1.3–1.5 m high. From 144 km/h, the first one gives 1.2 s and about 50 m in the air. Taken slowly, you only hop. Over the crest of the steepest hill you stay on the road at 108 km/h and fly at 180 km/h and up. In the air there's no grip, so steer before the lip. A car in the air clears the barriers, the props and the other cars. Hitting a ramp from the side or at an angle can't throw a car into the sky (see *Hills and flight* below).
 - **Score** (`score.js`), as in Burnout 3. Points for near misses (50, oncoming 80), which chain: each one within 2.5 s of the last counts one more time over (the second double, the third triple), banked when the chain runs out. Runs in the oncoming lanes, drifting and in the air pay 2, 3 and 5 points a metre once they're long enough, banked when they end. Slams score 25 (full 100), takedowns 500 (a double +500, each takedown in a spree past the second +250, revenge +1,000, a psyche-out 750), a lucky escape 150 and each prop 10. A crash loses whatever isn't banked yet. The HUD shows the score, and the run or chain under way above the chips.
-- **Results.** Positions, lap times and takedowns, and the score with its breakdown and the best score so far in this browser. Rivals still racing get an estimated time from their pace. **Watch your last crash** replays it with the simulator's bullet-time.
+- **Results.** Positions, lap times and takedowns, and the score with its breakdown and the best score so far in this browser. Rivals still racing get an estimated time from their pace. **Watch the highlights** plays the race's big moments back as the camera crew's drone filmed them (below).
 
 ### How it works
 
@@ -255,12 +257,14 @@ Controllers work through the Gamepad API's standard mapping, with rumble where t
   - **Playback** never gets ahead of the newest frame. It runs at 1/4× before contact and 0.08× just after, then speeds up to real time by 0.8 s. It ends 1.25 s after contact (accelerate to skip).
   - **Timing.** The first deformed frame shows within about 0.15 s of the impact, and you're back on the road about 4 s later.
   - **No stall at the first break.** At load, each car model breaks once out of sight: a panel, a side window, a lamp and the windshield's crack overlay. Each piece is drawn once, not just compiled, because Chrome's Direct3D backend finishes a shader only at its first draw. In testing this removed a 50–140 ms freeze when the windshield first cracked; no crash-camera frame now takes more than about 35 ms.
+- **Smoke and fire** (`js/race/smoke.js`). From the first impact of your crash or a takedown at 30 km/h and up, dark smoke pours from each crashed car's engine bay and follows it as it moves; from 90 km/h (70 km/h for a takedown) flames burn there too, with embers and a flickering light. A puff of dust and smoke marks the hit. It runs on the crash's slow-motion clock and uses the simulator's fire sprites. It stops when you're back on the road, and drifts away.
+- **Highlights** (`js/race/game.js`). The race is recorded as it's drawn: each car's pose, your crash and a takedown's wreck as frames of their crashes, and the props that moved, the last 6 s at a time. A moment (a takedown, your crash, more than a second in the air) keeps the 4 s before it and 1.6–4.2 s after as a clip, at most eight (moments that overlap share one). From the results they play back filmed from the drone: following the action from above, drifting round it, a little unsteady, with the smoke again. A click on the bar, Enter or Space skips to the next clip; Esc ends it.
 - **Rendering** (`js/race/render.js`). Rivals and traffic are instanced copies of the two car models, one draw call per material. Your car is the simulator's deformable model, so the crash's damage shows on the same mesh you drove.
   - **Street surfaces.** Road, pavements, kerbs and walls use photographed CC0 textures from Poly Haven, with normal and roughness maps.
   - **Facades.** Windows, floors and shop fronts are drawn by a shader over the wall textures, with some windows lit.
   - **Time of day.** `RaceRender.lookFor(level.look)`: dusk, night (`RaceRender.NIGHT`: a starry sky with a moon, the city's glow on the horizon, the street lights' pools doing the work) or day (the street HDRI, no glows or bloom).
   - **Dusk.** The same time of day as Destruction (`RaceRender.DUSK`): a low orange sun and a violet sky, a procedural sky and environment map for the reflections, more windows lit. A sun shadow map follows the car.
-  - **Lights.** Pools of light under the street lights. Every car's headlights and tail lights glow (camera-facing sprites), and a selective bloom makes them and the lit signs shine. The bloom is off on touch screens.
+  - **Lights.** Pools of light under the street lights. Every car's headlights and tail lights glow (camera-facing sprites, placed on each model's own lamps), and a selective bloom makes them and the lit signs shine. The bloom is off on touch screens.
   - **Guard rails.** Instanced rails along both kerbs.
   - **The other tracks' dressing.** The harbour's container stacks are one instanced set (colliders too), its gantry cranes carry glowing red lights, and its water is dark with a soft sheen and a ripple normal map. The hillside's open ground is grass; its park trees (away from the road) use a coarser crown than the street's (560 triangles rather than 1,260).
   - **Frame time.** About 16.7 ms per frame on the development machine (95th percentile 17 ms) with the dusk lighting, rails, light pools and bloom.
@@ -332,7 +336,7 @@ Open it from the home page, the **Simulation** menu in the simulator, or `/destr
 | Music on or off | M, or Music in the pause menu | the pause menu |
 | Menus (select, pause, results) | arrows or WASD, Enter | d-pad or left stick, A |
 
-The car select has links home and to Race. The pause menu offers Resume, Retry, Quit to car and level select, Music on or off, Play Race and Home; the results offer Retry, Change car, Play Race and Home.
+The car select has links home and to Race. The pause menu offers Resume, Retry, Quit to car and level select, Music on or off, Play Race and Home; the results offer Retry, Change car, Drone replay, Play Race and Home.
 
 On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once the Crashbreaker is ready, and Retry sits at the top. The running total moves to the top left.
 
@@ -383,6 +387,7 @@ On a touch screen the Race game's buttons appear. Boost turns into **BOOM** once
   - +$100,000 in the middle of the junction, for your wreck.
   - Multipliers stack, up to ×8, and scale the total.
 - **The end.** The attempt ends when nothing has paid out for 4 s, or 25 s after the crash. The total counts up against the targets, a medal is stamped, and the results show what was wrecked. Retry starts the same junction again at once.
+- **Drone replay.** The attempt is recorded as it's drawn: the last 3.5 s of the run before the impact, then everything to the end of the tally (at most 40 s): the traffic and wrecks, your car and its crash, the pieces that came off, the fires, the props and the explosions. From the results, **Drone replay** plays it back as the camera crew's drone filmed it, following the run from above, then circling the impact and the pile-up. A click on the bar, Esc or Enter ends it and puts the results back.
 
 **What things are worth.** A vehicle pays its value times its damage (0 to 1) as the damage grows, and a quarter more when totalled. Explosions pay a bonus. Props pay their value the first time they're knocked.
 
@@ -2472,7 +2477,7 @@ blender -b -Y --factory-startup --python tools/build-rig.py -- tools/vehicles/os
   - Only your crashes run the lattice solver. Rivals and traffic wreck as rigid bodies, because the solver runs slower than real time during an impact, which is also why the crash camera is in slow motion.
   - Very hard head-on hits (about 150 km/h and up, square into a wall) can tip the car onto its nose. That is the solver's own behaviour, also seen in the simulator's rigid-barrier test.
   - Opponent driving is a set of rules (speed profile, pure pursuit, lane choice), not a learned driver.
-  - The touch controls were tested with simulated touches in desktop Chrome at phone sizes, not on a real phone; how smoothly the city runs on a phone isn't measured.
+  - The touch controls, the phone layout of the car select and the driver's-seat camera were tested with simulated touches in desktop Chrome at phone sizes, not on a real phone; how smoothly the city runs on a phone isn't measured.
 - **Saving a video** needs WebCodecs. The first time, it loads mp4-muxer from the CDN.
 - **Performance.** The brick-wall computation takes several seconds on a laptop. The phone layout works but is cramped.
 
@@ -2535,8 +2540,9 @@ js/
     ai.js         traffic (Intelligent Driver Model) and the rivals, who also pick fights
     input.js      keyboard and gamepad, rumble
     crash.js      the crash solver in a Web Worker, streaming frames to the crash camera
-    render.js     the city, instanced cars, the player's deformable car, cameras
-    game.js       the race: grid, laps, positions, boost, takedowns, crash camera, HUD, results
+    smoke.js      the crashes' smoke and fire
+    render.js     the city, instanced cars, the player's deformable car, cameras (chase, driver's seat)
+    game.js       the race: grid, laps, positions, boost, takedowns, crash and takedown cameras, highlights, HUD, results
   destruction/
     junction.js   the junction: streets and markings, the hill and the ramp, buildings, props, lanes,
                   signals, the traffic schedule, pickups, values and medal targets
@@ -2544,7 +2550,7 @@ js/
                   the bus, box truck and gas tanker
     wrecks.js     the pile-up: rigid wrecks with sphere hulls, damage, fire and explosions, the cash ledger
     look.js       dusk, the heavy vehicles' meshes, dents, explosions and fires, lights, bloom, shake
-    game.js       an attempt: select, countdown, the crash and its hand-over to the pile-up, score, HUD, results
+    game.js       an attempt: select, countdown, the crash and its hand-over to the pile-up, score, HUD, results, drone replay
 models/           generated vehicle models (Draco GLB as base64) and physics data: the garage's vehicles and the
                   Destruction semi; sides.js, the lineup's side views
 docs/garage-gdd.md  the game design document for the twelve vehicles

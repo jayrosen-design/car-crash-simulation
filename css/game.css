@@ -252,7 +252,7 @@ body.touch .overlay:not(.select) { padding-top: 56px; }
 .rotate { display: none; position: absolute; inset: 0; z-index: 40; place-items: center; background: rgba(5, 7, 10, 0.88); text-align: center; }
 .rotate .card { display: grid; gap: 6px; }
 @media (orientation: portrait) { body.touch .rotate { display: grid; } }
-/* short screens (a phone held sideways): a smaller HUD, scrolling overlays, a two-column car select */
+/* short screens (a phone held sideways): a smaller HUD, scrolling overlays */
 @media (max-height: 520px) {
   .hud-tl { transform: scale(0.72); transform-origin: top left; top: 8px; left: 8px; }
   .minimap { width: 120px; height: 102px; top: 8px; right: 8px; }
@@ -260,20 +260,85 @@ body.touch .overlay:not(.select) { padding-top: 56px; }
   .card { padding: 14px 18px; }
   .card h2 { margin-bottom: 8px; }
   .msg { top: 26%; font-size: 26px; }
-  .overlay.select { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto 1fr; grid-template-areas: "head head" "garage stats" "foot stats"; gap: 8px 12px; padding: 10px 12px; align-items: start; }
-  .overlay.select .sel-head { grid-area: head; max-width: none; }
-  .overlay.select .sel-garage { grid-area: garage; }
-  .overlay.select .sel-stats { grid-area: stats; }
-  .sel-stats .small.muted { display: none; }
-  .overlay.select .sel-head .muted { display: none; }
-  .overlay.select .sel-head h2 { font-size: 22px; margin: 0; }
-  .overlay.select .sel-head .eyebrow { margin: 0; }
-  .overlay.select .sel-garage, .overlay.select .sel-stats { max-width: none; padding: 8px 10px; }
-  .overlay.select .sel-foot { grid-area: foot; max-width: none; text-align: left; }
-  .sel-row { padding: 6px; }
   .sel-car { padding: 6px 10px; }
   .bars { gap: 6px; margin-bottom: 8px; }
   .specs { gap: 2px 10px; padding-top: 6px; font-size: 13px; }
-  .sel-keys, .sel-hint { display: none; }
-  .sel-foot .credits { margin-top: 6px; padding: 4px 8px; font-size: 10px; }
+}
+/* the car select on a phone (sideways or upright): compact panels that leave the car in view. The
+   paint is one row of swatches that scrolls sideways, the tracks are three short buttons, the spec
+   card keeps the name and the key figures, the lineup scrolls sideways at a size a thumb can pick
+   from, and the credits are one line that scrolls sideways. The footer's pieces are laid out on
+   the select screen's own grid (display: contents), placed by the two layouts below. */
+@media (max-height: 520px), (orientation: portrait) and (max-width: 600px) {
+  .overlay.select { gap: 6px 10px; place-items: start stretch; overflow: auto; }
+  .overlay.select .sel-head, .overlay.select .sel-garage, .overlay.select .sel-stats { max-width: none; width: auto; }
+  .overlay.select > *, .overlay.select .sel-foot > * { min-width: 0; }   /* the sideways-scrolling rows must not widen their column */
+  .overlay.select .sel-foot { display: contents; }
+  /* a slim top bar: the ways out and the title on one line */
+  .overlay.select .sel-head { grid-area: head; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .overlay.select .sel-head .game-nav { position: static; transform: none; flex: none; flex-wrap: nowrap; gap: 6px; margin: 0; }
+  .overlay.select .game-nav a { padding: 6px 11px; font-size: 12px; }
+  .overlay.select .sel-head .eyebrow, .overlay.select .sel-head .muted { display: none; }
+  .overlay.select .sel-head h2 { min-width: 0; margin: 0; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* paint and track */
+  .overlay.select .sel-garage { grid-area: garage; padding: 4px 6px; }
+  .overlay.select .sel-row { padding: 4px; }
+  .overlay.select .sel-row h3 { margin: 0 0 3px; font-size: 11px; }
+  .overlay.select .sel-hint, .overlay.select .sel-keys { display: none; }
+  .overlay.select .swatches { display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; margin: -5px -4px -2px; padding: 5px 5px 4px; scrollbar-width: none; touch-action: pan-x;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); }
+  .overlay.select .swatches::-webkit-scrollbar { display: none; }
+  .overlay.select .swatches::after { content: ''; flex: 0 0 14px; }   /* the last swatch clear of the fade */
+  .overlay.select .swatch { flex: 0 0 30px; width: 30px; height: 30px; border-width: 2px; }
+  .overlay.select .sel-levels { gap: 5px; }
+  .overlay.select .sel-levels .sel-car { min-height: 34px; padding: 5px 6px; align-content: center; }
+  .overlay.select .sel-levels .sel-car b { font-size: 11.5px; line-height: 1.2; }
+  .overlay.select .sel-levels .sel-car span { display: none; }
+  /* the spec card: name, class and the four figures (Race) or the three goals (Destruction) */
+  .overlay.select .sel-stats { grid-area: stats; padding: 7px 10px; }
+  .overlay.select .sel-card { margin: 0 0 5px; }
+  .overlay.select .sel-card .card-name { margin: 0 0 1px; font-size: 18px; }
+  .overlay.select .sel-card .card-line { margin: 0; font-size: 12px; }
+  .overlay.select .sel-card .card-mono, .overlay.select .sel-card .card-cam, .overlay.select #sel-specs, .overlay.select .sel-stats .small.muted { display: none; }
+  .overlay.select .bars { gap: 3px; margin: 0; }
+  .overlay.select .bar { grid-template-columns: 66px 1fr 60px; gap: 6px; font-size: 11.5px; }
+  .overlay.select .bar .track { height: 5px; }
+  .overlay.select .sel-stats > h3 { margin: 0 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .overlay.select .specs.goals { gap: 1px 10px; margin: 0; padding-top: 3px; font-size: 12px; }
+  /* Start and the two switches */
+  .overlay.select #btn-start { grid-area: start; justify-self: stretch; padding: 9px 12px; font-size: 16px; }
+  body.touch .overlay.select #btn-start small { display: none; }
+  .overlay.select .btn.solver { margin: 0; padding: 6px 9px; font-size: 11.5px; white-space: nowrap; }
+  .overlay.select #btn-solver { grid-area: solver; justify-self: end; align-self: center; }
+  .overlay.select #btn-sfx { grid-area: sfx; justify-self: end; align-self: center; }
+  /* the lineup: bigger than the width allows, so it scrolls sideways */
+  .overlay.select .sel-lineup-row { grid-area: lineup; margin: 0; padding: 3px 4px 4px; }
+  .overlay.select .sel-lineup-row h3 { margin: 0 0 2px; font-size: 11px; }
+  .overlay.select .sel-lineup { height: 54px; padding: 4px 10px 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; }
+  .overlay.select .sel-lineup::-webkit-scrollbar { display: none; }
+  .overlay.select .lineup-svg { width: auto; height: 100%; }
+  .overlay.select .sel-foot .credits { grid-area: credits; margin: 0; padding: 2px 8px; font-size: 10px; white-space: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; }
+  .overlay.select .sel-foot .credits::-webkit-scrollbar { display: none; }
+}
+/* sideways: the top bar with the two switches at its right, paint and track down the left, the
+   figures and Start down the right, the lineup and the credits along the bottom */
+@media (max-height: 520px) {
+  .overlay.select { display: grid; --side: clamp(196px, 29vw, 252px);
+    grid-template-columns: var(--side) minmax(0, 1fr) auto var(--side);
+    grid-template-rows: auto 1fr auto auto auto;
+    grid-template-areas: "head head solver sfx" "garage . . stats" "garage . . start" "lineup lineup lineup lineup" "credits credits credits credits";
+    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    background: linear-gradient(90deg, rgba(5, 7, 10, 0.6), rgba(5, 7, 10, 0) 30%, rgba(5, 7, 10, 0) 70%, rgba(5, 7, 10, 0.6)); }
+  .overlay.select .sel-levels { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-height: 520px) and (max-width: 720px) { .overlay.select .sel-head h2 { display: none; } }   /* no room beside the switches */
+/* upright: the select screen stays usable (the turn-it-sideways card waits for the race); the
+   figures under the top bar, the car in the middle, the rest at the bottom */
+@media (orientation: portrait) and (max-width: 600px) {
+  body.touch #select:not([hidden]) ~ #rotate { display: none; }
+  .overlay.select { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto 1fr auto auto auto auto auto;
+    grid-template-areas: "head head" "stats stats" ". ." "garage garage" "lineup lineup" "start start" "solver sfx" "credits credits";
+    padding: max(10px, env(safe-area-inset-top)) 12px max(8px, env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(5, 7, 10, 0.6), rgba(5, 7, 10, 0) 26%, rgba(5, 7, 10, 0) 50%, rgba(5, 7, 10, 0.6)); }
+  .overlay.select #btn-solver, .overlay.select #btn-sfx { justify-self: stretch; }
 }
