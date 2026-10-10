@@ -2865,13 +2865,6 @@ function createImpactSim(cfg) {
     for (let d = 0; d < 3; d++) { bcp[3 * b + d] = bc[3 * b + d]; bv[3 * b + d] = 0; bw[3 * b + d] = 0; }
     for (let d = 0; d < 4; d++) bqp[4 * b + d] = bq[4 * b + d];
   }
-  function bondedTo(b, o) {
-    for (let p = adjStart[b]; p < adjStart[b + 1]; p++) {
-      const k = adjList[p];
-      if (!bondBroken[k] && (bondA[k] === o || bondB[k] === o)) return true;
-    }
-    return false;
-  }
   function hasIntactBond(b) {
     for (let p = adjStart[b]; p < adjStart[b + 1]; p++) if (!bondBroken[adjList[p]]) return true;
     return false;
@@ -3453,7 +3446,10 @@ function createImpactSim(cfg) {
         bdebrisT[b] = t;
         events.push({ t, type: 'debris', x: bc[b3], y: 0, z: bc[b3 + 2], mag: -vy, mass: bm[b] });
       }
-      // other bricks: two contact spheres along each brick's length; neighbours found once per brick
+      // other bricks: two contact spheres along each brick's length; neighbours found once per brick.
+      // Bricks joined by mortar collide too: in the wall their spheres are 1 cm apart, and a joint is
+      // a hinge (its two bond points lie on a line) or, with one point left, a ball joint, so a brick
+      // held by its last joint turns about it, into its neighbour if nothing stops it.
       const off = hz - hy > 0.01 ? hz - hy : 0;
       const cx = bc[b3], cy = bc[b3 + 1], cz = bc[b3 + 2];
       const ix0 = Math.floor((cx - QB) / HCELL), ix1 = Math.floor((cx + QB) / HCELL);
@@ -3465,7 +3461,6 @@ function createImpactSim(cfg) {
           const o3 = 3 * o;
           const cdx = cx - bc[o3], cdy = cy - bc[o3 + 1], cdz = cz - bc[o3 + 2];
           if (cdx * cdx + cdy * cdy + cdz * cdz > QB * QB) continue;
-          if (bondedTo(b, o)) continue;
           const offo = bh[o3 + 2] - bh[o3 + 1] > 0.01 ? bh[o3 + 2] - bh[o3 + 1] : 0;
           for (let s = 0; s < (off ? 2 : 1); s++) {
             rot(b, 0, 0, s ? off : -off, S5);
