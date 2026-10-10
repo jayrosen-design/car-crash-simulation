@@ -14,6 +14,7 @@
  * size [L, W, H] (m), paint ({ name, hex }: the signature paint, the one it starts in, added to the
  * select screen's palette; null: it starts in crimson red), targets (the design's numbers: top km/h,
  * t100 s, lateralG g), note (the design's one-liner), race ('ranked' | 'unranked' | false), destruction (bool), rival (AI rivals may drive it).
+ * Added from SOUND below: sound (its recorded engine and crash sounds).
  */
 (function (root) {
 'use strict';
@@ -78,8 +79,28 @@ const LIST = [
       tune: { power: 350e3, cdA: 2.6, vmax: 20, vmaxBoost: 22.2, grip: 0.9, steer: 0.9, gears: [3.5, 2.2, 1.4, 1.0], final: 6, redline: 2600 } } },
 ];
 
+// Each vehicle's recorded sounds (js/fx.js; the clips are cut from the recordings in media/audio by
+// tools/build-sfx.py). idle and drive: engine loops pitched with the revs, idle at low revs crossfading
+// to drive above about twice idle; tracks: a loop that follows the speed; pitch: scales the revs, for a
+// recording of another engine; start: plays in the garage when the vehicle is picked; crash: at its
+// crash's first impact (the bike and the drone, whose crashes aren't on the lattice).
+const SOUND = {
+  lexus: { idle: 'idle-petrol', drive: 'drive-porsche', pitch: 0.9 },
+  mustang: { idle: 'idle-impala', drive: 'drive-muscle', start: 'rev-v8' },
+  halcyon: { idle: 'idle-lotus', drive: 'drive-porsche', start: 'rev-lotus' },
+  wren: { idle: 'idle-petrol', drive: 'drive-fox', pitch: 1.1 },
+  bastion: { idle: 'idle-impala', drive: 'drive-muscle', pitch: 0.85 },
+  quasar: { idle: 'idle-lotus', drive: 'drive-bike', start: 'start-lotus' },
+  ridgeback: { drive: 'idle-diesel', pitch: 0.45 },
+  ember: { idle: 'idle-impala', drive: 'drive-muscle', pitch: 0.9, start: 'rev-impala' },
+  cadence: { idle: 'idle-petrol', drive: 'drive-fox' },
+  kestrel: { idle: 'idle-bike', drive: 'drive-bike', start: 'start-bike', crash: 'crash-bike' },
+  osprey: { drive: 'drone', crash: 'crash-drone' },
+  rampart: { drive: 'tank-engine', tracks: 'tank-tracks', pitch: 0.8, start: 'rev-tank' },
+};
+
 const byKey = {};
-for (const v of LIST) byKey[v.key] = v;
+for (const v of LIST) { byKey[v.key] = v; v.sound = SOUND[v.key] || null; }
 
 const api = {
   LIST,

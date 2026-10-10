@@ -39,6 +39,7 @@ const FX = (() => {
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    decodeClips();
   }
   // a limiter in front of the speakers, so the loudest moments of a crash don't clip
   function limiter(c) {
@@ -312,6 +313,8 @@ const FX = (() => {
 
   function engineStart() {
     if (!ctx || engine) return;
+    engine = sampleEngine();
+    if (engine) return;
     const o = ctx.createOscillator(); o.type = 'sawtooth';
     const o2 = ctx.createOscillator(); o2.type = 'square';
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500;
@@ -325,6 +328,7 @@ const FX = (() => {
   function engineUpdate(kmh, load, rpmIn) {
     if (!engine) return;
     const t = ctx.currentTime, rpm = rpmIn || 900 + (kmh % 45) * 90 + kmh * 12;
+    if (engine.sample) { sampleEngineUpdate(engine, kmh, load, rpm); return; }
     engine.o.frequency.setTargetAtTime(rpm / 30, t, 0.05);
     engine.o2.frequency.setTargetAtTime(rpm / 60, t, 0.05);
     engine.f.frequency.setTargetAtTime(350 + 600 * Math.max(0, load), t, 0.08);
@@ -333,7 +337,7 @@ const FX = (() => {
     if (!engine) return;
     const e = engine; engine = null;
     e.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.03);
-    setTimeout(() => { e.o.stop(); e.o2.stop(); }, 300);
+    setTimeout(() => { if (e.sample) { for (const L of e.layers) L.src.stop(); } else { e.o.stop(); e.o2.stop(); } }, 300);
   }
 
   // After the crash: the roar and crackle of a fire, the hiss of steam (levels 0..1, set every frame).
@@ -357,6 +361,148 @@ const FX = (() => {
     // crackles: a few short bursts a second while it burns
     if (fire > 0.05 && Math.random() < 0.09 * fire && take(0.08)) noise({ dur: 0.03 + Math.random() * 0.05, gain: 0.12 + 0.25 * Math.random() * fire, type: 'bandpass', f0: 1500 + Math.random() * 3000, f1: 900, Q: 2 });
     if (fire <= 0 && steam <= 0) { const b = burn; burn = null; b.roar.g.gain.setTargetAtTime(0, t, 0.05); b.hiss.g.gain.setTargetAtTime(0, t, 0.05); b.roar.src.stop(t + 0.4); b.hiss.src.stop(t + 0.4); }
+  }
+
+  // ---------------------------------------------------------------- recorded sounds
+  // The games' sound effects from recordings (media/sfx/sounds.js, cut by tools/build-sfx.py from the
+  // licensed recordings in media/audio): each vehicle's engine (its `sound` in js/garage.js), its engine
+  // starting when it's picked in the garage, the countdown, the menus, a car flying past, the bike's and
+  // the drone's crashes, lorries idling at a junction. They're decoded once the sound starts. Until
+  // then, with them turned off (setRecorded(false)), or on a page without them (the simulator), the
+  // synthesized sounds above play as before, and the sounds only recordings have (the menus) are silent.
+  let recorded = true, voice = null, garageOn = null;
+  const clips = {};
+  function decodeClips() {
+    const D = window.SFX_DATA;
+    if (!D || decodeClips.started) return;
+    decodeClips.started = true;
+    for (const name in D.clips) {
+      const bin = atob(D.clips[name]), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      ctx.decodeAudioData(u8.buffer).then((b) => {
+        clips[name] = b;
+        if (engine && !engine.sample && sampleReady()) { engineStop(); engineStart(); }   // the recording takes over
+      }, () => { /* left synthesized */ });
+    }
+  }
+  const clipOf = (name) => (recorded && name && clips[name]) || null;
+  function setRecorded(on) {
+    recorded = !!on;
+    if (engine) { engineStop(); engineStart(); }
+  }
+  // a clip once, at pos (world) or straight to the speakers; slow: pitched down and drawn out in slow
+  // motion, as the synthesized crash sounds are. -> { src, g } playing, or null (no clip, or no voice free)
+  function clip(name, { pos = null, gain = 1, slow = false, force = false } = {}) {
+    const buf = ctx && clipOf(name), r = slow ? rate : 1;
+    if (!buf || !take(buf.duration / r * Math.sqrt(rate), force)) return null;
+    const src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = buf; src.playbackRate.value = r; g.gain.value = gain;
+    src.connect(g).connect(out(pos));
+    src.start(now());
+    return { src, g };
+  }
+  // the countdown: a beep for 3, 2 and 1, then the start (go)
+  function count(go) { if (!clip(go ? 'go' : 'count', { gain: 0.55, force: true })) beep(go ? 880 : 440); }
+  // the menus: 'move' (another car, row or track), 'pick' (a paint), 'ok' (start, a button), 'back'
+  function ui(kind) { clip('menu-' + kind, { gain: 0.4, force: true }); }
+  // a car flying past (a near miss) at pos; false without the recording (the caller has its own sound)
+  function passBy(pos) { return !!clip('passby', { pos, gain: 1.1 }); }
+  // a vehicle's own crash (its sound.crash: the bike, the drone) at its first impact; false without one
+  function crashClip(sound, pos) { return !!(sound && clip(sound.crash, { pos, gain: 1.4, slow: true, force: true })); }
+  // the garage: the picked vehicle's engine starting or revving (its sound.start), one at a time, the
+  // idling engine dropped back under it
+  function garage(sound) {
+    const t = ctx ? ctx.currentTime : 0;
+    if (garageOn) { garageOn.g.gain.setTargetAtTime(0, t, 0.05); garageOn.src.stop(t + 0.3); garageOn = null; }
+    const p = sound && clip(sound.start, { gain: 0.8, force: true });
+    if (engine && engine.duck) engine.duck.gain.setTargetAtTime(p ? 0.15 : 1, t, p ? 0.05 : 0.2);
+    if (!p) return;
+    garageOn = p;
+    p.src.onended = () => { if (garageOn === p) { garageOn = null; if (engine && engine.duck) engine.duck.gain.setTargetAtTime(1, ctx.currentTime, 0.3); } };
+  }
+  // The engine: engineVoice(sound, idle, redline, top) picks a vehicle's recordings (its `sound`), its
+  // rev range (rpm) and top speed (km/h, for the tracks). Each loop is pitched by the revs over the revs
+  // it was recorded at, the change squeezed (to the power 0.6) so a loop isn't stretched past what it
+  // can carry; the idle loop crossfades to the drive loop between 1.15 and 2.2 times idle; the tracks
+  // follow the speed. More throttle is louder and brighter.
+  function engineVoice(sound, idle, redline, top) {
+    if (voice && sound === voice.sound) return;
+    voice = sound ? { sound, idle, redline, top } : null;
+    if (engine) { engineStop(); engineStart(); }
+  }
+  const sampleReady = () => { const S = voice && voice.sound; return !!(S && [S.idle, S.drive, S.tracks].filter(Boolean).every((n) => clipOf(n))); };
+  function sampleEngine() {
+    if (!sampleReady()) return null;
+    const S = voice.sound, D = window.SFX_DATA, t = ctx.currentTime;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.5;
+    const duck = ctx.createGain(), g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.4);
+    f.connect(duck).connect(g).connect(master);
+    const loop = (name, kind) => {
+      const [pad, len, rpm] = D.loops[name], src = ctx.createBufferSource(), lg = ctx.createGain();
+      src.buffer = clips[name]; src.loop = true; src.loopStart = pad; src.loopEnd = pad + len;
+      lg.gain.value = 0;
+      src.connect(lg).connect(f); src.start(t, pad + Math.random() * len);
+      return { kind, src, lg, rpm };
+    };
+    const layers = [S.idle && loop(S.idle, 'idle'), S.drive && loop(S.drive, 'drive'), S.tracks && loop(S.tracks, 'tracks')].filter(Boolean);
+    const e = { sample: true, f, duck, g, layers };
+    sampleEngineUpdate(e, 0, 0, voice.idle);   // idling until the game says otherwise
+    return e;
+  }
+  const smooth = (a, b, x) => { const u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+  function sampleEngineUpdate(e, kmh, load, rpm) {
+    const t = ctx.currentTime, v = voice, S = v.sound, ld = Math.max(0, Math.min(1, load));
+    const two = e.layers.some((L) => L.kind === 'idle') && e.layers.some((L) => L.kind === 'drive');
+    const w = two ? smooth(v.idle * 1.15, v.idle * 2.2, rpm) : 1;   // 0: idling, 1: under way
+    for (const L of e.layers) {
+      if (L.kind === 'tracks') {
+        const s = Math.min(1, Math.abs(kmh) / (v.top || 80));
+        L.src.playbackRate.setTargetAtTime(0.6 + 0.7 * s, t, 0.1);
+        L.lg.gain.setTargetAtTime(0.9 * Math.min(1, Math.abs(kmh) / 12), t, 0.1);
+        continue;
+      }
+      L.src.playbackRate.setTargetAtTime(Math.max(0.5, Math.min(2.5, Math.pow(rpm * (S.pitch || 1) / L.rpm, 0.6))), t, 0.05);
+      L.lg.gain.setTargetAtTime(L.kind === 'idle' ? Math.cos(w * Math.PI / 2) : Math.sin(w * Math.PI / 2), t, 0.08);
+    }
+    e.f.frequency.setTargetAtTime(2500 + 9000 * ld, t, 0.08);
+    e.g.gain.setTargetAtTime(0.5 + 0.25 * ld, t, 0.1);
+  }
+  // lorries idling nearby (the Destruction mode): the nearest two's diesel engines where they are,
+  // higher as they pull away. list: [{ x, y, z, kmh }], nearest first
+  const idlers = [];
+  function trafficIdle(list) {
+    if (!ctx || cap) return;
+    const buf = clipOf('idle-diesel'), t = now();
+    for (let i = 0; i < 2; i++) {
+      const it = buf && list[i];
+      let I = idlers[i];
+      if (it && !I) {
+        const [pad, len] = window.SFX_DATA.loops['idle-diesel'], src = ctx.createBufferSource(), g = ctx.createGain(), pn = out([it.x, it.y, it.z]);
+        src.buffer = buf; src.loop = true; src.loopStart = pad; src.loopEnd = pad + len;
+        g.gain.value = 0; src.connect(g).connect(pn); src.start(t, pad + Math.random() * len);
+        I = idlers[i] = { src, g, pn };
+      }
+      if (!I) continue;
+      if (it) {
+        if (I.pn !== master) place(I.pn, [it.x, it.y, it.z]);
+        I.src.playbackRate.setTargetAtTime(1 + Math.min(0.6, it.kmh / 60), t, 0.2);
+        I.g.gain.setTargetAtTime(0.7, t, 0.3);
+      } else { I.g.gain.setTargetAtTime(0, t, 0.2); I.src.stop(t + 1); idlers[i] = null; }
+    }
+  }
+  // the Sound effects button: recorded or synthesized (?sfx=synth or recorded; else as last chosen)
+  function recordedChoice(button) {
+    const q = new URLSearchParams(location.search).get('sfx');
+    let on = q === 'synth' ? false : q === 'recorded' ? true : (() => { try { return localStorage.getItem('sound-effects') !== 'synth'; } catch (e) { return true; } })();
+    const label = () => {
+      if (!button) return;
+      button.innerHTML = `Sound effects: <b>${on ? 'Recorded' : 'Synthesized'}</b>`;
+      button.title = on ? 'Engines, the countdown, the menus and some crashes from recordings. Click for the synthesized sounds.' : 'Every sound synthesized as it plays. Click for the recordings.';
+    };
+    setRecorded(on); label();
+    if (button) button.addEventListener('click', () => { button.blur(); on = !on; setRecorded(on); label(); try { localStorage.setItem('sound-effects', on ? 'recorded' : 'synth'); } catch (e) { /* not kept */ } });
+    return { get on() { return on; } };
   }
 
   // ---------------------------------------------------------------- particles
@@ -475,5 +621,7 @@ const FX = (() => {
   }
 
   return { initAudio, setEnabled, setTimeScale, listen, beginCapture, captureClock, endCapture, get sampleRate() { return ctx ? ctx.sampleRate : 48000; }, crunch, scatter, thud, pop, blowout, hit, beep, breakSound, clank, tear, glass, crack, structureUpdate, engineStart, engineUpdate, engineStop, fireUpdate, Particles, get enabled() { return enabled; },
-    explosion, cash, medal, ambience };
+    explosion, cash, medal, ambience,
+    setRecorded, recordedChoice, engineVoice, count, ui, passBy, crashClip, garage, trafficIdle,
+    get soundState() { return { recorded, clips: Object.keys(clips).length, engine: engine ? (engine.sample ? 'recorded' : 'synthesized') : null }; } };
 })();

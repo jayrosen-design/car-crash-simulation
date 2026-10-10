@@ -32,6 +32,7 @@ const DestructionGame = (() => {
   const TEST = q.get('test');
   // the crash physics: on the CPU (in a worker) or the GPU (WebGPU); ?solver=gpu, or the select screen's button
   const solverPick = RaceCrash.solverChoice(document.getElementById('btn-solver'));
+  FX.recordedChoice(document.getElementById('btn-sfx'));   // recorded or synthesized sound effects
   const money = (v) => '$' + Math.round(v).toLocaleString('en-US');
   const short = (v) => v >= 1e6 ? '$' + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + 'M' : '$' + Math.round(v / 1000) + 'k';
 
@@ -300,6 +301,7 @@ const DestructionGame = (() => {
   function rigCrash(e, otherB, other) {
     const B = otherB && world.box(otherB);
     crash = RaceRigs.crash({ level, car, W, seed: 7, other: B ? { x: B.x, z: B.z, hx: B.hx, hz: B.hz, angle: Math.atan2(B.uz, B.ux), height: other ? heightOf(other.spec) : 1.4 } : null });
+    crash.sound = CARS[car.key].sound;   // its own crash recording at the first impact
     R.setCrashLift(0); PT.y = 0;
     crashUnits = [{ body: me, model: R.player, view: crash.unitView(0), paint: paintNow().hex, spec: car.spec, v: null, proxy: null }];
     me.frozen = true;
@@ -368,7 +370,7 @@ const DestructionGame = (() => {
     const lift = crash.lift || 0;
     while (evPending.length && evPending[0].t <= t) {
       const e = evPending.shift(), y = e.y + lift, pos = [e.x, y, e.z];
-      if (e.type === 'first') { FX.crunch(1, pos); look.embers.spawn(e.x, y, e.z, 40, 'spark', [0, 0.6, 0]); look.embers.spawn(e.x, y, e.z, 16, 'dust'); look.shake(0.8, e.x, y, e.z); }
+      if (e.type === 'first') { if (!FX.crashClip(crash.sound, pos)) FX.crunch(1, pos); look.embers.spawn(e.x, y, e.z, 40, 'spark', [0, 0.6, 0]); look.embers.spawn(e.x, y, e.z, 16, 'dust'); look.shake(0.8, e.x, y, e.z); }
       else if (e.type === 'contact') { if (Math.random() < 0.25) FX.crunch(Math.min(1, e.mag / 3000), pos); if (Math.random() < 0.5) look.embers.spawn(e.x, y, e.z, 4, 'spark', [0, 0.3, 0]); }
       else if (e.type === 'detach') { FX.tear(e.mass, pos); FX.clank(e.mass, pos); look.embers.spawn(e.x, y, e.z, Math.min(24, 6 + Math.round(e.mass)), 'spark', [0, 0.6, 0]); }
       else if (e.type === 'glass') { FX.glass(e.mass, pos); look.embers.spawn(e.x, y, e.z, 12, 'glass'); }
@@ -694,23 +696,31 @@ const DestructionGame = (() => {
     world.respec(me);
     placeCar(SHOW);
     selBusy = true; showSelect();
+    FX.ui('move'); voiceFor(key);
     // a model not made yet waits for the pick to settle (stepping through the lineup doesn't decode each)
     if (!R.hasModel(key)) { await new Promise((r) => setTimeout(r, 250)); if (token !== selToken) return; }
     await R.preparePlayer(key, specs[key], paintNow().hex);
     if (token !== selToken) return;
     R.player.setPaint(paintNow().hex);
     selBusy = false; showSelect();
+    FX.garage(CARS[key].sound);   // its engine starting or revving, if it has a recording
   }
-  function pickPaint(i) { const n = PAINTS.length; paintIdx = paintFor[carKey] = (i + n) % n; if (!selBusy) R.player.setPaint(paintNow().hex); showSelect(); }
+  // the engine's recordings and rev range (fx.js): idle, redline, top speed (km/h, for the tank's tracks)
+  function voiceFor(key) {
+    const S = specs[key], t = S.tune || RaceCar.TUNE[key];
+    FX.engineVoice(CARS[key].sound, S.rig === 'hover' ? 3000 : S.rig === 'tracked' ? 700 : 900, t.redline, t.vmax ? t.vmax * 3.6 : 250);
+  }
+  function pickPaint(i) { FX.ui('pick'); const n = PAINTS.length; paintIdx = paintFor[carKey] = (i + n) % n; if (!selBusy) R.player.setPaint(paintNow().hex); showSelect(); }
   // another junction: the page again with ?level= (the car and paint kept), once the music has faded out
   // (the menu song picks up where it was)
   function pickLevel(key) {
     if (key === LEVEL || !DestructionLevel.LEVELS[key] || state !== 'select') return;
+    FX.ui('move');
     try { localStorage.setItem('destruction-level', key); localStorage.setItem('destruction-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not kept */ }
     const u = new URL(location.href); u.searchParams.set('level', key); Music.leave(() => { location.href = u.toString(); });
   }
   function updateSelect(inp) {
-    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 3) % 3; showSelect(); }
+    if (inp.nav.y) { selRow = (selRow + inp.nav.y + 3) % 3; showSelect(); FX.ui('move'); }
     if (inp.nav.x && selRow === 0) { const keys = Object.keys(CARS); chooseCar(keys[(keys.indexOf(carKey) + inp.nav.x + keys.length) % keys.length]); }
     else if (inp.nav.x && selRow === 2) { const keys = Object.keys(DestructionLevel.LEVELS); pickLevel(keys[(keys.indexOf(LEVEL) + inp.nav.x + keys.length) % keys.length]); }
     else if (inp.nav.x) pickPaint(paintIdx + inp.nav.x);
@@ -720,6 +730,7 @@ const DestructionGame = (() => {
   // traffic already flowing
   function startAttempt(preroll) {
     if (selBusy) return;
+    if (state === 'select') FX.ui('ok');
     if (!TEST) { try { localStorage.setItem('destruction-choice', JSON.stringify({ car: carKey, paint: paintIdx })); } catch (e) { /* not kept */ } }
     resetAttempt();
     if (preroll > 3) { traffic.reset(-preroll); simT = -preroll; }
@@ -792,7 +803,7 @@ const DestructionGame = (() => {
   }
   // the pause menu (Esc, P, the controller's Menu button, the HUD's menu button or a phone's II):
   // carry on, retry, quit to the select screen, or leave for the other game mode or home
-  function setPaused(on) { paused = on; $('#pause').hidden = !on; if (on) RaceInput.menuReset(); }
+  function setPaused(on) { paused = on; $('#pause').hidden = !on; if (on) RaceInput.menuReset(); FX.ui('back'); }
   $('#btn-resume').addEventListener('click', () => { if (upright.matches && TOUCH) return; setPaused(false); });
   $('#btn-retry').addEventListener('click', () => { setPaused(false); retry(); });
   $('#btn-quit').addEventListener('click', () => { setPaused(false); toSelect(); });
@@ -848,7 +859,7 @@ const DestructionGame = (() => {
       // every attempt starts from the same street
       if (state === 'countdown') {
         const n = Math.ceil(-simT - 1e-6);
-        if (n !== countdown && n > 0 && n <= 3) { callout(String(n), '', 800); if (audio) FX.beep(440); }
+        if (n !== countdown && n > 0 && n <= 3) { callout(String(n), '', 800); if (audio) FX.count(false); }
         countdown = n;
       }
       // the junction's own time: real time, but the impact's playback pace while the solver runs it
@@ -859,7 +870,7 @@ const DestructionGame = (() => {
       if (state === 'run' || state === 'pileup') FX.setTimeScale(scale);
       while (acc >= STEP) {
         if (state === 'countdown' && simT > -STEP / 2) {
-          state = 'run'; me.frozen = false; callout('Go!', '', 800); if (audio) { FX.beep(880); FX.engineStart(); }
+          state = 'run'; me.frozen = false; callout('Go!', '', 800); if (audio) { FX.count(true); FX.engineStart(); }
           if (TEST) (testOut.go = testOut.go || []).push(traffic.vehicles.length + '/' + traffic.vehicles.reduce((a, v) => a + v.s * (v.id + 1), 0).toFixed(6));
         }
         stepN++; acc -= STEP; simT += STEP;
@@ -938,6 +949,10 @@ const DestructionGame = (() => {
       const fireNear = fires.reduce((m, f) => Math.max(m, f.level * Math.max(0, 1 - Math.hypot(f.x - R.camera.position.x, f.z - R.camera.position.z) / 70)), 0);
       FX.fireUpdate(Math.min(1, fireNear), 0);
       FX.ambience(state === 'select' ? 0.6 : 1);
+      // the lorries, buses and tankers nearest the camera idle where they are (recorded sounds only)
+      const cam = R.camera.position;
+      FX.trafficIdle(traffic.vehicles.filter((v) => traffic.HEAVY[v.type]).map((v) => { const c = v.body.car; return { x: c.x, y: c.y + 1, z: c.z, kmh: Math.hypot(c.vx, c.vz) * 3.6, d: Math.hypot(c.x - cam.x, c.z - cam.z) }; })
+        .filter((v) => v.d < 45).sort((a, b) => a.d - b.d));
       if (state === 'run' || state === 'countdown') FX.engineUpdate(car.forward * 3.6, Math.max(car.throttle, input.throttle || 0), state === 'countdown' ? 900 + 4500 * (input.throttle || 0) : car.rpm);
     }
     if (director.camera) director.camera(dtReal, state);
@@ -1038,6 +1053,7 @@ const DestructionGame = (() => {
     look.warm();
     await workerMode;
     $('#loading').hidden = true;
+    voiceFor(carKey);
     // the results' buttons (also after a scripted ?test attempt, which has no select screen)
     $('#btn-again').addEventListener('click', () => { $('#btn-again').blur(); retry(); });
     $('#btn-car').addEventListener('click', () => { $('#btn-car').blur(); toSelect(); });

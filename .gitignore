@@ -21,3 +21,6 @@ tools/out/
 # Secrets
 .env
 .env.*
+
+# Licensed sound-effect recordings (Envato Elements); the games use the clips cut from them (media/sfx)
+media/audio/

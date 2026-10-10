@@ -123,11 +123,11 @@ const RaceInput = (() => {
     const items = [...el.querySelectorAll('.btn')].filter((b) => b.offsetParent !== null);
     if (!items.length) return;
     if (menuEl !== el) { menuEl = el; menuIdx = 0; }
-    const step = inp.nav.y || inp.nav.x;
-    if (step) menuIdx = (menuIdx + step + items.length) % items.length;
+    const step = inp.nav.y || inp.nav.x, ui = typeof FX !== 'undefined' ? FX.ui : () => {};   // the menu sounds (fx.js)
+    if (step) { menuIdx = (menuIdx + step + items.length) % items.length; ui('move'); }
     menuIdx = Math.min(menuIdx, items.length - 1);
     items.forEach((b, i) => b.classList.toggle('focus', i === menuIdx));
-    if (inp.start) items[menuIdx].click();
+    if (inp.start) { ui('ok'); items[menuIdx].click(); }
   }
   return { poll, rumble, bindTouch, menu, menuReset() { menuEl = null; }, get pad() { return lastPad ? lastPad.id : padId; } };
 })();

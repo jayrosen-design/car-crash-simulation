@@ -60,7 +60,7 @@ looks and sounds. "Feel" is the intent; the tuning that gets there is in [6.3](#
 - **Destruction.** A clean, fast hit with a long crumple zone; a good tanker car.
 - **Crash.** Lattice. A long bonnet and low roof: the front folds well before the cabin.
 - **Look.** Long hood, fastback roof, short rear deck, the video's dusk orange. Sound: a smooth
-  six-cylinder, 7,200 rpm.
+  V8, 7,400 rpm.
 
 ### Wren RS, hot hatch
 - **Fantasy.** Small, light, eager. It loses on the straights and wins in the corners.
@@ -91,7 +91,7 @@ looks and sounds. "Feel" is the intent; the tuning that gets there is in [6.3](#
 - **Destruction.** Speed for the ramp; light, so it skips off heavy vehicles.
 - **Crash.** Lattice with the engine mass behind the cabin; a low nose that goes under other cars.
 - **Look.** Low wedge, a tall rear wing, a dark canopy, lab white with black number panels. Sound: a
-  shrieking V10, 9,000 rpm.
+  shrieking race engine, 9,000 rpm.
 
 ### Ridgeback, crew-cab pickup
 - **Fantasy.** The working truck: long, high, a bit agricultural. Takes the jumps and lands hard.
@@ -101,7 +101,7 @@ looks and sounds. "Feel" is the intent; the tuning that gets there is in [6.3](#
 - **Race.** The hillside is its track: it shrugs off the bumps that unsettle the coupes.
 - **Destruction.** Heavy and tall; a strong first hit, a big wreck in the pile-up.
 - **Crash.** Lattice; the open bed rides along but carries no load (only the cab and frame do).
-- **Look.** Crew cab, open bed, high bumpers, amber. Sound: a lazy V8, 5,600 rpm.
+- **Look.** Crew cab, open bed, high bumpers, amber. Sound: a lazy diesel, 5,600 rpm.
 
 ### Ember 440, boulevard cruiser
 - **Fantasy.** A 1960s land yacht: chrome, soft springs, and big lazy slides.
@@ -251,7 +251,43 @@ side silhouette, windows, wheels, lamps, mirror and trim traced from the video, 
 - **Tank:** a moving solver box against the lattice car it hits (as the bus is), or straight into the
   pile-up against anything heavier; a stall instead of a crash in Race.
 
-### 6.5 Budgets
+### 6.5 Sound
+
+Recorded sound effects (licensed from Envato Elements, in `media/audio`), cut into clips by
+`tools/build-sfx.py` and played by `js/fx.js`. Each vehicle's choice is its `sound` in `js/garage.js`.
+The synthesized sounds stay, a button away ("Sound effects" on the select screen, or `?sfx=synth`), and
+are what plays wherever there's no recording (the crunches, glass, tearing metal, explosions).
+
+| Recording | Used for |
+|---|---|
+| Muscle car engine loop | under way: the Mustang, the Bastion (lower), the Ember 440 (lower) |
+| 1966 Chevy Impala, big engine revs | idling: the Mustang, the Bastion, the Ember 440; the Ember's rev in the garage |
+| Loud deep V8 revs | the Mustang's rev in the garage |
+| European sports car drives by (Porsche 928) | under way: the Halcyon GT, the Lexus (lower) |
+| 1990 Lotus Esprit Turbo SE, start and revs | idling: the Halcyon, the Quasar; the Quasar starting and the Halcyon revving in the garage |
+| Volkswagen Fox, four-cylinder | under way: the Wren RS, the Cadence SE |
+| Petrol car engine idle loop | idling: the Lexus, the Wren, the Cadence |
+| Diesel truck idling loop | the Ridgeback, idling and under way; lorries, buses and tankers idling at a Destruction junction |
+| Sport bike, start engine | the Kestrel's idle, and its start in the garage |
+| Sport bike, accelerate and decelerate | the Kestrel and the Quasar under way |
+| Motorcycle slide, crash, impact | the Kestrel's crash |
+| Large drone flying | the Osprey's rotors |
+| Drone crash landing | the Osprey's crash |
+| Military tank engine | the Rampart's engine, and its rev in the garage |
+| Military tank tracks squeaking | the Rampart's tracks, by speed |
+| Turbo engine pass-by | a near miss in Race |
+| Game start countdown | the countdown in both games |
+| Game menu select pack | the select screen, the pause menu and the results menu |
+
+- **Engines.** An idle loop and a loop under way, each pitched by the revs over the revs it was
+  recorded at (measured from its firing frequency), the change squeezed to the power 0.6 so no loop is
+  pushed past about 2.5 times. The idle loop crossfades to the other between 1.15 and 2.2 times idle.
+  The throttle makes it louder and brighter. The tank's tracks follow its speed.
+- **Loops.** Each is crossfaded into itself and written with a little of itself either side, so it
+  repeats without a click whatever delay the MP3 decoder adds.
+- **Size.** 27 clips, about 1 MB of MP3 (mono, 96 kb/s), 1.4 MB in the page as base64.
+
+### 6.6 Budgets
 - Frame time: 95th percentile at most 17.5 ms on the development machine, with rivals in the new cars.
 - Page weight: the ten models add about 1–1.5 MB to each single-file game.
 - Picking a vehicle: its model ready within 0.5 s.
@@ -306,6 +342,4 @@ Built as above, and measured:
 - The new vehicles in the crash simulator's tests (it keeps its calibrated cars).
 - The bike, drone and tank as rivals or traffic.
 - A jointed ragdoll rider: the rider is one rigid body.
-- Distinct engine sounds for the bike, rotors and tank: specified above, but for now each uses the car
-  engine sound, retuned.
 - Multiplayer.
