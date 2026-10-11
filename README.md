@@ -2367,7 +2367,7 @@ Writes `physics.html` and `sources.html` from this README. The physics page carr
 ### Recording the home page's video and pictures
 
 ```
-node tools/record-video.js [shots|video|loop|race|destruction|labs] [--lab <id>]
+node tools/record-video.js [shots|video|loop|race|destruction|labs|full] [--lab <id>]
 ```
 
 Records the built `Simulator.html` in headless Chrome. It writes:
@@ -2377,7 +2377,8 @@ Records the built `Simulator.html` in headless Chrome. It writes:
 - `media/race-trailer.mp4`, `media/race-poster.jpg`: the Race game's one-minute trailer and its poster, and the same cut for phones held upright (9:16), `media/race-trailer-mobile.mp4` and `media/race-poster-mobile.jpg` (`race` records just these, from `Race.html`);
 - `media/destruction-trailer.mp4`, `media/destruction-trailer-mobile.mp4` and their posters: the Destruction game's trailer in both formats (`destruction`, from `Destruction.html`);
 - `media/shot-rigid.jpg`, `media/shot-brick.jpg`: the barrier tests;
-- `media/lab-<id>.jpg`: one picture per lab.
+- `media/lab-<id>.jpg`: one picture per lab;
+- with `full` only: `tools/out/trailer/car-crash-simulation-trailer.mp4` and `thumbnail.jpg`, the full trailer for YouTube (below). It isn't on the site, and `tools/out` isn't committed.
 
 How it works:
 - **Virtual clock.** The page runs on a virtual clock that advances exactly 1/30 s per captured frame, so the video is smooth however long each frame takes to render.
@@ -2391,6 +2392,12 @@ How it works:
   - **Race** (`race-trailer.js`): five takes. The grid at dusk and the pack over the first ramp; near misses down the back straight on the centre line; a takedown; the first ramp at about 190 km/h in slow motion; a head-on with an oncoming car. The soundtrack is the `race` song in `trailer-music.js` (A minor, with a synth arpeggio, an engine and the start's countdown beeps).
   - **Destruction** (`destruction-trailer.js`): one take. The countdown is held 22 s while the cameras sweep over the junction at dusk (the paths are kept clear of the buildings); then a gold-medal run: flat out with boost down the right lane, over the ramp in slow motion through the ×4, into the tanker, the pile-up, the Crashbreaker the moment it's ready, and the total counted up to gold. The junction's traffic is the same every attempt, so the take is too. The `destruction` song is in D minor, with the impact stopping the band.
   - **Options.** `--work <dir>` keeps the takes (with `events.json`), `--takes a,b` re-records only those takes, `--edit-only` composites and encodes from the kept takes, `--takes-only`, `--format desktop|mobile` and `--no-encode`.
+- **The full trailer** (`full`, `tools/full-trailer.js`): 2:10 of the crash lab, Race and Destruction, cut to the soundtrack's *Full Throttle*, 1920 × 1080 for YouTube, with a thumbnail. No address or credits are in the picture.
+  - **The song.** It is cut from 2:41 to 2:10 at two phrase boundaries: the second half of the first verse goes, and the bridge, so the second break drops straight into the last chorus. Each splice is 25 ms before a drum hit that both sides share, crossfaded over 40 ms. The beat (107.4 BPM) is fitted to the drums, and every beat is snapped to the strongest kick or snare within 90 ms of the grid, so the cuts land on the hits.
+  - **The cut.** The website and glimpses of the three modes over the intro; the crash lab over the verse (the simulator's runs on the WebGPU solver, the brick wall on the CPU); Race's countdown in the breakdown and "Go" on the first chorus, then its three tracks (the start in the GT-R, near misses at night in the SF90, the TRX over a ramp in slow motion, a takedown with its own crash camera, the Ducati into an oncoming car, the Type 87, a 206 km/h head-on in the police car); the twelve vehicles on the garage screen, one a beat, in the break; Destruction on its three junctions over the second chorus; the physics page in the second break; everything faster in the last chorus, then the title.
+  - **The takes.** Race and Destruction through the kit with `solver=gpu` (seven Race takes, three Destruction takes; the Race director can ask for the takedown camera, `RaceGame.director.takedownCam`), the simulator's runs from its own shot list (`tools/trailer.js` takes one), and the Race select screen, the home page and the physics page filmed in 16:9. Each take keeps its events in its own file (`events-<take>.json`), so takes can be recorded in parallel.
+  - **The sound.** The song, the game's own sounds (`js/fx.js`: crunches, glass, tearing metal, tyre blowouts, explosions, the countdown, pass-bys, the recorded bike crash and menu clicks) rendered offline on the trailer's clock, each vehicle's recorded engine under its driving shots, and whooshes on wipes. The music dips under the big hits, and the master is limited to −1 dBFS. The recorder checks that every effect sounds and reports its level against the music (crashes about 10 dB over it, the engines about 6 dB under).
+  - **Options.** As for the game trailers (`--work`, default `tools/out/trailer`; `--takes`, `--takes-only`, `--edit-only`, `--no-encode`), plus `--analyze` (the song again), `--sound-only`, `--keep-sound` and `--encode-only`.
 - **Encoding.** Blender's built-in FFmpeg encodes the frames and the soundtrack (`tools/encode-video.py`), so no separate ffmpeg install is needed. The game trailers are 1280 × 720 and 720 × 1280. Use `--chrome <path>` and `--blender <path>` if they aren't in their default folders.
 - **Order.** Rebuild before recording, then again afterwards to embed the new media in the home page.
 - **The app's sounds.** The simulator's own sounds are synthesised live and aren't captured; the trailer has its own soundtrack. (The in-app **Save video** button does include the app's sounds: it renders them offline.)
@@ -2581,6 +2588,7 @@ tools/
   trailer.js            the trailer's shot list, cameras, titles and recorder
   trailer-music.js      the trailers' soundtracks, synthesised with Web Audio
   trailer-kit.js        the trailers' recorder, edit and compositor (16:9 and 9:16 from square takes)
+  full-trailer.js       the full trailer for YouTube: the song's cut and beats, the takes, the shot list, the sound mix
   race-trailer.js       the Race trailer: its director, scripted takes and shot list
   destruction-trailer.js  the Destruction trailer: the flyover, the gold run and its shot list
   encode-video.py       encodes the video with Blender's FFmpeg

@@ -99,8 +99,10 @@ function sourceOf(edit, f, events) {
   if (!(ev.captured[cam] || []).includes(n)) throw new Error(`take "${take}" camera ${cam} has no frame ${n} (frame ${f})`);
   return { take, cam, n, status: ev.status[n] || {} };
 }
-// the overlay at frame f: the shared parts; extra(o, s, f, src) adds the game's own
+// the overlay at frame f: the shared parts; extra(o, s, f, src) adds the game's own (edit.total: its
+// length in frames, if not the minute)
 function overlayAt(edit, f, events, extra) {
+  const total = edit.total || TOTAL;
   const s = edit.E.find((x) => f >= x.f && f < x.f + x.n), o = { grade: true, logo: true };
   if (!s) return o;
   const age = f - s.f;
@@ -118,7 +120,7 @@ function overlayAt(edit, f, events, extra) {
   const src = s.src ? sourceOf(edit, f, events) : null;
   if (extra) extra(o, s, f, src, age);
   for (const [t0, card] of edit.TITLES) if (f >= t0) { o.card = Object.assign({ age: f - t0, titleAge: f - edit.TITLES[0][0] }, card); o.logo = false; }
-  if (f >= TOTAL - 18) o.black = Math.max(o.black || 0, (f - (TOTAL - 18)) / 17);
+  if (f >= total - 18) o.black = Math.max(o.black || 0, (f - (total - 18)) / 17);
   return o;
 }
 // what the music needs: impacts (with glass or not), whooshes, explosions, ticks, the title hits
@@ -138,7 +140,7 @@ function musicHits(edit) {
   return hits;
 }
 function check(edit, events) {
-  for (let f = 0; f < TOTAL; f++) { if (!edit.E.some((x) => f >= x.f && f < x.f + x.n)) throw new Error('no shot at frame ' + f); sourceOf(edit, f, events); }
+  for (let f = 0; f < (edit.total || TOTAL); f++) { if (!edit.E.some((x) => f >= x.f && f < x.f + x.n)) throw new Error('no shot at frame ' + f); sourceOf(edit, f, events); }
 }
 
 // ---------------------------------------------------------------- the compositor (a page)
@@ -205,7 +207,7 @@ const COMPOSITOR = `<!doctype html><html><head><meta charset="utf-8">
   #card.title h1 { font-size: 30vmin; line-height: 0.82; color: var(--hz); }
   #card.title p { margin: 3vmin 0 0; font: italic 800 4.6vmin/1.15 "Barlow Condensed", sans-serif; letter-spacing: 0.16em; text-transform: uppercase; }
   #card .stripe { height: 2.2vmin; margin: 3vmin auto 0; width: 80vmin; max-width: 90vw; background: repeating-linear-gradient(-45deg, var(--hz) 0 3vmin, var(--ink) 3vmin 6vmin); }
-  #card .kick { display: inline-flex; align-items: center; gap: 1.6vmin; font: italic 900 4.4vmin/1 "Barlow Condensed", sans-serif; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 2.6vmin; color: #fff; }
+  #card .kick { display: flex; width: fit-content; margin-left: auto; margin-right: auto; align-items: center; gap: 1.6vmin; font: italic 900 4.4vmin/1 "Barlow Condensed", sans-serif; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 2.6vmin; color: #fff; }
   #card .kick .tg { width: 4.6vmin; height: 4.6vmin; border-radius: 50%; background: conic-gradient(var(--hz) 0 25%, var(--ink) 0 50%, var(--hz) 0 75%, var(--ink) 0); box-shadow: 0 0 0 0.45vmin var(--hz); }
   #card .kick b { color: var(--hz); }
   #card .cta { display: inline-block; margin-top: 4vmin; font: italic 900 4.4vmin/1 "Barlow Condensed", sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--hz); padding: 1.6vmin 4vmin 1.3vmin; clip-path: polygon(1.8vmin 0, 100% 0, calc(100% - 1.8vmin) 100%, 0 100%); }
@@ -239,6 +241,7 @@ const COMPOSITOR = `<!doctype html><html><head><meta charset="utf-8">
     const img = $('#src');
     $('#tint').style.display = $('#vig').style.display = s.grade && !s.black ? 'block' : 'none';
     $('#black').style.opacity = s.black || 0; $('#dim').style.opacity = s.dim || 0; $('#flash').style.opacity = s.flash || 0;
+    $('#bars').style.display = s.nobars ? 'none' : '';   // (a screen recording of a page, uncropped)
     img.style.transform = s.punch ? 'scale(' + s.punch + ')' : '';
     $('#logo').style.display = s.logo && !s.black && !s.card ? 'flex' : 'none';
     $('#slow').style.display = s.slow && !s.card ? 'block' : 'none';
@@ -297,13 +300,13 @@ async function composite(b, edit, { takesDir, events, outDir, workDir, log, w, h
   await sleep(1500);
   await b.ev('document.fonts.ready.then(() => true)');
   fs.mkdirSync(outDir, { recursive: true });
-  const [f0, f1] = range || [0, TOTAL];
+  const [f0, f1] = range || [0, edit.total || TOTAL];
   for (let f = f0; f < f1; f++) {
     const s = sourceOf(edit, f, events), o = overlayAt(edit, f, events, extra);
     const file = s ? url(path.join(takesDir, s.take, s.cam, String(s.n).padStart(5, '0') + '.jpg')) : null;
     await b.ev(`show(${JSON.stringify(file)}, ${JSON.stringify(o)})`);
     fs.writeFileSync(path.join(outDir, 'f' + String(f - f0).padStart(5, '0') + '.jpg'), await b.shot(92));
-    if (f % 300 === 299) log(`composited ${f + 1} / ${TOTAL} (${w}x${h})`);
+    if (f % 300 === 299) log(`composited ${f + 1} / ${f1} (${w}x${h})`);
   }
 }
 

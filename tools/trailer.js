@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const Kit = require('./trailer-kit.js');
 
-const FPS = 30, BEAT = 12, BAR = 48, BARS = 37.5, TOTAL = BARS * BAR;
+const FPS = 30, BEAT = 12, BAR = 48, BARS = 37.5, TOTAL = BARS * BAR, TRAILER_TOTAL = TOTAL;
 const F = (bar, beat = 0) => Math.round(bar * BAR + beat * BEAT);
 
 // ---------------------------------------------------------------- the simulations
@@ -48,7 +48,7 @@ const ONBOARD = { onboard: true, fov: 62 };
 // kind: 'card' (a title on black), 'approach' (n frames ending `end` frames before contact),
 // 'replay' (from `from` ms after contact, speed keyframes [[frame, replay speed], ...]),
 // 'after' (the aftermath, `after` s after the replay ends). hit: the impact sound and a flash.
-const S = [];
+const S = [], SHOTS = S;
 const shot = (f, n, o) => S.push(Object.assign({ f, n }, o));
 const slow = (s) => [[0, s], [1e9, s]];
 
@@ -354,8 +354,11 @@ function speedAt(sh, i) {
 // b: the browser (record-video.js), open(query): loads the simulator ready to run, framesDir:
 // where frame f goes as f<00000>.jpg, log: progress output, only: record just the shots it
 // accepts, clean: the colour grade alone, without titles, readouts or flashes (the home page's
-// background loop).
-async function record(b, { open, framesDir, log, only, clean, square }) {
+// background loop). shots, total: another shot list (square only; tools/full-trailer.js) on a
+// timeline `total` frames long, every frame of it a shot.
+async function record(b, { open, framesDir, log, only, clean, square, shots: list, total }) {
+  const S = list || SHOTS, TOTAL = total || TRAILER_TOTAL;
+  if (list && !square) throw new Error('another shot list is filmed square');
   const overlay = square ? () => ({}) : clean ? (f) => S.find((x) => f >= x.f && f < x.f + x.n).kind === 'card' ? { black: 1 } : { grade: true } : overlayAt;
   const DT = 1000 / FPS;
   const file = (f) => path.join(framesDir, (square ? '' : 'f') + String(f).padStart(5, '0') + '.jpg');
@@ -373,7 +376,7 @@ async function record(b, { open, framesDir, log, only, clean, square }) {
   S.forEach((s, i) => { for (let f = s.f; f < s.f + s.n; f++) { if (owner[f] >= 0) throw new Error('shots overlap at frame ' + f); owner[f] = i; } });
   for (let f = 0; f < TOTAL; f++) if (owner[f] < 0) throw new Error('no shot at frame ' + f);
   // approach frames are taken with the grade only, so no titles may fall on them
-  for (const s of S.filter((x) => x.kind === 'approach')) for (let f = s.f; f < s.f + s.n; f++) {
+  if (!list) for (const s of S.filter((x) => x.kind === 'approach')) for (let f = s.f; f < s.f + s.n; f++) {
     if (Object.keys(overlayAt(f)).join() !== 'grade') throw new Error('an approach shot has titles at frame ' + f);
   }
 

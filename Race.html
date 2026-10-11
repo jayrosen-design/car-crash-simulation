@@ -12687,8 +12687,8 @@ const RaceGame = (() => {
     attack: (r) => state === 'race' && simT > 10 && !me.ghost && ai.rivals.filter(o => o !== r && ai.attacking(o)).length < 2 };
   let stepN = 0;
   // a director (the trailer recorder, tools/race-trailer.js) can drive the player and place the
-  // camera; both stay null in the game
-  const director = { input: null, camera: null };
+  // camera; both stay null in the game. takedownCam: the takedown camera in a scripted run too
+  const director = { input: null, camera: null, takedownCam: false };
   function playerInput() {
     if (director.input) return director.input(STEP);
     if (TEST === 'takedown') return { throttle: 1, steer: simT < 1.2 ? 0.5 : -0.5 };   // shove, then pull away
@@ -13054,7 +13054,7 @@ const RaceGame = (() => {
     sparks.spawn(x, 0.5, z, 40, 'spark', [0, 0.8, 0]);
     const d = Math.hypot(c.x - car.x, c.z - car.z);
     if (state === 'race' && rules.wrecked(r, simT)) {   // counts half a second later
-      if (!(e && !tdCam && (!SCRIPTED || TEST === 'takedown') && startTakedownCam(r, e))) { slowmo = 0.9; FX.crunch(1, [x, 0.6, z]); }   // (not for the trailer's director)
+      if (!(e && !tdCam && (!SCRIPTED || TEST === 'takedown' || director.takedownCam) && startTakedownCam(r, e))) { slowmo = 0.9; FX.crunch(1, [x, 0.6, z]); }   // (not for the trailer's director unless it asks)
     }
     else if (d < 80) FX.crunch(Math.max(0.3, 1 - d / 80), [x, 0.5, z]);
   }

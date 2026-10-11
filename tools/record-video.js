@@ -14,11 +14,13 @@
  *   media/shot-rigid.jpg   pictures of the two barrier tests for the home page
  *   media/shot-brick.jpg
  *   media/lab-<id>.jpg     a picture of each crash lab's finished test
+ *   tools/out/trailer/car-crash-simulation-trailer.mp4  the full trailer for YouTube (full: tools/full-trailer.js),
+ *                          two minutes of the crash lab, Race and Destruction to Full Throttle; not on the site
  * The page runs on a virtual clock: every frame advances it by exactly 1/30 s and is captured,
  * so the video is smooth however long a frame takes to render. The soundtrack is rendered in the
  * page with Web Audio. Blender encodes the frames and the sound (tools/encode-video.py), so no
  * separate ffmpeg install is needed.
- *   node tools/record-video.js [shots|video|loop|race|destruction|labs] [--chrome <chrome.exe>] [--blender <blender.exe>]
+ *   node tools/record-video.js [shots|video|loop|race|destruction|labs|full] [--chrome <chrome.exe>] [--blender <blender.exe>]
  * The trailers (video, race, destruction; tools/trailer-kit.js) also take --work <dir> (keep the takes
  * there, with events.json), --takes a,b (record only these takes, keeping the others), --edit-only
  * (composite and encode from the takes already in --work), --takes-only, --format desktop|mobile
@@ -40,7 +42,7 @@ const MEDIA = path.join(ROOT, 'media');
 const arg = (name, def) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : def; };
 const CHROME = arg('--chrome', 'C:/Program Files/Google/Chrome/Application/chrome.exe');
 const BLENDER = arg('--blender', 'C:/Program Files/Blender Foundation/Blender 5.1/blender.exe');
-const ONLY = ['shots', 'video', 'loop', 'race', 'destruction', 'labs'].find(k => process.argv.includes(k));
+const ONLY = ['shots', 'video', 'loop', 'race', 'destruction', 'labs', 'full'].find(k => process.argv.includes(k));
 const W = 1280, H = 720, FPS = 30, DT = 1000 / FPS;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const fileUrl = (name) => 'file:///' + path.join(ROOT, name).replace(/\\/g, '/').replace(/ /g, '%20');
@@ -298,6 +300,11 @@ async function recordLabShot(b, id, query, tSince, cameraJs) {
   fs.mkdirSync(MEDIA, { recursive: true });
   const b = await openBrowser();
   try {
+    if (ONLY === 'full') {
+      const enc = (dir, out, quality, w, h, wav) => execFileSync(BLENDER, ['-b', '--factory-startup', '--python-exit-code', '1', '--python', path.join(__dirname, 'encode-video.py'), '--', dir, out, String(FPS), quality, 'audio=' + wav, 'size=' + w + 'x' + h, 'abr=320'], { stdio: 'inherit' });
+      await require('./full-trailer.js').run(b, { openSimulator: (q) => openSimulator(b, q), fileUrl, encode: enc, arg, has: (f) => process.argv.includes(f), log: console.log });
+      return;
+    }
     if (ONLY === 'labs') {
       for (const [id, q, t, cam] of LAB_SHOTS) await recordLabShot(b, id, q, t, cam);
       if (b.errors.length) { console.log('page errors:\n' + b.errors.join('\n')); process.exitCode = 1; }

@@ -2,7 +2,7 @@
 (used by tools/record-video.js, so no separate ffmpeg install is needed), optionally with a
 soundtrack (AAC) and scaled to another size.
 
-    blender -b --factory-startup --python tools/encode-video.py -- <frames dir> <out.mp4> <fps> [HIGH|MEDIUM|LOW] [audio=<file.wav>] [size=<w>x<h>]
+    blender -b --factory-startup --python tools/encode-video.py -- <frames dir> <out.mp4> <fps> [HIGH|MEDIUM|LOW] [audio=<file.wav>] [size=<w>x<h>] [abr=<kbit/s>]
 """
 import bpy, glob, os, shutil, sys, tempfile
 
@@ -53,7 +53,7 @@ r.ffmpeg.ffmpeg_preset = 'BEST'
 r.ffmpeg.gopsize = int(fps)
 if 'audio' in opts:
     r.ffmpeg.audio_codec = 'AAC'
-    r.ffmpeg.audio_bitrate = 192
+    r.ffmpeg.audio_bitrate = int(opts.get('abr', 192))
     r.ffmpeg.audio_channels = 'STEREO'
     r.ffmpeg.audio_mixrate = 48000
 else:
